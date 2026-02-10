@@ -1,0 +1,56 @@
+.button-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 20px;
+  letter-spacing: 1px;
+}
+
+.button-content > i {
+  font-size: 13px;
+}
+
+.generic-button {
+  position: relative;
+  overflow: hidden;
+  height: 2.5rem;
+  padding: 0 1.5rem;
+  border-radius: 1.5rem;
+  background: #3d3a4e;
+  background-size: 400%;
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 17px;
+  letter-spacing: 0.75px;
+  font-family: "Smooch Sans", sans-serif;
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.generic-button:hover {
+  transform: translateY(-2px);
+}
+
+.income-button,
+.expense-button {
+  height: 40px;
+}
+
+.income-button {
+  background: linear-gradient(
+    82.3deg,
+    rgba(22, 163, 74, 1) 10.8%,
+    rgba(4, 120, 87, 1) 94.3%
+  );
+}
+
+.expense-button {
+  background: linear-gradient(
+    82.3deg,
+    rgba(239, 68, 68, 1) 10.8%,
+    rgba(220, 38, 38, 1) 94.3%
+  );
+}

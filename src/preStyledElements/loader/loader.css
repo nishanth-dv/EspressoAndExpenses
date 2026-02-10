@@ -1,0 +1,279 @@
+/* =========================================================
+   ROOT OVERLAY (fullscreen loader)
+========================================================= */
+
+.loader-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(8, 8, 22, 0.85);
+  backdrop-filter: blur(4px);
+  display: grid;
+  place-items: center;
+  z-index: 2147483647;
+}
+
+/* =========================================================
+   ESPRESSO LOADER ROOT
+   Fixed internal coordinate system
+========================================================= */
+
+.espresso-loader {
+  --base-size: 120px; /* internal reference size */
+
+  position: relative;
+  width: var(--base-size);
+  height: calc(var(--base-size) * 1.25);
+
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+
+  color: #e8dcc9;
+  font-family: system-ui, sans-serif;
+
+  /* scale smoothly based on viewport */
+  transform: scale(clamp(0.7, 0.9vw + 0.9vh, 1.4));
+}
+
+/* Pause animations when tab hidden */
+.espresso-loader.paused * {
+  animation-play-state: paused !important;
+}
+
+/* =========================================================
+   STEAM
+========================================================= */
+
+.steam {
+  position: absolute;
+  top: 5px;
+  width: 8px;
+  height: 30px;
+  background: rgba(232, 220, 201, 0.55);
+  border-radius: 50%;
+  filter: blur(2px);
+  opacity: 0;
+
+  animation: steam-sine 3.2s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.steam-1 {
+  left: 35px;
+}
+.steam-2 {
+  left: 45px;
+  animation-delay: 0.5s;
+}
+.steam-3 {
+  left: 55px;
+  animation-delay: 1s;
+}
+
+/* =========================================================
+   CUP + WOBBLE
+========================================================= */
+
+.cup-wrapper {
+  position: relative;
+  width: 76px;
+  height: 52px;
+  margin-top: 36px;
+  animation: wobble 2.4s ease-in-out infinite;
+  transform-origin: bottom center;
+}
+
+/* Cup body */
+.cup {
+  position: relative;
+  width: 76px;
+  height: 60px;
+  border: 3px solid #e8dcc9;
+  border-radius: 0 0 40px 40px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+/* Handle */
+.handle {
+  position: absolute;
+  right: -22px;
+  top: 10px;
+  width: 22px;
+  height: 22px;
+  border: 3px solid #e8dcc9;
+  border-left: none;
+  border-radius: 0 14px 14px 0;
+}
+
+/* =========================================================
+   COFFEE
+========================================================= */
+
+.coffee {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 0%;
+  background: linear-gradient(to top, #2a160c, #5a3825);
+  animation: fill 2.4s ease-in-out infinite;
+}
+
+/* Crema */
+.crema {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(to right, #b08a6c, #e8dcc9, #b08a6c);
+  opacity: 0.55;
+  animation: crema 2.4s linear infinite;
+}
+
+/* Surface wave */
+.wave {
+  position: absolute;
+  top: -4px;
+  left: -50%;
+  width: 200%;
+  height: 8px;
+  background: radial-gradient(circle, #3b2417 40%, transparent 60%);
+  animation: wave 1.2s linear infinite;
+}
+
+/* =========================================================
+   LABEL
+========================================================= */
+
+.espresso-label {
+  margin-top: 14px;
+  font-size: 0.85rem;
+  letter-spacing: 0.05em;
+}
+
+/* Animated dots synced with fill */
+.dots::after {
+  content: "";
+  animation: dots 2.4s steps(3, end) infinite;
+}
+
+/* =========================================================
+   ANIMATIONS (ALL SYNCED)
+========================================================= */
+
+@keyframes fill {
+  0% {
+    height: 0%;
+  }
+  40% {
+    height: 85%;
+  }
+  70% {
+    height: 85%;
+  }
+  100% {
+    height: 0%;
+  }
+}
+
+@keyframes crema {
+  from {
+    background-position: 0% 50%;
+  }
+  to {
+    background-position: 200% 50%;
+  }
+}
+
+@keyframes steam {
+  0% {
+    opacity: 0;
+    transform: translateY(0) scale(0.7);
+  }
+  40% {
+    opacity: 0.7;
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-26px) scale(1.2);
+  }
+}
+
+@keyframes wobble {
+  0% {
+    transform: rotate(0deg);
+  }
+  25% {
+    transform: rotate(-0.6deg);
+  }
+  50% {
+    transform: rotate(0.6deg);
+  }
+  75% {
+    transform: rotate(-0.3deg);
+  }
+  100% {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes steam-sine {
+  0% {
+    opacity: 0;
+    transform: translate(0, 0) scale(0.7);
+  }
+
+  15% {
+    opacity: 0.5;
+    transform: translate(4px, -6px) scale(0.8);
+  }
+
+  30% {
+    transform: translate(-4px, -12px) scale(0.9);
+  }
+
+  45% {
+    transform: translate(6px, -18px) scale(1);
+  }
+
+  60% {
+    transform: translate(-6px, -24px) scale(1.1);
+  }
+
+  75% {
+    transform: translate(4px, -30px) scale(1.2);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate(0, -36px) scale(1.3);
+  }
+}
+
+@keyframes dots {
+  0% {
+    content: "";
+  }
+  33% {
+    content: ".";
+  }
+  66% {
+    content: "..";
+  }
+  100% {
+    content: "...";
+  }
+}
+
+/* =========================================================
+   ACCESSIBILITY
+========================================================= */
+
+@media (prefers-reduced-motion: reduce) {
+  .espresso-loader * {
+    animation: none !important;
+  }
+}

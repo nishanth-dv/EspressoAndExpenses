@@ -1,4 +1,5 @@
 import { memo } from "react";
+import PropTypes from "prop-types";
 import "./Hamburger.css";
 
 const HamburgerButton = ({ isOpen, setIsOpen }) => {
@@ -16,6 +17,11 @@ const HamburgerButton = ({ isOpen, setIsOpen }) => {
       <span />
     </button>
   );
+};
+
+HamburgerButton.propTypes = {
+  isOpen: PropTypes.bool.isRequired,
+  setIsOpen: PropTypes.func.isRequired,
 };
 
 export default memo(HamburgerButton);

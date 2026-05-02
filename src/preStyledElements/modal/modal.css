@@ -6,9 +6,9 @@
   max-width: 420px;
   background: transparent;
   box-sizing: border-box;
-	display: flex;
-	align-items: center;
-	justify-content: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .modal-dialog::backdrop {
@@ -26,30 +26,69 @@
   animation: modal-in 0.2s ease-out;
   box-sizing: border-box;
   isolation: isolate;
-  transform: translateZ(0);
+  font-size: 17px;
 }
 
 .modal-content {
   padding: 25px 0 0 0;
   max-height: 70vh;
   overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
 }
 
-.modal h2 {
+.modal-content::-webkit-scrollbar {
+  display: none;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.modal-header h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 600;
   color: #080816;
+}
+
+.modal-close-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: none;
+  background: none;
+  border-radius: 8px;
+  font-size: 16px;
+  color: #080816;
+  opacity: 0.45;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.modal-close-btn:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.07);
+}
+
+.modal .cancel-button {
+  font-size: 17px;
+  font-weight: 500;
 }
 
 @keyframes modal-in {
   from {
     opacity: 0;
-    transform: scale(0.96) translateY(8px);
+    transform: translateY(12px);
   }
   to {
     opacity: 1;
-    transform: scale(1) translateY(0);
+    transform: translateY(0);
   }
 }

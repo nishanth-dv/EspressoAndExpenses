@@ -1,17 +1,6 @@
 import { memo, useState } from "react";
-
-const CATEGORIES = [
-  "Food",
-  "Transport",
-  "Fuel",
-  "Shopping",
-  "Utilities",
-  "Entertainment",
-  "Rent",
-  "Other",
-];
-
-const PAYMENT_MODES = ["Cash", "UPI", "Debit Card", "Credit Card", "Other"];
+import PropTypes from "prop-types";
+import { CATEGORIES, PAYMENT_MODES } from "../utils/constants";
 
 const ExpenseForm = ({ onSubmit, onCancel }) => {
   const [form, setForm] = useState({
@@ -137,6 +126,11 @@ const ExpenseForm = ({ onSubmit, onCancel }) => {
       </div>
     </form>
   );
+};
+
+ExpenseForm.propTypes = {
+  onSubmit: PropTypes.func.isRequired,
+  onCancel: PropTypes.func.isRequired,
 };
 
 export default memo(ExpenseForm);

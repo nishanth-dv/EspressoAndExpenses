@@ -1,8 +1,9 @@
 import { memo, useState } from "react";
+import PropTypes from "prop-types";
 
 const IncomeForm = ({ onSubmit, onCancel }) => {
   const [form, setForm] = useState({
-    source: "",
+    name: "",
     amount: "",
     description: "",
     occurredAt: "",
@@ -28,7 +29,7 @@ const IncomeForm = ({ onSubmit, onCancel }) => {
     <form className="expense-form" onSubmit={handleSubmit}>
       <div className="field">
         <input
-          name="source"
+          name="name"
           value={form.name}
           onChange={handleChange}
           required
@@ -88,6 +89,11 @@ const IncomeForm = ({ onSubmit, onCancel }) => {
       </div>
     </form>
   );
+};
+
+IncomeForm.propTypes = {
+  onSubmit: PropTypes.func.isRequired,
+  onCancel: PropTypes.func.isRequired,
 };
 
 export default memo(IncomeForm);

@@ -1,7 +1,9 @@
 import { memo } from "react";
+import { useSelector } from "react-redux";
 
 const Insights = () => {
-  const balance = 69696969;
+  const insights = useSelector((state) => state.transactions.transactionData?.insights);
+  const balance = insights?.balance ?? 0;
   const formatter = new Intl.NumberFormat("en-IN", {
     style: "currency",
     currency: "INR",

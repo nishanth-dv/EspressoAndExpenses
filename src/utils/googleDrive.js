@@ -2,122 +2,100 @@
 
 let tokenClient = null;
 let accessToken = null;
+let tokenExpiry = 0; // ms timestamp
+
+export function clearAccessToken() {
+  accessToken = null;
+  tokenExpiry = 0;
+  tokenClient = null;
+}
+
+function isTokenValid() {
+  return !!(accessToken && Date.now() < tokenExpiry - 60_000); // 60s safety buffer
+}
 
 export function getAccessToken() {
   if (!tokenClient) {
     tokenClient = google.accounts.oauth2.initTokenClient({
       client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
       scope: "https://www.googleapis.com/auth/drive.file",
-      callback: (response) => {
-        accessToken = response.access_token;
-      },
+      callback: () => {},
     });
   }
 
-  return new Promise((resolve) => {
-    if (accessToken) {
+  return new Promise((resolve, reject) => {
+    if (isTokenValid()) {
       resolve(accessToken);
-    } else {
-      tokenClient.callback = (response) => {
-        accessToken = response.access_token;
-        resolve(accessToken);
-      };
-
-      // 👇 silent if already granted, popup only first time
-      tokenClient.requestAccessToken({ prompt: "" });
+      return;
     }
+
+    tokenClient.callback = (response) => {
+      if (response.error) {
+        reject(new Error(response.error));
+        return;
+      }
+      accessToken = response.access_token;
+      tokenExpiry = Date.now() + (response.expires_in ?? 3600) * 1000;
+      resolve(accessToken);
+    };
+
+    tokenClient.requestAccessToken({ prompt: "" });
   });
 }
 
-export async function createOrFetchFile(fileName, initialData) {
+// Wraps a Drive fetch: injects the Bearer token and retries once on 401.
+async function driveRequest(url, options = {}, _retry = true) {
   const token = await getAccessToken();
+  const res = await fetch(url, {
+    ...options,
+    headers: { ...options.headers, Authorization: `Bearer ${token}` },
+  });
 
-  const query = encodeURIComponent(`name='${fileName}' and trashed=false`);
-
-  const searchRes = await fetch(
-    `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name)`,
-    {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    }
-  );
-
-  const { files } = await searchRes.json();
-
-  // ───────────── FILE DOES NOT EXIST ─────────────
-  if (!files || files.length === 0) {
-    const metadata = {
-      name: fileName,
-      mimeType: "application/json",
-    };
-
-    const form = new FormData();
-    form.append(
-      "metadata",
-      new Blob([JSON.stringify(metadata)], {
-        type: "application/json",
-      })
-    );
-    form.append(
-      "file",
-      new Blob([JSON.stringify(initialData, null, 2)], {
-        type: "application/json",
-      })
-    );
-
-    const uploadRes = await fetch(
-      "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
-      {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-        body: form,
-      }
-    );
-
-    const created = await uploadRes.json();
-
-    return {
-      fileId: created.id,
-      data: initialData,
-      created: true,
-    };
+  if (res.status === 401 && _retry) {
+    // Token was rejected server-side — clear and get a fresh one.
+    accessToken = null;
+    tokenExpiry = 0;
+    return driveRequest(url, options, false);
   }
 
-  // ───────────── FILE EXISTS ─────────────
-  const fileId = files[0].id;
+  return res;
+}
 
-  const downloadRes = await fetch(
-    `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
-    {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    }
+export async function createOrFetchFile(fileName, initialData) {
+  const query = encodeURIComponent(`name='${fileName}' and trashed=false`);
+  const searchRes = await driveRequest(
+    `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name)`
   );
+  const { files } = await searchRes.json();
 
+  if (!files || files.length === 0) {
+    const metadata = { name: fileName, mimeType: "application/json" };
+    const form = new FormData();
+    form.append("metadata", new Blob([JSON.stringify(metadata)], { type: "application/json" }));
+    form.append("file", new Blob([JSON.stringify(initialData, null, 2)], { type: "application/json" }));
+
+    const uploadRes = await driveRequest(
+      "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart",
+      { method: "POST", body: form }
+    );
+    const created = await uploadRes.json();
+    return { fileId: created.id, data: initialData, created: true };
+  }
+
+  const fileId = files[0].id;
+  const downloadRes = await driveRequest(
+    `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`
+  );
   const data = await downloadRes.json();
-
-  return {
-    fileId,
-    data,
-    created: false,
-  };
+  return { fileId, data, created: false };
 }
 
 export async function updateFile(fileId, updatedData) {
-  const token = await getAccessToken();
-
-  await fetch(
+  await driveRequest(
     `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`,
     {
       method: "PATCH",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify(updatedData, null, 2),
     }
   );

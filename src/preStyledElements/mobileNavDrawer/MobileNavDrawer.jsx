@@ -1,4 +1,5 @@
 import { memo } from "react";
+import PropTypes from "prop-types";
 import NavigationLink from "../../components/NavItem";
 import LogoutButton from "../../components/Logout";
 import "./MobileNavDrawer.css";
@@ -16,8 +17,11 @@ const MobileNavDrawer = ({ open, setIsOpen }) => {
       <aside className={`drawer ${open ? "open" : ""}`}>
         <nav className="drawer-menu">
           <div className="flex column">
-            <NavigationLink to="/Expense" onClick={onClose}>
-              Expenses
+            <NavigationLink to="/Dashboard" onClick={onClose}>
+              Dashboard
+            </NavigationLink>
+            <NavigationLink to="/Transactions" onClick={onClose}>
+              Transactions
             </NavigationLink>
             <NavigationLink to="/Invest" onClick={onClose}>
               Investments
@@ -28,6 +32,11 @@ const MobileNavDrawer = ({ open, setIsOpen }) => {
       </aside>
     </>
   );
+};
+
+MobileNavDrawer.propTypes = {
+  open: PropTypes.bool.isRequired,
+  setIsOpen: PropTypes.func.isRequired,
 };
 
 export default memo(MobileNavDrawer);

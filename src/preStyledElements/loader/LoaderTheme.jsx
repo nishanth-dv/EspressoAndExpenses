@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import PropTypes from "prop-types";
 
 const EspressoLoader = ({ size = 96, label = "Brewing" }) => {
   const [paused, setPaused] = useState(false);
@@ -39,6 +40,11 @@ const EspressoLoader = ({ size = 96, label = "Brewing" }) => {
       </p>
     </div>
   );
+};
+
+EspressoLoader.propTypes = {
+  size: PropTypes.number,
+  label: PropTypes.string,
 };
 
 export default EspressoLoader;

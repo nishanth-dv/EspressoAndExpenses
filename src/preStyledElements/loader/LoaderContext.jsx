@@ -1,5 +1,6 @@
 /* eslint-disable react-refresh/only-export-components */
 import { createContext, useContext, useRef, useState } from "react";
+import PropTypes from "prop-types";
 import Loader from "./Loader";
 
 const LoaderContext = createContext(null);
@@ -32,6 +33,10 @@ export const LoaderProvider = ({ children }) => {
       {config && <Loader {...config} />}
     </LoaderContext.Provider>
   );
+};
+
+LoaderProvider.propTypes = {
+  children: PropTypes.node.isRequired,
 };
 
 export const useLoader = () => {

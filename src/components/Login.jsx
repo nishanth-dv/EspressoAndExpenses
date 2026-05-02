@@ -1,45 +1,26 @@
-import { useDispatch } from "react-redux";
-import { login } from "../redux/slices/authSlice";
-import { useEffect, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+/* global google */
+import { memo, useEffect } from "react";
 
-export default function GoogleLoginButton() {
-  const dispatch = useDispatch();
-  const navigate = useNavigate();
-
-  const handleCredentialResponse = useCallback(
-    (response) => {
-      const jwt = response.credential;
-
-      const payload = JSON.parse(atob(jwt.split(".")[1]));
-
-      const user = {
-        name: payload.name,
-        email: payload.email,
-        picture: payload.picture,
-        sub: payload.sub,
-        token: jwt,
-      };
-
-      dispatch(login(user));
-      navigate("/Expense");
-    },
-    [dispatch, navigate]
-  );
-
+// GoogleAuthManager (in App.jsx) owns initialize() and the credential callback.
+// This component only renders the sign-in button into the DOM.
+const GoogleLoginButton = () => {
   useEffect(() => {
-    /* global google */
-    google.accounts.id.initialize({
-      client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
-      callback: handleCredentialResponse,
-      scope: "openid email profile https://www.googleapis.com/auth/drive.file",
-    });
+    const render = () => {
+      const el = document.getElementById("googleBtn");
+      if (!el || !window.google) return;
+      google.accounts.id.renderButton(el, { theme: "outline", size: "large" });
+    };
 
-    google.accounts.id.renderButton(document.getElementById("googleBtn"), {
-      theme: "outline",
-      size: "large",
-    });
-  }, [handleCredentialResponse]);
+    if (window.google) {
+      render();
+    } else {
+      const script = document.querySelector('script[src*="accounts.google.com/gsi"]');
+      script?.addEventListener("load", render, { once: true });
+      return () => script?.removeEventListener("load", render);
+    }
+  }, []);
 
   return <div id="googleBtn"></div>;
-}
+};
+
+export default memo(GoogleLoginButton);

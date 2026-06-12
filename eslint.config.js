@@ -23,7 +23,10 @@ export default defineConfig([
       },
     },
     rules: {
-      'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
+      // `motion` from framer-motion is used as `<motion.div>` in JSX; without
+      // eslint-plugin-react's jsx-uses-vars, eslint flags it as unused. Adding
+      // it to the ignore pattern avoids a per-file disable comment.
+      'no-unused-vars': ['error', { varsIgnorePattern: '^(motion|[A-Z_])' }],
     },
   },
 ])

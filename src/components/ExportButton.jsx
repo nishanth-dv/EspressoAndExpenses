@@ -1,96 +1,135 @@
-import { memo, useMemo, useState, useRef, useEffect } from "react";
-import { useSelector } from "react-redux";
+import { memo, useMemo, useState, useRef } from "react";
+import PropTypes from "prop-types";
+import { useSelector, useDispatch } from "react-redux";
+import { showToast } from "../redux/slices/toastSlice";
 import Modal from "../preStyledElements/modal/Modal";
 import { applyFilter, getFilterLabel, getFilterFilename } from "../utils/filterUtils";
 import { exportToExcel, exportToPDF } from "../utils/exportUtils";
 
-const OPTIONS = [
-  { key: "excel", label: "Excel", icon: "fa-file-excel" },
-  { key: "pdf",   label: "PDF",   icon: "fa-file-pdf"   },
+const SECTIONS = [
+  { key: "dashboard",    label: "Dashboard",    icon: "fa-chart-pie" },
+  { key: "transactions", label: "Transactions", icon: "fa-list" },
+  { key: "investments",  label: "Investments",  icon: "fa-seedling" },
+  { key: "solvency",     label: "Solvency",     icon: "fa-shield-halved" },
 ];
 
-const ExportButton = () => {
-  const allTransactions = useSelector(
-    (state) => state.transactions.transactionData?.transactions ?? []
-  );
-  const insights = useSelector(
-    (state) => state.transactions.transactionData?.insights ?? {}
-  );
-  const budgets = useSelector(
-    (state) => state.transactions.transactionData?.budgets ?? {}
-  );
-  const filter = useSelector((state) => state.filter);
+const FORMATS = [
+  { key: "excel", label: "Excel", icon: "fa-file-excel" },
+  { key: "pdf",   label: "PDF",   icon: "fa-file-pdf" },
+];
 
-  const transactions = useMemo(
-    () => applyFilter(allTransactions, filter),
-    [allTransactions, filter]
-  );
-  const filterLabel = getFilterLabel(filter);
+const ExportButton = ({ scope = "transactions" }) => {
+  const dispatch = useDispatch();
+  const allTransactions = useSelector((s) => s.transactions.transactionData?.transactions ?? []);
+  const insights      = useSelector((s) => s.transactions.transactionData?.insights ?? {});
+  const budgets       = useSelector((s) => s.transactions.transactionData?.budgets ?? {});
+  const investments   = useSelector((s) => s.transactions.transactionData?.investments ?? []);
+  const cards         = useSelector((s) => s.transactions.transactionData?.cards ?? []);
+  const commitments   = useSelector((s) => s.transactions.transactionData?.commitments ?? []);
+  const lendings      = useSelector((s) => s.transactions.transactionData?.lendings ?? []);
+  const filter        = useSelector((s) => s.filter[scope]);
+
+  const transactions   = useMemo(() => applyFilter(allTransactions, filter), [allTransactions, filter]);
+  const filterLabel    = getFilterLabel(filter);
   const filterFilename = getFilterFilename(filter);
 
-  const [open, setOpen] = useState(false);
-  const [pending, setPending] = useState(null); // "excel" | "pdf"
-  const wrapperRef = useRef(null);
+  const [open, setOpen]             = useState(false);
+  const [format, setFormat]         = useState("excel");
+  const [sections, setSections]     = useState({ dashboard: true, transactions: true, investments: true, solvency: true });
+  const [filenameStem, setFilenameStem] = useState("");
+  const [editingName, setEditingName]   = useState(false);
+  const filenameRef = useRef(null);
 
-  useEffect(() => {
-    if (!open) return;
-    function onOutside(e) {
-      if (wrapperRef.current && !wrapperRef.current.contains(e.target))
-        setOpen(false);
+  const noneSelected = !Object.values(sections).some(Boolean);
+  const ext      = format === "excel" ? "xlsx" : "pdf";
+
+  function handleOpen() {
+    setFilenameStem(filterFilename);
+    setEditingName(false);
+    setOpen(true);
+  }
+
+  function toggle(key) {
+    setSections((s) => ({ ...s, [key]: !s[key] }));
+  }
+
+  function handleEditClick() {
+    setEditingName(true);
+    setTimeout(() => {
+      filenameRef.current?.focus();
+      filenameRef.current?.select();
+    }, 0);
+  }
+
+  function handleDownload() {
+    if (noneSelected) return;
+    const stem = filenameStem.trim() || filterFilename;
+    const data = { transactions, allTransactions, insights, budgets, investments, cards, commitments, lendings, sections };
+    try {
+      if (format === "excel") exportToExcel(data, filterLabel, stem);
+      else exportToPDF(data, filterLabel, stem);
+      dispatch(showToast({ message: `${format === "excel" ? "Excel" : "PDF"} downloaded` }));
+    } catch {
+      dispatch(showToast({ message: "Download failed", type: "error" }));
     }
-    document.addEventListener("mousedown", onOutside);
-    return () => document.removeEventListener("mousedown", onOutside);
-  }, [open]);
-
-  function handleConfirm() {
-    if (pending === "excel")
-      exportToExcel(transactions, allTransactions, insights, budgets, filterLabel, filterFilename);
-    else if (pending === "pdf")
-      exportToPDF(transactions, allTransactions, insights, budgets, filterLabel, filterFilename);
-    setPending(null);
+    setOpen(false);
   }
 
   return (
     <>
-      <div className="export-wrapper" ref={wrapperRef}>
-        <button
-          className={`export-trigger${open ? " export-trigger--open" : ""}`}
-          onClick={() => setOpen((o) => !o)}
-          title="Download"
-        >
-          <i className="fa-solid fa-download" />
-          <span className="export-trigger-label">Download</span>
-        </button>
+      <button className="export-trigger" onClick={handleOpen} title="Download">
+        <i className="fa-solid fa-download" />
+        <span className="export-trigger-label">Download</span>
+      </button>
 
-        {open && (
-          <div className="export-dropdown">
-            {OPTIONS.map((opt) => (
-              <button
-                key={opt.key}
-                className="export-dropdown-item"
-                onClick={() => { setOpen(false); setPending(opt.key); }}
-              >
-                <i className={`fa-solid ${opt.icon}`} />
-                {opt.label}
+      {open && (
+        <Modal open={open} onClose={() => setOpen(false)} title="Download Report">
+          <div className="export-modal">
+            <p className="export-modal-label">Include</p>
+            <div className="export-sections">
+              {SECTIONS.map((s) => (
+                <label key={s.key} className="export-section-item">
+                  <input type="checkbox" checked={sections[s.key]} onChange={() => toggle(s.key)} />
+                  <i className={`fa-solid ${s.icon}`} />
+                  <span>{s.label}</span>
+                </label>
+              ))}
+            </div>
+
+            <p className="export-modal-label">Format</p>
+            <div className="export-format-row">
+              {FORMATS.map((f) => (
+                <button
+                  key={f.key}
+                  className={`export-format-pill${format === f.key ? " export-format-pill--active" : ""}`}
+                  onClick={() => setFormat(f.key)}
+                >
+                  <i className={`fa-solid ${f.icon}`} />
+                  {f.label}
+                </button>
+              ))}
+            </div>
+
+            <p className="export-modal-label">File name</p>
+            <div className="export-filename-wrap">
+              <input
+                ref={filenameRef}
+                className={`export-filename-input${editingName ? " export-filename-input--editing" : ""}`}
+                value={filenameStem}
+                onChange={(e) => setFilenameStem(e.target.value)}
+                readOnly={!editingName}
+                onBlur={() => setEditingName(false)}
+              />
+              <span className="export-filename-ext">.{ext}</span>
+              <button className="export-filename-edit-btn" onClick={handleEditClick} title="Edit filename" type="button">
+                <i className="fa-solid fa-pen" />
               </button>
-            ))}
-          </div>
-        )}
-      </div>
+            </div>
 
-      {pending && (
-        <Modal open={!!pending} onClose={() => setPending(null)} title="Download Report">
-          <div className="export-confirm">
-            <p className="export-confirm-msg">
-              Download as <strong>{pending === "excel" ? "Excel" : "PDF"}</strong>
-              {filterLabel
-                ? <> for <strong>{filterLabel}</strong></>
-                : " for all transactions"}?
-            </p>
             <div className="form-actions export-confirm-actions">
-              <button className="cancel-button" onClick={() => setPending(null)}>Cancel</button>
-              <button className="export-confirm-btn" onClick={handleConfirm}>
-                <i className={`fa-solid ${pending === "excel" ? "fa-file-excel" : "fa-file-pdf"}`} />
+              <button className="cancel-button" onClick={() => setOpen(false)}>Cancel</button>
+              <button className="export-confirm-btn" onClick={handleDownload} disabled={noneSelected}>
+                <i className={`fa-solid ${format === "excel" ? "fa-file-excel" : "fa-file-pdf"}`} />
                 Download
               </button>
             </div>
@@ -99,6 +138,10 @@ const ExportButton = () => {
       )}
     </>
   );
+};
+
+ExportButton.propTypes = {
+  scope: PropTypes.oneOf(["transactions", "investments"]),
 };
 
 export default memo(ExportButton);

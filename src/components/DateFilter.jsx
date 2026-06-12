@@ -25,15 +25,15 @@ const DateFilter = () => {
     <div className="date-filter">
       <div className="filter-top-row">
         <div className="filter-pills">
-        {MODES.map((m) => (
-          <button
-            key={m.key}
-            className={`filter-pill${filter.mode === m.key ? " filter-pill--active" : ""}`}
-            onClick={() => handleMode(m.key)}
-          >
-            {m.label}
-          </button>
-        ))}
+          {MODES.map((m) => (
+            <button
+              key={m.key}
+              className={`filter-pill${filter.mode === m.key ? " filter-pill--active" : ""}`}
+              onClick={() => handleMode(m.key)}
+            >
+              {m.label}
+            </button>
+          ))}
         </div>
         <ExportButton />
       </div>
@@ -44,14 +44,18 @@ const DateFilter = () => {
             type="date"
             className="filter-custom-input"
             value={filter.from}
-            onChange={(e) => dispatch(setFilter({ ...filter, from: e.target.value }))}
+            onChange={(e) =>
+              dispatch(setFilter({ ...filter, from: e.target.value }))
+            }
           />
           <span className="filter-custom-sep">→</span>
           <input
             type="date"
             className="filter-custom-input"
             value={filter.to}
-            onChange={(e) => dispatch(setFilter({ ...filter, to: e.target.value }))}
+            onChange={(e) =>
+              dispatch(setFilter({ ...filter, to: e.target.value }))
+            }
           />
         </div>
       )}

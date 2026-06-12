@@ -1,9 +1,9 @@
 import PropTypes from "prop-types";
-import EspressoLoader from "./LoaderTheme";
+import Spinner from "./LoaderTheme";
 import "./loader.css";
 
-const Loader = ({ fullscreen = false, size = 96, label = "Brewing" }) => {
-  const content = <EspressoLoader size={size} label={label} />;
+const Loader = ({ fullscreen = false, label = "Brewing" }) => {
+  const content = <Spinner label={label} />;
 
   if (!fullscreen) return content;
 
@@ -12,7 +12,6 @@ const Loader = ({ fullscreen = false, size = 96, label = "Brewing" }) => {
 
 Loader.propTypes = {
   fullscreen: PropTypes.bool,
-  size: PropTypes.number,
   label: PropTypes.string,
 };
 

@@ -1,9 +1,30 @@
-import { memo } from "react";
+import { memo, useMemo } from "react";
 import PropTypes from "prop-types";
 import TransactionCard from "./TransactionCard";
 
+function dateKey(iso) {
+  const d = new Date(iso);
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+}
+
+function formatSeparatorDate(iso) {
+  return new Date(iso).toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  });
+}
+
 const TransactionList = ({ transactions, emptyMessage }) => {
-  if (!transactions.length) {
+  const sorted = useMemo(
+    () =>
+      [...transactions].sort(
+        (a, b) => new Date(b.occurredAt) - new Date(a.occurredAt),
+      ),
+    [transactions],
+  );
+
+  if (!sorted.length) {
     return (
       <div className="transaction-empty">
         <p>{emptyMessage ?? "No transactions yet."}</p>
@@ -13,9 +34,21 @@ const TransactionList = ({ transactions, emptyMessage }) => {
 
   return (
     <div className="transaction-list">
-      {transactions.map((t) => (
-        <TransactionCard key={t.id} transaction={t} />
-      ))}
+      {sorted.map((t, i) => {
+        const showSeparator =
+          i === 0 ||
+          dateKey(t.occurredAt) !== dateKey(sorted[i - 1].occurredAt);
+        return (
+          <div key={t.id}>
+            {showSeparator && (
+              <div className="tx-date-separator">
+                {formatSeparatorDate(t.occurredAt)}
+              </div>
+            )}
+            <TransactionCard transaction={t} />
+          </div>
+        );
+      })}
     </div>
   );
 };

@@ -3,7 +3,7 @@
   z-index: 1;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 8px;
   font-size: 20px;
   letter-spacing: 1px;
 }
@@ -27,11 +27,20 @@
   font-size: 17px;
   letter-spacing: 0.75px;
   font-family: "Smooch Sans", sans-serif;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .generic-button:hover {
   transform: translateY(-2px);
+}
+
+.generic-button:has(> i) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
 }
 
 .income-button,

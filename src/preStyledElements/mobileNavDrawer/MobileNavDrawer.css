@@ -2,15 +2,7 @@
   position: fixed;
   inset: 0;
   background: rgba(0, 0, 0, 0.45);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.25s ease;
   z-index: 1001;
-}
-
-.drawer-backdrop.show {
-  opacity: 1;
-  pointer-events: auto;
 }
 
 .drawer {
@@ -20,15 +12,9 @@
   width: 260px;
   height: 100vh;
   background: var(--bar-bg);
-  transform: translateX(100%);
-  transition: transform 0.3s ease;
   z-index: 1002;
   display: flex;
   flex-direction: column;
-}
-
-.drawer.open {
-  transform: translateX(0);
 }
 
 .drawer-menu {

@@ -1,70 +1,16 @@
-/* global google */
-import { BrowserRouter, Routes, Route, Navigate, useNavigate } from "react-router-dom";
-import { useSelector, useDispatch } from "react-redux";
-import { useEffect, useCallback } from "react";
-import { login } from "./redux/slices/authSlice";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { useSelector } from "react-redux";
 import LandingPage from "./pages/LandingPage";
 import HomePage from "./pages/HomePage";
 import Expense from "./pages/ExpensePage";
 import Invest from "./pages/InvestmentPage";
 import Dashboard from "./pages/DashboardPage";
+import Solvency from "./pages/SolvencyPage";
+import Preferences from "./pages/PreferencesPage";
+import Toast from "./components/Toast";
 import "@fortawesome/fontawesome-free/css/all.min.css";
 import "./styles.css";
-
-function parseCredential(jwt) {
-  const payload = JSON.parse(atob(jwt.split(".")[1]));
-  return {
-    name: payload.name,
-    email: payload.email,
-    picture: payload.picture,
-    sub: payload.sub,
-    token: jwt,
-  };
-}
-
-// Initializes Google Sign-In once on every page load.
-// Handles credentials for both the sign-in button and One Tap / auto-select,
-// so returning users are re-authenticated without visiting the login page.
-function GoogleAuthManager() {
-  const dispatch = useDispatch();
-  const navigate = useNavigate();
-
-  const handleCredentialResponse = useCallback(
-    (response) => {
-      dispatch(login(parseCredential(response.credential)));
-      navigate("/Transactions", { replace: true });
-    },
-    [dispatch, navigate]
-  );
-
-  useEffect(() => {
-    let cleanup = () => {};
-
-    const init = () => {
-      google.accounts.id.initialize({
-        client_id: import.meta.env.VITE_GOOGLE_CLIENT_ID,
-        callback: handleCredentialResponse,
-        auto_select: true, // silently signs in returning users
-      });
-      // prompt() is a no-op if there is no active Google session;
-      // for returning users it shows One Tap or auto-selects silently.
-      google.accounts.id.prompt();
-    };
-
-    if (window.google) {
-      init();
-    } else {
-      // GSI script is loaded async — wait for it
-      const script = document.querySelector('script[src*="accounts.google.com/gsi"]');
-      script?.addEventListener("load", init, { once: true });
-      cleanup = () => script?.removeEventListener("load", init);
-    }
-
-    return cleanup;
-  }, [handleCredentialResponse]);
-
-  return null;
-}
+import "./styles/glass.css";
 
 function Protected({ children }) {
   const userInfo = useSelector((state) => state.auth.user);
@@ -74,7 +20,7 @@ function Protected({ children }) {
 export default function App() {
   return (
     <BrowserRouter>
-      <GoogleAuthManager />
+      <Toast />
       <Routes>
         <Route path="/Login" element={<LandingPage />} />
         <Route
@@ -85,6 +31,7 @@ export default function App() {
             </Protected>
           }
         >
+          <Route index element={<Navigate to="/Transactions" replace />} />
           <Route
             path="Transactions"
             element={
@@ -106,6 +53,22 @@ export default function App() {
             element={
               <Protected>
                 <Dashboard />
+              </Protected>
+            }
+          />
+          <Route
+            path="Solvency"
+            element={
+              <Protected>
+                <Solvency />
+              </Protected>
+            }
+          />
+          <Route
+            path="Preferences"
+            element={
+              <Protected>
+                <Preferences />
               </Protected>
             }
           />

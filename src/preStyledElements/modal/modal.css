@@ -1,37 +1,67 @@
-.modal-dialog {
-  border: none;
-  padding: 0;
-  margin: auto;
-  width: 100%;
-  max-width: 420px;
-  background: transparent;
-  box-sizing: border-box;
+/* ── Backdrop ── */
+
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   display: flex;
   align-items: center;
   justify-content: center;
+  z-index: 1000;
+  padding: 16px;
+  box-sizing: border-box;
 }
 
-.modal-dialog::backdrop {
-  background: rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-}
+/* ── Modal panel ── */
 
 .modal {
+  /* Light panel — same in both themes so the modal always reads as a
+     bright, focused surface. Text and form tokens are forced to the dark
+     palette so content is readable on the light panel regardless of the
+     app's global light/dark setting. */
   background: #ffffff;
-  width: 95%;
-  border-radius: 16px;
+  color-scheme: light;
+
+  --modal-bg: #ffffff;
+  --text-primary: #1a1220;
+  --text-secondary: rgba(26, 18, 32, 0.68);
+  --text-label: rgba(26, 18, 32, 0.42);
+  --text-chevron: rgba(26, 18, 32, 0.3);
+  --surface-bg: rgba(26, 18, 32, 0.04);
+  --surface-border: rgba(26, 18, 32, 0.11);
+  --surface-border-open: rgba(26, 18, 32, 0.2);
+  --surface-active: rgba(26, 18, 32, 0.07);
+  --detail-divider: rgba(26, 18, 32, 0.08);
+  --field-bg: #ffffff;
+  --field-text: #1a1220;
+  --field-border: rgba(26, 18, 32, 0.18);
+  --field-label: rgba(26, 18, 32, 0.45);
+  --empty-text: rgba(26, 18, 32, 0.35);
+  --toggle-track: rgba(26, 18, 32, 0.1);
+  /* Semantic colors match the global palette so red/green/blue read the
+     same inside the modal as everywhere else in the app. */
+  --amount-expense: #ef4444;
+  --amount-income: #16a34a;
+  --amount-investment: #5b8dee;
+  --delete-color: #ef4444;
+
+  width: 100%;
+  max-width: 440px;
+  border-radius: 18px;
   padding: 20px;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.2);
-  animation: modal-in 0.2s ease-out;
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.25);
   box-sizing: border-box;
   isolation: isolate;
   font-size: 17px;
+  overflow: hidden;
+  border: 1px solid rgba(26, 18, 32, 0.1);
 }
 
 .modal-content {
-  padding: 25px 0 0 0;
-  max-height: 70vh;
+  padding: 14px 0 0 0;
+  max-height: 72vh;
   overflow-y: auto;
   scrollbar-width: none;
   -ms-overflow-style: none;
@@ -51,8 +81,8 @@
 .modal-header h2 {
   margin: 0;
   font-size: 20px;
-  font-weight: 600;
-  color: #080816;
+  font-weight: 700;
+  color: var(--text-primary);
 }
 
 .modal-close-btn {
@@ -65,16 +95,18 @@
   background: none;
   border-radius: 8px;
   font-size: 16px;
-  color: #080816;
+  color: var(--text-primary);
   opacity: 0.45;
   cursor: pointer;
   flex-shrink: 0;
-  transition: opacity 0.15s, background 0.15s;
+  transition:
+    opacity 0.15s,
+    background 0.15s;
 }
 
 .modal-close-btn:hover {
   opacity: 1;
-  background: rgba(0, 0, 0, 0.07);
+  background: var(--surface-active);
 }
 
 .modal .cancel-button {
@@ -82,13 +114,9 @@
   font-weight: 500;
 }
 
-@keyframes modal-in {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+/* Native date/time pickers always light inside the modal */
+.modal input[type="date"],
+.modal input[type="time"],
+.modal input[type="datetime-local"] {
+  color-scheme: light;
 }

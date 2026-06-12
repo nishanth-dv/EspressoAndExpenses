@@ -14,6 +14,8 @@ import {
   getTransactionFrequency,
   getRecurringSpend,
 } from "./dashboardUtils";
+import { calcReturns, getTypeInfo } from "./investmentUtils";
+import { calcHealthScore, cardUtilization, COMMITMENT_TYPES } from "./solvencyUtils";
 import { CATEGORIES } from "./constants";
 
 const DATE_FMT = new Intl.DateTimeFormat("en-IN", {
@@ -28,7 +30,12 @@ function fmtDate(iso) {
   return DATE_FMT.format(new Date(iso));
 }
 
-// ── Shared data builders ─────────────────────────────
+function fmtDateShort(iso) {
+  if (!iso) return "—";
+  return new Date(iso).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+// ── Data builders ────────────────────────────────────
 
 function buildDashboardRows(transactions, allTransactions, insights, budgets) {
   const summary = getSummary(transactions, insights);
@@ -76,11 +83,11 @@ function buildDashboardRows(transactions, allTransactions, insights, budgets) {
 
   rows.push(["BUDGET VS ACTUAL (THIS MONTH)"]);
   rows.push(["Category", "Spent", "Budget", "Status"]);
+  const now = new Date();
   CATEGORIES.forEach((cat) => {
     const spent = transactions
       .filter((t) => {
         const d = new Date(t.occurredAt);
-        const now = new Date();
         return (
           t.transactionType === "expense" &&
           (t.category || "Other") === cat &&
@@ -90,7 +97,10 @@ function buildDashboardRows(transactions, allTransactions, insights, budgets) {
       })
       .reduce((s, t) => s + parseFloat(t.amount), 0);
     const budget = budgets[cat] || 0;
-    const status = budget > 0 ? (spent > budget ? "Over budget" : `${((spent / budget) * 100).toFixed(0)}% used`) : "No budget set";
+    const status =
+      budget > 0
+        ? spent > budget ? "Over budget" : `${((spent / budget) * 100).toFixed(0)}% used`
+        : "No budget set";
     rows.push([cat, INR.format(spent), budget > 0 ? INR.format(budget) : "—", status]);
   });
   rows.push([]);
@@ -108,7 +118,7 @@ function buildTransactionRows(transactions) {
   return transactions.map((t) => [
     fmtDate(t.occurredAt),
     t.name || t.source || "—",
-    t.transactionType === "income" ? "Income" : "Expense",
+    t.transactionType === "income" ? "Income" : t.transactionType === "investment" ? "Investment" : "Expense",
     parseFloat(t.amount),
     t.category || "—",
     t.paymentMode || "—",
@@ -116,41 +126,117 @@ function buildTransactionRows(transactions) {
   ]);
 }
 
+function buildInvestmentRows(investments) {
+  return investments.map((inv) => {
+    const info = getTypeInfo(inv.type);
+    const { investedAmount, currentValue, absoluteReturn, returnPct } = calcReturns(inv);
+    return [
+      inv.name,
+      info.label,
+      inv.ticker || "—",
+      info.subtype === "unit" ? inv.quantity : "—",
+      INR.format(investedAmount),
+      INR.format(currentValue),
+      INR.format(absoluteReturn),
+      `${returnPct.toFixed(2)}%`,
+    ];
+  });
+}
+
+function buildSolvencyRows(cards, commitments, lendings) {
+  const { score, grade } = calcHealthScore(cards, commitments, lendings);
+  const rows = [];
+
+  rows.push(["HEALTH SCORE"]);
+  rows.push(["Score", score, "Grade", grade]);
+  rows.push([]);
+
+  rows.push(["CREDIT CARDS"]);
+  rows.push(["Name", "Network", "Limit (₹)", "Outstanding (₹)", "Due Day", "Utilization %"]);
+  cards.forEach((c) =>
+    rows.push([
+      c.name,
+      c.network || "—",
+      parseFloat(c.limit) || 0,
+      parseFloat(c.outstanding) || 0,
+      c.dueDay || "—",
+      `${(cardUtilization(c) * 100).toFixed(0)}%`,
+    ]),
+  );
+  rows.push([]);
+
+  rows.push(["COMMITMENTS / EMIs"]);
+  rows.push(["Name", "Type", "EMI / Month (₹)", "Outstanding (₹)", "Due Day"]);
+  commitments.forEach((c) => {
+    const typeLabel = COMMITMENT_TYPES.find((t) => t.key === c.type)?.label ?? c.type;
+    rows.push([
+      c.name,
+      typeLabel,
+      parseFloat(c.emiAmount) || 0,
+      parseFloat(c.outstanding) || 0,
+      c.dueDay || "—",
+    ]);
+  });
+  rows.push([]);
+
+  rows.push(["LENDINGS"]);
+  rows.push(["Name", "Direction", "Outstanding (₹)", "Expected Return"]);
+  lendings.forEach((l) =>
+    rows.push([
+      l.name,
+      l.direction === "lent" ? "Lent" : "Borrowed",
+      parseFloat(l.outstanding) || 0,
+      fmtDateShort(l.expectedReturn),
+    ]),
+  );
+
+  return rows;
+}
+
 // ── Excel export ─────────────────────────────────────
 
-export function exportToExcel(transactions, allTransactions, insights, budgets, filterLabel, filterFilename) {
+export function exportToExcel(
+  { transactions, allTransactions, insights, budgets, investments, cards, commitments, lendings, sections },
+  filterLabel,
+  filterFilename,
+) {
   const wb = XLSX.utils.book_new();
 
-  // Dashboard sheet
-  const dashRows = buildDashboardRows(transactions, allTransactions, insights, budgets);
-  if (filterLabel) dashRows.unshift([], [`Filter: ${filterLabel}`]);
-  const dashSheet = XLSX.utils.aoa_to_sheet(dashRows);
-  dashSheet["!cols"] = [{ wch: 28 }, { wch: 18 }, { wch: 18 }, { wch: 16 }];
-  XLSX.utils.book_append_sheet(wb, dashSheet, "Dashboard");
+  if (sections.dashboard) {
+    const dashRows = buildDashboardRows(transactions, allTransactions, insights, budgets);
+    if (filterLabel) dashRows.unshift([], [`Filter: ${filterLabel}`]);
+    const sheet = XLSX.utils.aoa_to_sheet(dashRows);
+    sheet["!cols"] = [{ wch: 28 }, { wch: 18 }, { wch: 18 }, { wch: 16 }];
+    XLSX.utils.book_append_sheet(wb, sheet, "Dashboard");
+  }
 
-  // Transactions sheet
-  const txHeaders = ["Date & Time", "Name", "Type", "Amount (₹)", "Category", "Payment Mode", "Notes"];
-  const txRows = buildTransactionRows(transactions);
-  const txSheet = XLSX.utils.aoa_to_sheet([txHeaders, ...txRows]);
-  txSheet["!cols"] = [{ wch: 20 }, { wch: 22 }, { wch: 10 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 30 }];
-  XLSX.utils.book_append_sheet(wb, txSheet, "Transactions");
+  if (sections.transactions) {
+    const headers = ["Date & Time", "Name", "Type", "Amount (₹)", "Category", "Payment Mode", "Notes"];
+    const sheet = XLSX.utils.aoa_to_sheet([headers, ...buildTransactionRows(transactions)]);
+    sheet["!cols"] = [{ wch: 20 }, { wch: 22 }, { wch: 12 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 30 }];
+    XLSX.utils.book_append_sheet(wb, sheet, "Transactions");
+  }
 
-  // Investments sheet (placeholder)
-  const invSheet = XLSX.utils.aoa_to_sheet([
-    ["Investments"],
-    [],
-    ["No investment data available yet."],
-  ]);
-  XLSX.utils.book_append_sheet(wb, invSheet, "Investments");
+  if (sections.investments) {
+    const headers = ["Name", "Type", "Ticker", "Quantity", "Invested", "Current Value", "Return (₹)", "Return %"];
+    const sheet = XLSX.utils.aoa_to_sheet([headers, ...buildInvestmentRows(investments)]);
+    sheet["!cols"] = [{ wch: 24 }, { wch: 14 }, { wch: 10 }, { wch: 10 }, { wch: 16 }, { wch: 16 }, { wch: 16 }, { wch: 10 }];
+    XLSX.utils.book_append_sheet(wb, sheet, "Investments");
+  }
 
-  const filename = filterFilename ? `${filterFilename}.xlsx` : "Expenses.xlsx";
+  if (sections.solvency) {
+    const rows = buildSolvencyRows(cards, commitments, lendings);
+    if (filterLabel) rows.unshift([], [`Filter: ${filterLabel}`]);
+    const sheet = XLSX.utils.aoa_to_sheet(rows);
+    sheet["!cols"] = [{ wch: 24 }, { wch: 18 }, { wch: 18 }, { wch: 18 }, { wch: 10 }, { wch: 14 }];
+    XLSX.utils.book_append_sheet(wb, sheet, "Solvency");
+  }
 
-  XLSX.writeFile(wb, filename);
+  XLSX.writeFile(wb, `${filterFilename || "Expenses"}.xlsx`);
 }
 
 // ── PDF export ───────────────────────────────────────
 
-// jsPDF's built-in fonts don't include the ₹ glyph; use "Rs." instead
 const PDF_NUM = new Intl.NumberFormat("en-IN");
 function pdfMoney(v) {
   return `Rs. ${PDF_NUM.format(Math.round(v))}`;
@@ -159,134 +245,194 @@ function pdfMoney(v) {
 const PDF_FONT = "helvetica";
 
 const PDF_STYLES = {
-  headStyles: { fillColor: [8, 8, 22], textColor: [224, 214, 213], fontStyle: "bold", fontSize: 9, font: PDF_FONT },
+  headStyles: {
+    fillColor: [8, 8, 22],
+    textColor: [224, 214, 213],
+    fontStyle: "bold",
+    fontSize: 9,
+    font: PDF_FONT,
+  },
   bodyStyles: { fontSize: 9, font: PDF_FONT },
   alternateRowStyles: { fillColor: [245, 238, 235] },
   margin: { left: 14, right: 14 },
 };
+
+function pdfPageTitle(doc, title, subtitle) {
+  doc.setFont(PDF_FONT, "bold");
+  doc.setFontSize(18);
+  doc.setTextColor(8, 8, 22);
+  doc.text(title, 14, 16);
+  if (subtitle) {
+    doc.setFontSize(10);
+    doc.setFont(PDF_FONT, "normal");
+    doc.setTextColor(100, 100, 120);
+    doc.text(subtitle, 14, 22);
+  }
+  return subtitle ? 28 : 22;
+}
 
 function pdfSection(doc, title, head, body, startY) {
   doc.setFont(PDF_FONT, "bold");
   doc.setFontSize(11);
   doc.setTextColor(8, 8, 22);
   doc.text(title, 14, startY);
-  autoTable(doc, {
-    head: [head],
-    body,
-    startY: startY + 4,
-    ...PDF_STYLES,
-  });
+  autoTable(doc, { head: [head], body, startY: startY + 4, ...PDF_STYLES });
   return doc.lastAutoTable.finalY + 8;
 }
 
-export function exportToPDF(transactions, allTransactions, insights, budgets, filterLabel, filterFilename) {
+export function exportToPDF(
+  { transactions, allTransactions, insights, budgets, investments, cards, commitments, lendings, sections },
+  filterLabel,
+  filterFilename,
+) {
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
-  const summary = getSummary(transactions, insights);
-  const categoryData = getCategoryBreakdown(transactions);
-  const paymentData = getPaymentSplit(transactions);
-  const trend = getMonthlyTrend(allTransactions);
-  const monthDelta = getMonthDelta(allTransactions);
-  const velocity = getSpendingVelocity(allTransactions);
-  const recurring = getRecurringSpend(transactions);
+  const subtitle = filterLabel ? `Filter: ${filterLabel}` : null;
+  let firstPage = true;
 
-  // ── Page 1: Dashboard ──────────────────────────────
-  doc.setFont(PDF_FONT);
-  doc.setFontSize(18);
-  doc.setTextColor(8, 8, 22);
-  doc.text("Dashboard", 14, 16);
-  if (filterLabel) {
-    doc.setFontSize(10);
-    doc.setTextColor(100, 100, 120);
-    doc.text(`Filter: ${filterLabel}`, 14, 22);
+  function nextPage() {
+    if (!firstPage) doc.addPage();
+    firstPage = false;
   }
 
-  let y = filterLabel ? 28 : 22;
+  // ── Dashboard ──────────────────────────────────────
+  if (sections.dashboard) {
+    nextPage();
+    let y = pdfPageTitle(doc, "Dashboard", subtitle);
+    const summary = getSummary(transactions, insights);
+    const categoryData = getCategoryBreakdown(transactions);
+    const paymentData = getPaymentSplit(transactions);
+    const trend = getMonthlyTrend(allTransactions);
+    const monthDelta = getMonthDelta(allTransactions);
+    const velocity = getSpendingVelocity(allTransactions);
+    const recurring = getRecurringSpend(transactions);
+    const now = new Date();
 
-  y = pdfSection(doc, "Summary", ["Metric", "Value"], [
-    ["Balance", pdfMoney(summary.balance)],
-    ["Total Income", pdfMoney(summary.totalIncome)],
-    ["Total Expenses", pdfMoney(summary.totalExpenses)],
-    ["Savings Rate", `${summary.savingsRate.toFixed(1)}%`],
-    ["This Month vs Last", `${pdfMoney(monthDelta.thisTotal)} (last: ${pdfMoney(monthDelta.lastTotal)})`],
-    ["Projected Month-end", pdfMoney(velocity.projected)],
-  ], y);
+    y = pdfSection(doc, "Summary", ["Metric", "Value"], [
+      ["Balance", pdfMoney(summary.balance)],
+      ["Total Income", pdfMoney(summary.totalIncome)],
+      ["Total Expenses", pdfMoney(summary.totalExpenses)],
+      ["Savings Rate", `${summary.savingsRate.toFixed(1)}%`],
+      ["This Month vs Last", `${pdfMoney(monthDelta.thisTotal)} (last: ${pdfMoney(monthDelta.lastTotal)})`],
+      ["Projected Month-end", pdfMoney(velocity.projected)],
+    ], y);
 
-  if (categoryData.length > 0) {
-    y = pdfSection(doc, "Category Breakdown", ["Category", "Amount", "% of Total"],
-      categoryData.map((c) => [c.category, pdfMoney(c.amount), `${c.pct}%`]), y);
+    if (categoryData.length > 0)
+      y = pdfSection(doc, "Category Breakdown", ["Category", "Amount", "% of Total"],
+        categoryData.map((c) => [c.category, pdfMoney(c.amount), `${c.pct}%`]), y);
+
+    if (paymentData.length > 0)
+      y = pdfSection(doc, "Payment Mode Split", ["Mode", "Amount", "% of Total"],
+        paymentData.map((p) => [p.mode, pdfMoney(p.amount), `${p.pct}%`]), y);
+
+    y = pdfSection(doc, "Monthly Trend (Last 6 Months)", ["Month", "Income", "Expenses"],
+      trend.map((m) => [m.month, pdfMoney(m.income), pdfMoney(m.expense)]), y);
+
+    const budgetRows = CATEGORIES.map((cat) => {
+      const spent = allTransactions
+        .filter((t) => {
+          const d = new Date(t.occurredAt);
+          return t.transactionType === "expense" && (t.category || "Other") === cat
+            && d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth();
+        })
+        .reduce((s, t) => s + parseFloat(t.amount), 0);
+      const budget = budgets[cat] || 0;
+      return [cat, pdfMoney(spent), budget > 0 ? pdfMoney(budget) : "—",
+        budget > 0 ? (spent > budget ? "Over" : `${((spent / budget) * 100).toFixed(0)}%`) : "—"];
+    });
+    y = pdfSection(doc, "Budget vs Actual (This Month)", ["Category", "Spent", "Budget", "Used"], budgetRows, y);
+
+    if (recurring.length > 0)
+      pdfSection(doc, "Recurring Expenses", ["Name", "Count", "Total"],
+        recurring.map((r) => [r.name, String(r.count), pdfMoney(r.total)]), y);
   }
 
-  if (paymentData.length > 0) {
-    y = pdfSection(doc, "Payment Mode Split", ["Mode", "Amount", "% of Total"],
-      paymentData.map((p) => [p.mode, pdfMoney(p.amount), `${p.pct}%`]), y);
+  // ── Transactions ───────────────────────────────────
+  if (sections.transactions) {
+    nextPage();
+    const y = pdfPageTitle(doc, "Transactions", subtitle);
+    autoTable(doc, {
+      head: [["Date & Time", "Name", "Type", "Amount", "Category", "Mode"]],
+      body: transactions.map((t) => [
+        fmtDate(t.occurredAt),
+        t.name || t.source || "—",
+        t.transactionType === "income" ? "Income" : t.transactionType === "investment" ? "Investment" : "Expense",
+        pdfMoney(parseFloat(t.amount)),
+        t.category || "—",
+        t.paymentMode || "—",
+      ]),
+      startY: y,
+      ...PDF_STYLES,
+      columnStyles: { 0: { cellWidth: 32 }, 2: { cellWidth: 20 }, 3: { cellWidth: 22 } },
+    });
   }
 
-  y = pdfSection(doc, "Monthly Trend (Last 6 Months)", ["Month", "Income", "Expenses"],
-    trend.map((m) => [m.month, pdfMoney(m.income), pdfMoney(m.expense)]), y);
-
-  const now = new Date();
-  const budgetRows = CATEGORIES.map((cat) => {
-    const spent = allTransactions
-      .filter((t) => {
-        const d = new Date(t.occurredAt);
-        return (
-          t.transactionType === "expense" &&
-          (t.category || "Other") === cat &&
-          d.getFullYear() === now.getFullYear() &&
-          d.getMonth() === now.getMonth()
-        );
-      })
-      .reduce((s, t) => s + parseFloat(t.amount), 0);
-    const budget = budgets[cat] || 0;
-    return [cat, pdfMoney(spent), budget > 0 ? pdfMoney(budget) : "—",
-      budget > 0 ? (spent > budget ? "Over" : `${((spent / budget) * 100).toFixed(0)}%`) : "—"];
-  });
-  y = pdfSection(doc, "Budget vs Actual (This Month)",
-    ["Category", "Spent", "Budget", "Used"], budgetRows, y);
-
-  if (recurring.length > 0) {
-    pdfSection(doc, "Recurring Expenses", ["Name", "Count", "Total"],
-      recurring.map((r) => [r.name, String(r.count), pdfMoney(r.total)]), y);
+  // ── Investments ────────────────────────────────────
+  if (sections.investments) {
+    nextPage();
+    let y = pdfPageTitle(doc, "Investments", subtitle);
+    if (investments.length === 0) {
+      doc.setFontSize(11);
+      doc.setTextColor(120, 120, 140);
+      doc.text("No investments recorded.", 14, y);
+    } else {
+      autoTable(doc, {
+        head: [["Name", "Type", "Ticker", "Qty", "Invested", "Current", "Return", "Return %"]],
+        body: investments.map((inv) => {
+          const info = getTypeInfo(inv.type);
+          const { investedAmount, currentValue, absoluteReturn, returnPct } = calcReturns(inv);
+          return [
+            inv.name,
+            info.label,
+            inv.ticker || "—",
+            info.subtype === "unit" ? String(inv.quantity) : "—",
+            pdfMoney(investedAmount),
+            pdfMoney(currentValue),
+            pdfMoney(absoluteReturn),
+            `${returnPct.toFixed(1)}%`,
+          ];
+        }),
+        startY: y,
+        ...PDF_STYLES,
+        columnStyles: { 0: { cellWidth: 36 }, 1: { cellWidth: 20 } },
+      });
+    }
   }
 
-  // ── Page 2: Transactions ───────────────────────────
-  doc.addPage();
-  doc.setFont(PDF_FONT);
-  doc.setFontSize(18);
-  doc.setTextColor(8, 8, 22);
-  doc.text("Transactions", 14, 16);
-  if (filterLabel) {
-    doc.setFontSize(10);
-    doc.setTextColor(100, 100, 120);
-    doc.text(`Filter: ${filterLabel}`, 14, 22);
+  // ── Solvency ───────────────────────────────────────
+  if (sections.solvency) {
+    nextPage();
+    let y = pdfPageTitle(doc, "Solvency", subtitle);
+    const { score, grade } = calcHealthScore(cards, commitments, lendings);
+
+    y = pdfSection(doc, "Health Score", ["Score", "Grade"],
+      [[String(score), grade]], y);
+
+    if (cards.length > 0)
+      y = pdfSection(doc, "Credit Cards",
+        ["Name", "Network", "Limit", "Outstanding", "Due Day", "Utilization"],
+        cards.map((c) => [
+          c.name, c.network || "—", pdfMoney(parseFloat(c.limit) || 0),
+          pdfMoney(parseFloat(c.outstanding) || 0), c.dueDay || "—",
+          `${(cardUtilization(c) * 100).toFixed(0)}%`,
+        ]), y);
+
+    if (commitments.length > 0)
+      y = pdfSection(doc, "Commitments / EMIs",
+        ["Name", "Type", "EMI / Month", "Outstanding", "Due Day"],
+        commitments.map((c) => {
+          const typeLabel = COMMITMENT_TYPES.find((t) => t.key === c.type)?.label ?? c.type;
+          return [c.name, typeLabel, pdfMoney(parseFloat(c.emiAmount) || 0),
+            pdfMoney(parseFloat(c.outstanding) || 0), c.dueDay || "—"];
+        }), y);
+
+    if (lendings.length > 0)
+      pdfSection(doc, "Lendings",
+        ["Name", "Direction", "Outstanding", "Expected Return"],
+        lendings.map((l) => [
+          l.name, l.direction === "lent" ? "Lent" : "Borrowed",
+          pdfMoney(parseFloat(l.outstanding) || 0), fmtDateShort(l.expectedReturn),
+        ]), y);
   }
 
-  autoTable(doc, {
-    head: [["Date & Time", "Name", "Type", "Amount", "Category", "Mode"]],
-    body: transactions.map((t) => [
-      fmtDate(t.occurredAt),
-      t.name || t.source || "—",
-      t.transactionType === "income" ? "Income" : "Expense",
-      pdfMoney(parseFloat(t.amount)),
-      t.category || "—",
-      t.paymentMode || "—",
-    ]),
-    startY: filterLabel ? 28 : 22,
-    ...PDF_STYLES,
-    columnStyles: { 0: { cellWidth: 32 }, 2: { cellWidth: 18 }, 3: { cellWidth: 22 } },
-  });
-
-  // ── Page 3: Investments ────────────────────────────
-  doc.addPage();
-  doc.setFont(PDF_FONT);
-  doc.setFontSize(18);
-  doc.setTextColor(8, 8, 22);
-  doc.text("Investments", 14, 16);
-  doc.setFontSize(11);
-  doc.setTextColor(120, 120, 140);
-  doc.text("No investment data available yet.", 14, 28);
-
-  const filename = filterFilename ? `${filterFilename}.pdf` : "Expenses.pdf";
-
-  doc.save(filename);
+  doc.save(`${filterFilename || "Expenses"}.pdf`);
 }

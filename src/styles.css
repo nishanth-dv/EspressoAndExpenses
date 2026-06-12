@@ -11,13 +11,25 @@
   --surface-border-open: rgba(224, 214, 213, 0.22);
   --surface-active: rgba(224, 214, 213, 0.1);
   --detail-divider: rgba(224, 214, 213, 0.1);
-  --amount-expense: #d4735a;
-  --amount-income: #7abf8e;
+  /* Semantic amount colors — set once in :root and not overridden anywhere
+     else so they read identically across every theme/skin combination.
+     Income green matches the Add Investment FAB's gradient start (#16a34a)
+     and expense red matches the Add Expense FAB's gradient start (#ef4444),
+     so the whole app speaks in one family of greens and reds. */
+  --amount-expense: #ef4444;
+  --amount-income: #16a34a;
+  --amount-investment: #5b8dee;
   --category-bg: #2a160c;
   --category-text: #e0d6d5;
-  --delete-color: #d4735a;
+  --delete-color: #ef4444;
   --empty-text: rgba(224, 214, 213, 0.35);
-  --toggle-track: rgba(8, 8, 22, 0.12);
+  --toggle-track: rgba(224, 214, 213, 0.18);
+  /* Modal / form field theming */
+  --modal-bg: #1a1928;
+  --field-bg: #24233a;
+  --field-text: #e0d6d5;
+  --field-border: rgba(224, 214, 213, 0.22);
+  --field-label: rgba(224, 214, 213, 0.5);
 }
 
 [data-theme="light"] {
@@ -26,20 +38,33 @@
   --bar-text: #080816;
   --text-primary: #080816;
   --text-secondary: rgba(8, 8, 22, 0.7);
-  --text-label: rgba(8, 8, 22, 0.4);
+  --text-label: rgba(8, 8, 22, 0.8);
   --text-chevron: rgba(8, 8, 22, 0.3);
   --surface-bg: rgba(8, 8, 22, 0.04);
   --surface-border: rgba(8, 8, 22, 0.1);
   --surface-border-open: rgba(8, 8, 22, 0.18);
   --surface-active: rgba(8, 8, 22, 0.07);
   --detail-divider: rgba(8, 8, 22, 0.08);
-  --amount-expense: #c0392b;
-  --amount-income: #27ae60;
+  /* --amount-* and --delete-color intentionally inherit from :root so the
+     semantic colors stay identical between light and dark. */
   --category-bg: #2a160c;
   --category-text: #e0d6d5;
-  --delete-color: #c0392b;
   --empty-text: rgba(8, 8, 22, 0.35);
   --toggle-track: rgba(8, 8, 22, 0.12);
+  /* Modal / form field theming */
+  --modal-bg: #ffffff;
+  --field-bg: #ffffff;
+  --field-text: #080816;
+  --field-border: rgba(8, 8, 22, 0.18);
+  --field-label: rgba(8, 8, 22, 0.45);
+}
+
+:root {
+  color-scheme: dark;
+}
+
+[data-theme="light"] {
+  color-scheme: light;
 }
 
 html,
@@ -48,7 +73,12 @@ body {
   background: var(--bg);
   font-family: "Smooch Sans", sans-serif;
   height: 100%;
-  scrollbar-gutter: stable;
+  /* Track the visual viewport so a fixed/flex footer follows the URL bar
+     as it expands and collapses on mobile browsers. */
+  height: 100dvh;
+  /* Prevent any descendant from introducing a horizontal scrollbar. */
+  overflow-x: hidden;
+  max-width: 100%;
 }
 
 * {
@@ -60,14 +90,20 @@ body {
   outline: none;
 }
 
-button, input, select, textarea {
+button,
+input,
+select,
+textarea {
   font-family: inherit;
 }
 
 #root {
   min-height: 100%;
+  min-height: 100dvh;
   display: flex;
   flex-direction: column;
+  max-width: 100%;
+  overflow-x: hidden;
 }
 
 .flex {
@@ -81,10 +117,28 @@ button, input, select, textarea {
 }
 
 .navbar {
-  flex-shrink: 0;
-  justify-content: space-between;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
   padding: 5px 10px;
   background: var(--bar-bg);
+}
+
+/* The navbar background spans the full viewport; this inner wrapper centers
+   the controls in line with the page content (same max-width and centering
+   as .page-container). Overrides the container's side padding since the
+   .navbar already has its own. */
+.navbar-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+}
+
+.navbar-inner.page-container {
+  padding: 0;
 }
 
 .nav-desktop {
@@ -114,10 +168,1163 @@ button, input, select, textarea {
 .display-picture {
   width: 35px;
   border-radius: 50%;
+  display: block;
 }
 
 .logout {
   margin-left: 10px;
+}
+
+/* ── User menu (DP popover) ─────────────────────────────── */
+
+.user-menu-wrap {
+  position: relative;
+}
+
+.user-menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  background: transparent;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+
+.user-menu-trigger:hover,
+.user-menu-trigger--active {
+  border-color: var(--surface-border-open);
+}
+
+.user-menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 60;
+  min-width: 240px;
+  padding: 6px;
+  background: var(--bg);
+  border: 1px solid var(--surface-border-open);
+  border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.24);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  animation: userMenuIn 0.12s ease-out;
+}
+
+@keyframes userMenuIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.user-menu-header {
+  padding: 8px 12px 10px;
+  border-bottom: 1px solid var(--surface-border);
+  margin-bottom: 4px;
+}
+
+.user-menu-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.user-menu-email {
+  font-size: 12px;
+  color: var(--text-label);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.user-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 10px 14px;
+  background: transparent;
+  border: none;
+  border-radius: 7px;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.user-menu-item > i {
+  width: 16px;
+  font-size: 14px;
+  color: var(--text-primary);
+  text-align: center;
+}
+
+.user-menu-item:hover:not(:disabled),
+.user-menu-item:focus-visible {
+  background: var(--surface-active);
+  outline: none;
+}
+
+.user-menu-item:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.user-menu-sep {
+  height: 1px;
+  background: var(--surface-border);
+  margin: 4px 0;
+}
+
+.user-menu-item--danger {
+  color: var(--delete-color);
+}
+
+.user-menu-item--danger > i {
+  color: var(--delete-color);
+}
+
+.user-menu-item--danger:hover:not(:disabled),
+.user-menu-item--danger:focus-visible {
+  background: color-mix(in srgb, var(--delete-color) 12%, transparent);
+}
+
+/* ── Preferences page ───────────────────────────────────── */
+
+.pref-page {
+  padding: 20px 0;
+  max-width: 760px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.pref-title {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.pref-page-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.pref-back-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  background: var(--surface-bg);
+  border: 1px solid var(--surface-border);
+  border-radius: 10px;
+  color: var(--text-primary);
+  font-size: 16px;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    transform 0.15s ease;
+}
+
+.pref-back-btn:hover {
+  background: var(--surface-active);
+  border-color: var(--surface-border-open);
+}
+
+.pref-back-btn:active {
+  transform: translateX(-2px);
+}
+
+.pref-section {
+  background: var(--surface-bg);
+  border: 1px solid var(--surface-border);
+  border-radius: 14px;
+  overflow: hidden;
+  transition: border-color 0.18s ease;
+}
+
+.pref-section--open {
+  border-color: var(--surface-border-open);
+}
+
+.pref-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  width: 100%;
+  padding: 16px 18px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  color: var(--text-primary);
+  font-family: inherit;
+  text-align: left;
+  transition: background 0.15s ease;
+}
+
+/* Only darken on devices with a real hover capability so tapping the
+   header on touch screens doesn't leave the section visually "stuck"
+   in a darker state after open/close. */
+@media (hover: hover) and (pointer: fine) {
+  .pref-section-header:hover {
+    background: var(--surface-active);
+  }
+}
+
+.pref-section-header-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  flex: 1;
+}
+
+.pref-section-title {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.pref-section-summary {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-label);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pref-section-chevron {
+  flex-shrink: 0;
+  font-size: 13px;
+  color: var(--text-label);
+  transition: transform 0.25s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+}
+
+.pref-section-chevron--open {
+  transform: rotate(180deg);
+  color: var(--text-primary);
+}
+
+.pref-section-body {
+  padding: 0 18px 18px;
+}
+
+.pref-section-hint {
+  margin: 0 0 14px;
+  font-size: 13px;
+  color: var(--text-label);
+}
+
+.pref-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.pref-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pref-row-label {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.pref-row-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-label);
+}
+
+.pref-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.pref-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-label);
+}
+
+.pref-field input {
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--surface-border-open);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-family: inherit;
+  /* iOS Safari zooms the viewport when a focused input has font-size < 16px.
+     Every focusable input on this page is sized to 16px to avoid that. */
+  font-size: 16px;
+}
+
+.pref-field input:focus {
+  outline: none;
+  border-color: var(--text-primary);
+}
+
+.pref-tabs {
+  display: inline-flex;
+  padding: 3px;
+  margin-bottom: 12px;
+  background: var(--surface-active);
+  border-radius: 8px;
+  gap: 2px;
+}
+
+.pref-tab {
+  padding: 6px 16px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-label);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.pref-tab--active {
+  background: var(--bg);
+  color: var(--text-primary);
+}
+
+.pref-cat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+  touch-action: pan-y;
+}
+
+.pref-cat-empty {
+  margin: 0;
+  padding: 12px;
+  font-size: 13px;
+  color: var(--text-label);
+}
+
+/* ── Multi-bank account list (Preferences) ─────────── */
+
+.pref-multibank {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 14px;
+}
+
+.pref-multibank-hint {
+  margin: 6px 0 0;
+}
+
+.pref-multibank-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.pref-multibank-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--surface-border);
+  border-radius: 10px;
+  min-height: 48px;
+}
+
+.pref-multibank-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.pref-multibank-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.pref-multibank-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.pref-multibank-balance {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-align: left;
+}
+
+.pref-multibank-balance i {
+  font-size: 10px;
+  opacity: 0.6;
+}
+
+.pref-multibank-balance:hover {
+  color: var(--text-primary);
+}
+
+.pref-multibank-balance-input {
+  width: 140px;
+  padding: 4px 8px;
+  background: var(--field-bg);
+  border: 1px solid var(--field-border);
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--field-text);
+}
+
+.pref-multibank-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pref-multibank-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--surface-bg);
+  border: 1px dashed var(--surface-border-open);
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.pref-multibank-chip:hover {
+  background: var(--surface-active);
+  color: var(--text-primary);
+  border-color: var(--surface-border-open);
+}
+
+.pref-multibank-chip i {
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.pref-multibank-migrate {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  background: var(--surface-bg);
+  border: 1px solid var(--surface-border);
+  border-radius: 10px;
+  margin-top: 6px;
+}
+
+.pref-multibank-migrate-text {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ── Multi-bank migration modal body ──────────────── */
+
+.multibank-migration {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.multibank-migration-hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.45;
+}
+
+.multibank-migration-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.multibank-migration-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--surface-bg);
+  border: 1px solid var(--surface-border);
+  border-radius: 10px;
+}
+
+.multibank-migration-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.multibank-migration-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.multibank-migration-count {
+  font-size: 12px;
+  color: var(--text-label);
+}
+
+.multibank-migration-select {
+  flex-shrink: 0;
+  padding: 7px 10px;
+  background: var(--field-bg);
+  border: 1px solid var(--field-border);
+  border-radius: 7px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--field-text);
+  min-width: 160px;
+}
+
+.multibank-migration-footer {
+  margin: 0;
+  padding: 10px 12px;
+  background: var(--surface-active);
+  border-radius: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.multibank-migration--empty {
+  text-align: center;
+  padding: 24px 12px;
+}
+
+.multibank-migration-empty-icon {
+  font-size: 32px;
+  color: var(--amount-income);
+  opacity: 0.7;
+  margin-bottom: 10px;
+  display: block;
+}
+
+.multibank-migration-empty-sub {
+  margin: 6px 0 16px;
+  font-size: 13px;
+  color: var(--text-label);
+}
+
+.pref-cat-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg);
+  border: 1px solid var(--surface-border);
+  border-radius: 8px;
+  min-height: 44px;
+  /* FLIP toggles transform inline; the other props animate via CSS. */
+  transition:
+    transform 0.22s cubic-bezier(0.4, 0, 0.2, 1),
+    box-shadow 0.18s ease,
+    background 0.18s ease,
+    border-color 0.18s ease,
+    scale 0.18s ease;
+  will-change: transform;
+}
+
+.pref-cat-row--editing {
+  border-color: var(--surface-border-open);
+}
+
+.pref-cat-name {
+  flex: 1;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.pref-cat-input {
+  flex: 1;
+  padding: 6px 8px;
+  background: transparent;
+  border: 1px solid var(--surface-border-open);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 16px;
+}
+
+.pref-cat-input:focus {
+  outline: none;
+  border-color: var(--text-primary);
+}
+
+.pref-cat-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 6px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-label);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.pref-cat-btn:hover {
+  background: var(--surface-active);
+  color: var(--text-primary);
+}
+
+.pref-cat-btn--save:hover {
+  color: var(--amount-income);
+}
+
+.pref-cat-handle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  min-height: 36px;
+  padding: 6px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--text-label);
+  cursor: grab;
+  touch-action: none; /* prevent scroll-hijack while dragging on mobile */
+  user-select: none;
+  transition: background 0.12s, color 0.12s;
+}
+
+.pref-cat-handle-stack {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  line-height: 1;
+  font-size: 10px;
+}
+
+.pref-cat-handle:hover {
+  color: var(--text-primary);
+  background: var(--surface-active);
+}
+
+.pref-cat-handle:active,
+.pref-cat-row--dragging .pref-cat-handle {
+  cursor: grabbing;
+}
+
+.pref-cat-row--dragging {
+  background: var(--surface-active);
+  border-color: var(--surface-border-open);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.24);
+  scale: 1.02;
+  position: relative;
+  z-index: 5;
+  /* Transform must NOT transition while dragging — the dragged card needs to
+     track the pointer instantly. The other visual props still animate. */
+  transition:
+    box-shadow 0.18s ease,
+    background 0.18s ease,
+    border-color 0.18s ease,
+    scale 0.18s ease;
+}
+
+.pref-cat-row--dragging .pref-cat-name {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.pref-cat-btn--danger:hover {
+  color: var(--delete-color);
+  background: color-mix(in srgb, var(--delete-color) 12%, transparent);
+}
+
+.pref-cat-add {
+  display: flex;
+  gap: 8px;
+}
+
+.pref-cat-add input {
+  flex: 1;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--surface-border-open);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 16px;
+}
+
+.pref-cat-add input:focus {
+  outline: none;
+  border-color: var(--text-primary);
+}
+
+.pref-cat-add-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: var(--text-primary);
+  color: var(--bg);
+  border: none;
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.pref-cat-add-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.pref-cat-add-btn:not(:disabled):hover {
+  opacity: 0.85;
+}
+
+/* ── Preferences: toggle switch ─────────────────────────
+   iOS-style switch: neutral track when off, vivid green track when on.
+   Thumb stays white so it reads clearly against either state regardless
+   of light/dark or classic/glass skin. */
+
+.pref-switch {
+  position: relative;
+  flex-shrink: 0;
+  width: 48px;
+  height: 28px;
+  padding: 0;
+  background: var(--toggle-track);
+  border: 1px solid var(--surface-border);
+  border-radius: 14px;
+  cursor: pointer;
+  transition:
+    background-color 0.22s ease,
+    border-color 0.22s ease;
+}
+
+.pref-switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  transition: transform 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.pref-switch--on {
+  background: var(--text-secondary);
+  border-color: var(--text-secondary);
+}
+
+.pref-switch--on .pref-switch-thumb {
+  transform: translateX(20px);
+}
+
+/* ── Preferences: auto-category rule rows ─────────────── */
+
+.pref-rule-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.pref-rule-row,
+.pref-rule-add {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pref-rule-row {
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 1px solid var(--surface-border);
+  border-radius: 8px;
+}
+
+.pref-rule-select,
+.pref-rule-input {
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 1px solid var(--surface-border-open);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 16px;
+}
+
+.pref-rule-input {
+  flex: 1;
+  min-width: 130px;
+}
+
+.pref-rule-select {
+  min-width: 100px;
+}
+
+.pref-rule-select:focus,
+.pref-rule-input:focus {
+  outline: none;
+  border-color: var(--text-primary);
+}
+
+.pref-rule-arrow {
+  color: var(--text-label);
+  font-size: 14px;
+}
+
+.pref-rule-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  background: var(--bar-bg);
+  color: var(--bar-text);
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.pref-apply-past-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 20px 0;
+  padding: 12px 16px;
+  background: transparent;
+  color: var(--text-primary);
+  border: 1px dashed var(--surface-border-open);
+  border-radius: 8px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.pref-apply-past-btn:hover {
+  background: var(--surface-active);
+  border-color: var(--text-label);
+  border-style: solid;
+}
+
+/* ── Privacy mode ───────────────────────────────────────
+   When body has .privacy-on, blur every amount across the app. The class
+   list below is the union of every amount-display class used by Dashboard,
+   Transactions, Investments, and Solvency. The user can tap any blurred
+   amount to temporarily reveal it (the :active state lifts the blur). */
+/* Every numeric amount the user might want to hide. Adding a class here is
+   cheap; the comma list is verbose but keeps the targeting explicit. */
+body.privacy-on .summary-card-value,
+body.privacy-on .insight-value,
+body.privacy-on .balance,
+body.privacy-on .balance-carousel-value,
+body.privacy-on .transaction-amount,
+body.privacy-on .delta-amount,
+body.privacy-on .delta-badge,
+body.privacy-on .cat-meta,
+body.privacy-on .inv-hero-value,
+body.privacy-on .inv-insight-value,
+body.privacy-on .inv-holding-amt,
+body.privacy-on .inv-holding-pct,
+body.privacy-on .inv-cat-value,
+body.privacy-on .inv-ledger-amount,
+body.privacy-on .inv-ledger-balance-note,
+body.privacy-on .inv-sell-total,
+body.privacy-on .inv-pause-summary,
+body.privacy-on .inv-resume-summary,
+body.privacy-on .inv-compounder-total,
+body.privacy-on .inv-compounder-stat-value,
+body.privacy-on .sol-card-outstanding,
+body.privacy-on .sol-card-limit,
+body.privacy-on .sol-card-pool-tag,
+body.privacy-on .sol-due-amount,
+body.privacy-on .sol-lending-outstanding,
+body.privacy-on .sol-lending-total,
+body.privacy-on .sol-hero-amount,
+body.privacy-on .sol-hero-next-amount,
+body.privacy-on .sol-stat-value,
+body.privacy-on .sol-cashflow-value,
+body.privacy-on .sol-commit-emi,
+body.privacy-on .sol-obligations-amount,
+body.privacy-on .sol-emi-bill-row span:last-child,
+body.privacy-on .sol-linked-tx-amount,
+body.privacy-on .sol-detail-stat-value {
+  filter: blur(10px);
+  transition: filter 0.18s ease;
+  user-select: none;
+  -webkit-user-select: none;
+  /* Stops mobile webkit's dark tap-highlight from painting a rectangle
+     over the blurred amount when nearby cards are tapped. */
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Reveal on parent CARD press, not on the amount itself. The user's
+   finger covers the number when tapping it directly — making the whole
+   surrounding card the touch target avoids that. Applied to every card
+   container we use across the app. */
+body.privacy-on .insights,
+body.privacy-on .summary-card,
+body.privacy-on .insight-card,
+body.privacy-on .inv-hero-card,
+body.privacy-on .inv-insight-card,
+body.privacy-on .inv-holding-card,
+body.privacy-on .inv-highlight-card,
+body.privacy-on .sol-card-item,
+body.privacy-on .sol-commitment-item,
+body.privacy-on .sol-lending-item,
+body.privacy-on .sol-emi-bill,
+body.privacy-on .sol-hero-card,
+body.privacy-on .sol-stat-card,
+body.privacy-on .transaction-card {
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* IMPORTANT: only ITEM-level cards here, not section wrappers like
+   .dash-section or .sol-section — those wrap multiple cards and would
+   unblur every sibling when one is tapped. */
+body.privacy-on .insights:active *,
+body.privacy-on .summary-card:active *,
+body.privacy-on .insight-card:active *,
+body.privacy-on .inv-hero-card:active *,
+body.privacy-on .inv-insight-card:active *,
+body.privacy-on .inv-holding-card:active *,
+body.privacy-on .inv-highlight-card:active *,
+body.privacy-on .sol-card-item:active *,
+body.privacy-on .sol-commitment-item:active *,
+body.privacy-on .sol-lending-item:active *,
+body.privacy-on .sol-emi-bill:active *,
+body.privacy-on .sol-hero-card:active *,
+body.privacy-on .sol-stat-card:active *,
+body.privacy-on .transaction-card:active * {
+  filter: none;
+}
+
+/* ── Privacy banner (sticky indicator below navbar) ───── */
+
+.privacy-banner {
+  position: sticky;
+  top: var(--nav-h, 56px);
+  z-index: 49;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: rgba(91, 141, 238, 0.16);
+  border-bottom: 1px solid rgba(91, 141, 238, 0.3);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+
+.privacy-banner-icon {
+  flex-shrink: 0;
+  color: #5b8dee;
+}
+
+.privacy-banner-hint {
+  color: var(--text-label);
+  font-weight: 500;
+}
+
+.privacy-banner-off {
+  margin-left: 8px;
+  padding: 4px 10px;
+  background: rgba(91, 141, 238, 0.18);
+  color: var(--text-primary);
+  border: 1px solid rgba(91, 141, 238, 0.4);
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.privacy-banner-off:hover {
+  background: rgba(91, 141, 238, 0.28);
+  border-color: rgba(91, 141, 238, 0.6);
+}
+
+@media (max-width: 480px) {
+  .privacy-banner {
+    flex-direction: column;
+    gap: 2px;
+    padding: 6px 10px;
+  }
+  .privacy-banner-hint {
+    font-size: 11px;
+  }
+}
+
+/* ── Smart-add bar (mic + text parser, top of expense / income forms) ── */
+
+.voice-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  min-width: 0;
+  padding: 5px;
+  margin-bottom: 6px;
+  background: var(--surface-bg);
+  border: 1px solid var(--surface-border-open);
+  border-radius: 10px;
+  /* Without border-box, width:100% + padding overflows the parent and the
+     modal ends up scrolling horizontally on narrow viewports. */
+  box-sizing: border-box;
+  transition:
+    background 0.18s ease,
+    border-color 0.18s ease;
+}
+
+.voice-bar-mic,
+.voice-bar-apply {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: var(--surface-active);
+  color: var(--text-primary);
+  font-size: 14px;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    opacity 0.15s ease;
+}
+
+.voice-bar-mic:hover,
+.voice-bar-apply:hover:not(:disabled) {
+  background: var(--surface-border-open);
+}
+
+.voice-bar-apply:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.voice-bar-input {
+  flex: 1 1 0;
+  width: 100%;
+  min-width: 0;
+  padding: 8px 6px;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 16px; /* 16px to avoid iOS auto-zoom on focus */
+  /* Stop the placeholder from forcing the input wider than its flex slot */
+  text-overflow: ellipsis;
+}
+
+.voice-bar-input::placeholder {
+  color: var(--text-label);
+}
+
+.voice-bar--on {
+  border-color: var(--delete-color);
+}
+
+.voice-bar--on .voice-bar-mic {
+  background: var(--delete-color);
+  color: #fff;
+  animation: mic-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes mic-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--delete-color) 35%, transparent);
+  }
+  50% {
+    box-shadow: 0 0 0 8px color-mix(in srgb, var(--delete-color) 0%, transparent);
+  }
 }
 
 .nav-controls {
@@ -170,7 +1377,9 @@ button, input, select, textarea {
   opacity: 0.45;
   position: relative;
   z-index: 1;
-  transition: opacity 0.2s ease, color 0.2s ease;
+  transition:
+    opacity 0.2s ease,
+    color 0.2s ease;
 }
 
 .toggle-icon--active {
@@ -178,10 +1387,12 @@ button, input, select, textarea {
   color: var(--bar-bg);
 }
 
+/* Transactions-page balance wrapper. The bg and rounded corners live on the
+   inner .balance-carousel now (so it can swap between bar-bg and a bank
+   tint), so this wrapper just provides outer breathing room. */
 .insights {
-  padding: 5px 10px;
-  background: var(--bar-bg);
-  border-radius: 10px;
+  padding: 0;
+  background: transparent;
   margin-top: 1px;
 }
 
@@ -190,12 +1401,548 @@ button, input, select, textarea {
   font-size: 16px;
   font-weight: 500;
   color: var(--bar-text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.balance-recompute-btn {
+  background: none;
+  border: none;
+  color: var(--bar-text);
+  cursor: pointer;
+  opacity: 0.55;
+  padding: 2px 6px;
+  font-size: 13px;
+  border-radius: 6px;
+  transition: opacity 0.15s, background 0.15s;
+}
+
+.balance-recompute-btn:hover {
+  opacity: 1;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+/* ── Balance Carousel (multi-bank) ─────────────────── */
+
+.balance-carousel {
+  position: relative;
+  overflow: hidden;
+  width: 100%;
+  /* Reserve room on left/right so the absolutely-positioned arrows don't sit
+     on top of the slide content. Single-slide mode (no arrows) collapses
+     this padding via the --single modifier below. */
+  padding: 8px 36px;
+  box-sizing: border-box;
+}
+
+.balance-carousel--single {
+  padding: 8px 12px;
+}
+
+/* Bank-coloured tint background, driven by the --bank-tint-bg CSS variable
+   set inline by the React component. Falls back to plain bar-bg for the All
+   slide. Both variants animate smoothly between tints so swiping between
+   banks feels continuous. */
+.balance-carousel {
+  background: var(--bank-tint-bg, var(--bar-bg));
+  border-radius: 14px;
+  transition: background 0.45s ease;
+}
+
+.balance-carousel--hero {
+  margin-bottom: 12px;
+}
+
+.balance-carousel-slide {
+  display: block;
+  touch-action: pan-y;
+  cursor: grab;
+  min-height: 0;
+}
+
+.balance-carousel-slide:active {
+  cursor: grabbing;
+}
+
+/* All carousel content (slide body + meta row) is centre-aligned so the
+   layout reads symmetrically regardless of which bank is active. */
+.balance-slide {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 2px;
+}
+
+.balance-slide--compact .balance {
+  font-size: 16px;
+}
+
+.balance-slide--hero .balance {
+  font-size: 22px;
+  font-weight: 600;
+  line-height: 1.15;
+}
+
+.balance-slide-label {
+  margin: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--bar-text);
+  opacity: 0.7;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.balance-slide-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.balance-slide-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+/* Static meta row that sits OUTSIDE the swipe area so the slide content can
+   stay uniform (label + balance only) and the card's overall height never
+   jumps between the All slide and per-bank slides. Centre-aligned on mobile
+   so the items stack cleanly; at tablet width and above the row is wide
+   enough to anchor delta on the left and verify chip on the right. */
+.balance-meta-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 8px 12px 4px;
+  min-height: 30px;
+}
+
+/* Tablet and wider: slide content (label + balance) sits on the left,
+   meta row (delta + verify chip, grouped together) anchors to the right
+   — all on one line. Mobile keeps the stacked, centred layout above. */
+@media (min-width: 768px) {
+  .balance-carousel {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+  }
+
+  .balance-slide {
+    align-items: flex-start;
+    text-align: left;
+  }
+
+  .balance-meta-row {
+    flex-wrap: nowrap;
+    justify-content: flex-end;
+    padding: 0;
+  }
+}
+
+.balance-recompute-btn--standalone {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: 1px solid var(--surface-border-open);
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--bar-text);
+  opacity: 0.65;
+  cursor: pointer;
+  transition: opacity 0.12s, background 0.12s;
+}
+
+.balance-recompute-btn--standalone:hover:not(:disabled) {
+  opacity: 1;
+  background: var(--surface-active);
+}
+
+.balance-slide-delta {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.balance-slide-delta--up {
+  background: color-mix(in srgb, var(--amount-income) 18%, transparent);
+  color: var(--amount-income);
+}
+
+.balance-slide-delta--down {
+  background: color-mix(in srgb, var(--amount-expense) 18%, transparent);
+  color: var(--amount-expense);
+}
+
+/* Arrows are absolutely positioned to the left/right edges of the carousel
+   card, vertically centred. Dots and the bottom controls bar are gone —
+   navigation is swipe + arrows only. */
+.balance-carousel-arrow {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: transparent;
+  border: none;
+  color: var(--bar-text);
+  opacity: 0.5;
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 12px;
+  transition: background 0.12s, opacity 0.12s;
+  z-index: 2;
+}
+
+.balance-carousel-arrow--left {
+  left: 4px;
+}
+
+.balance-carousel-arrow--right {
+  right: 4px;
+}
+
+.balance-carousel-arrow:hover:not(:disabled) {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="dark"] .balance-carousel-arrow:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.balance-carousel-arrow:disabled {
+  opacity: 0.2;
+  cursor: not-allowed;
+}
+
+/* Reconciliation chip on per-bank slide */
+.balance-recon-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: opacity 0.12s, background 0.12s;
+}
+
+.balance-recon-chip--idle {
+  background: transparent;
+  border-color: rgba(0, 0, 0, 0.18);
+  color: var(--bar-text);
+  opacity: 0.65;
+}
+
+.balance-recon-chip--idle:hover {
+  opacity: 1;
+  background: rgba(0, 0, 0, 0.06);
+}
+
+[data-theme="light"] .balance-recon-chip--idle,
+[data-theme="light"] .balance-recon-chip--idle:hover {
+  border-color: rgba(8, 8, 22, 0.18);
+}
+
+.balance-recon-chip--ok {
+  background: color-mix(in srgb, var(--amount-income) 18%, transparent);
+  color: var(--amount-income);
+}
+
+.balance-recon-chip--drift {
+  background: color-mix(in srgb, var(--amount-expense) 15%, transparent);
+  color: var(--amount-expense);
+}
+
+/* Verify-balance modal */
+.balance-verify-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.balance-verify-hint {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.balance-verify-preview {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.4;
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.balance-verify-preview--ok {
+  background: color-mix(in srgb, var(--amount-income) 14%, transparent);
+  color: var(--amount-income);
+}
+
+.balance-verify-preview--drift {
+  background: color-mix(in srgb, var(--amount-expense) 14%, transparent);
+  color: var(--amount-expense);
+}
+
+/* ── Money flow Sankey ────────────────────────────── */
+/* .money-flow lives inside .dashboard alongside other .dash-section blocks
+   and inherits all section styling — no extra layout needed. */
+
+.money-flow-sub {
+  margin: 4px 0 12px;
+  font-size: 12px;
+  color: var(--text-label);
+}
+
+.money-flow--empty .money-flow-empty {
+  margin: 12px 0 0;
+  padding: 14px;
+  background: var(--surface-bg);
+  border: 1px dashed var(--surface-border);
+  border-radius: 10px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.balance-recompute-btn:disabled {
+  cursor: wait;
 }
 
 .outlet {
   flex: 1;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
+  /* Compensate for the now-fixed navbar (taken out of flex flow). Navbar
+     height is set as --nav-h by Navbar.jsx; the fallback covers the first
+     paint before JS measures it. */
+  padding-top: var(--nav-h, 45px);
+}
+
+/* Center the page content and cap its width on large screens so every
+   page reads at the same comfortable measure as the Preferences page.
+   Banners / navbar / action footer sit outside .outlet so they stay
+   full-width unaffected. */
+.page-container {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 12px;
+  box-sizing: border-box;
+}
+
+/* On mobile + tablet (up to and including iPad Pro 12.9" portrait at 1024px),
+   drop the 960px cap so the transactions list and other in-page content fill
+   the viewport edge-to-edge. Desktop keeps the comfortable reading measure. */
+@media (max-width: 1024px) {
+  .page-container {
+    max-width: 100%;
+  }
+}
+
+.reconnect-screen {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: #ffffff;
+  color-scheme: light;
+  z-index: 2000;
+}
+
+.reconnect-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 14px;
+  max-width: 380px;
+  padding: 36px 28px;
+  border-radius: 18px;
+  background: #ffffff;
+  border: 1px solid rgba(26, 18, 32, 0.08);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.06);
+}
+
+.reconnect-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 700;
+  color: #1a1220;
+}
+
+.reconnect-sub {
+  margin: 0;
+  font-size: 14px;
+  color: rgba(26, 18, 32, 0.6);
+  line-height: 1.55;
+}
+
+.reconnect-btn {
+  margin-top: 10px;
+  padding: 10px 22px;
+  font-size: 15px;
+}
+
+/* ── Google login button ────────────────────────────── */
+
+.google-login-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.google-login-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 11px 20px;
+  border-radius: 12px;
+  border: 1px solid var(--surface-border-open);
+  background: var(--surface-bg);
+  color: var(--text-primary);
+  font-size: 16px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity 0.15s;
+  white-space: nowrap;
+}
+
+.google-login-btn:hover:not(:disabled) {
+  background: var(--surface-active);
+}
+
+.google-login-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.google-login-error {
+  margin: 0;
+  font-size: 14px;
+  color: var(--amount-expense);
+}
+
+/* ── Toast notifications ────────────────────────────── */
+
+.toast-container {
+  position: fixed;
+  bottom: 72px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: calc(100% - 32px);
+  max-width: 420px;
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: #1e1c2e;
+  color: #e0d6d5;
+  font-size: 15px;
+  font-weight: 500;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
+  pointer-events: all;
+  animation: toast-in 0.2s ease-out;
+}
+
+.toast--hiding {
+  animation: toast-out 0.2s ease-in forwards;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes toast-out {
+  to {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+.toast-icon {
+  font-size: 16px;
+  flex-shrink: 0;
+}
+
+.toast--success .toast-icon {
+  color: #4caf7d;
+}
+.toast--error .toast-icon {
+  color: #e06c6c;
+}
+.toast--info .toast-icon {
+  color: #7aabde;
+}
+
+.toast-message {
+  flex: 1;
+  line-height: 1.3;
+}
+
+.toast-close {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: rgba(224, 214, 213, 0.45);
+  cursor: pointer;
+  padding: 0 2px;
+  font-size: 13px;
+  line-height: 1;
+  transition: color 0.15s;
+}
+
+.toast-close:hover {
+  color: rgba(224, 214, 213, 0.85);
 }
 
 /* ── Date filter ────────────────────────────────────── */
@@ -234,7 +1981,7 @@ button, input, select, textarea {
   cursor: pointer;
   white-space: nowrap;
   opacity: 0.6;
-  transition: opacity 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+  transition: opacity 0.15s ease;
 }
 
 .filter-pill:hover {
@@ -292,15 +2039,10 @@ button, input, select, textarea {
   min-width: 0;
 }
 
-.export-wrapper {
-  position: relative;
-  flex-shrink: 0;
-}
-
 .export-trigger {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   padding: 4px 12px;
   border-radius: 20px;
   border: 1px solid var(--surface-border);
@@ -311,11 +2053,10 @@ button, input, select, textarea {
   cursor: pointer;
   white-space: nowrap;
   opacity: 0.6;
-  transition: opacity 0.15s, background 0.15s;
+  transition: opacity 0.15s;
 }
 
-.export-trigger:hover,
-.export-trigger--open {
+.export-trigger:hover {
   opacity: 1;
   background: var(--surface-active);
 }
@@ -324,63 +2065,137 @@ button, input, select, textarea {
   display: inline;
 }
 
-.export-dropdown {
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  min-width: 130px;
-  background: var(--bg);
-  border: 1px solid var(--surface-border-open);
-  border-radius: 10px;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.15);
-  overflow: hidden;
-  z-index: 200;
-  animation: export-drop-in 0.12s ease-out;
+/* Export modal */
+.export-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
 }
 
-@keyframes export-drop-in {
-  from { opacity: 0; transform: translateY(-4px); }
-  to   { opacity: 1; transform: translateY(0); }
+.export-modal-label {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-label);
 }
 
-.export-dropdown-item {
+.export-sections {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.export-section-item {
   display: flex;
   align-items: center;
   gap: 9px;
-  width: 100%;
-  padding: 11px 14px;
-  border: none;
-  background: transparent;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: var(--surface-bg);
+  border: 1px solid var(--surface-border);
+  font-size: 14px;
   color: var(--text-primary);
-  font-size: 15px;
-  font-weight: 600;
   cursor: pointer;
-  text-align: left;
-  border-bottom: 1px solid var(--surface-border);
-  transition: background 0.1s;
+  user-select: none;
+  transition: background 0.12s;
 }
 
-.export-dropdown-item:last-child {
-  border-bottom: none;
-}
-
-.export-dropdown-item:hover {
+.export-section-item:hover {
   background: var(--surface-active);
 }
 
-.export-confirm {
-  padding-bottom: 4px;
+.export-section-item input[type="checkbox"] {
+  accent-color: var(--bar-bg);
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+  flex-shrink: 0;
 }
 
-.export-confirm-msg {
-  margin: 0 0 24px;
-  font-weight: 400;
-  line-height: 1.6;
-  opacity: 0.85;
+.export-section-item i {
+  color: var(--text-label);
+  font-size: 13px;
+  width: 14px;
+  text-align: center;
 }
 
-.export-confirm-msg strong {
-  font-weight: 700;
+.export-format-row {
+  display: flex;
+  gap: 8px;
+}
+
+.export-format-pill {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 16px;
+  border-radius: 20px;
+  border: 1px solid var(--surface-border);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.export-format-pill--active {
+  background: var(--bar-bg);
+  color: var(--bar-text);
+  border-color: var(--bar-bg);
+}
+
+.export-filename-wrap {
+  display: flex;
+  align-items: center;
+  background: var(--surface-bg);
+  border: 1px solid var(--surface-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.export-filename-input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 16px;
+  padding: 8px 10px;
+  outline: none;
+  cursor: default;
+}
+
+.export-filename-input--editing {
+  color: var(--text-primary);
+  cursor: text;
+}
+
+.export-filename-ext {
+  font-size: 13px;
+  color: var(--text-label);
+  padding-right: 6px;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.export-filename-edit-btn {
+  background: transparent;
+  border: none;
+  border-left: 1px solid var(--surface-border);
+  color: var(--text-label);
+  padding: 8px 11px;
+  cursor: pointer;
+  font-size: 11px;
+  transition: color 0.15s, background 0.15s;
+  flex-shrink: 0;
+}
+
+.export-filename-edit-btn:hover {
+  color: var(--text-primary);
+  background: var(--surface-active);
 }
 
 .export-confirm-actions {
@@ -390,7 +2205,7 @@ button, input, select, textarea {
 .export-confirm-btn {
   display: inline-flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   background: var(--text-primary);
   color: var(--bg);
   border: none;
@@ -402,7 +2217,12 @@ button, input, select, textarea {
   transition: opacity 0.15s;
 }
 
-.export-confirm-btn:hover {
+.export-confirm-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.export-confirm-btn:not(:disabled):hover {
   opacity: 0.8;
 }
 
@@ -414,15 +2234,307 @@ button, input, select, textarea {
   .export-trigger {
     padding: 6px 10px;
   }
+
+  .export-sections {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* ── Transaction list ───────────────────────────────── */
+
+.tx-date-separator {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 4px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-label);
+  letter-spacing: 0.05em;
+}
+
+.tx-date-separator::before,
+.tx-date-separator::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--surface-border);
+}
+
+/* ── Transaction type + category filter bar ─────────── */
+
+.tx-filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px 8px;
+  border-bottom: 1px solid var(--surface-border);
+  flex-wrap: wrap;
+}
+
+.tx-filter-bar .filter-pills {
+  flex: 1;
+  min-width: 0;
+}
+
+.tx-category-select {
+  flex-shrink: 0;
+  font-family: "Smooch Sans", sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 20px;
+  border: 1px solid var(--surface-border);
+  background: var(--surface-bg);
+  color: var(--text-primary);
+  outline: none;
+  cursor: pointer;
+  max-width: 160px;
+}
+
+/* ── Filter Bar (chip-based) ────────────────────────── */
+
+.fbar-wrap {
+  position: relative;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--surface-border);
+  background: var(--bg);
+}
+
+.fbar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  min-height: 32px;
+}
+
+.fbar::-webkit-scrollbar {
+  display: none;
+}
+
+.fbar-chip {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px 4px 12px;
+  background: var(--bar-bg);
+  color: var(--bar-text);
+  border: none;
+  border-radius: 20px;
+  font-family: "Smooch Sans", sans-serif;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.15s;
+}
+
+.fbar-chip:hover {
+  opacity: 0.8;
+}
+
+.fbar-chip-x {
+  font-size: 11px;
+  opacity: 0.7;
+}
+
+.fbar-spacer {
+  flex: 1;
+  min-width: 4px;
+}
+
+.fbar-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  background: transparent;
+  color: var(--text-secondary);
+  border: 1.5px solid var(--surface-border-open);
+  border-radius: 20px;
+  font-family: "Smooch Sans", sans-serif;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.fbar-btn:hover {
+  border-color: var(--text-secondary);
+}
+
+.fbar-btn--active {
+  background: var(--bar-bg);
+  color: var(--bar-text);
+  border-color: var(--bar-bg);
+}
+
+.fbar-btn--open:not(.fbar-btn--active) {
+  background: var(--surface-active);
+}
+
+.fbar-btn--active.fbar-btn--open {
+  opacity: 0.82;
+}
+
+.fbar-panel {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: var(--modal-bg);
+  border: 1px solid var(--surface-border-open);
+  border-top: none;
+  border-radius: 0 0 14px 14px;
+  padding: 12px 14px 18px;
+  z-index: 200;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.35);
+}
+
+.fbar-section-label {
+  margin: 14px 0 7px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-label);
+  opacity: 0.65;
+}
+
+.fbar-panel > .fbar-section-label:first-child {
+  margin-top: 0;
+}
+
+.fbar-pill-row {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.fbar-pill {
+  flex-shrink: 0;
+  padding: 4px 14px;
+  border-radius: 20px;
+  border: 1.5px solid var(--surface-border-open);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: "Smooch Sans", sans-serif;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.15s;
+  opacity: 0.75;
+}
+
+.fbar-pill:hover {
+  opacity: 1;
+}
+
+.fbar-pill--active {
+  background: var(--bar-bg);
+  color: var(--bar-text);
+  border-color: var(--bar-bg);
+  opacity: 1;
+}
+
+.fbar-custom {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.fbar-custom-input {
+  flex: 1;
+  padding: 5px 10px;
+  font-size: 15px;
+  font-family: "Smooch Sans", sans-serif;
+  background: var(--field-bg);
+  color: var(--field-text);
+  border: 1px solid var(--surface-border-open);
+  border-radius: 8px;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.fbar-custom-sep {
+  font-size: 14px;
+  color: var(--text-label);
+  flex-shrink: 0;
+}
+
+.fbar-tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.fbar-tag-group {
+  margin-top: 8px;
+}
+
+.fbar-tag-group:first-child {
+  margin-top: 0;
+}
+
+.fbar-tag-group-label {
+  margin: 4px 0 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-label);
+  opacity: 0.55;
+}
+
+.fbar-tag {
+  flex-shrink: 0;
+  padding: 3px 11px;
+  border-radius: 14px;
+  border: 1px solid var(--surface-border-open);
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: "Smooch Sans", sans-serif;
+  font-size: 13px;
+  cursor: pointer;
+  opacity: 0.85;
+  transition: background 0.12s, color 0.12s, border-color 0.12s, opacity 0.12s;
+}
+
+.fbar-tag:hover {
+  opacity: 1;
+}
+
+.fbar-tag--selected {
+  background: var(--bar-bg);
+  color: var(--bar-text);
+  border-color: var(--bar-bg);
+  opacity: 1;
+}
+
+.fbar-select {
+  width: 100%;
+  padding: 7px 10px;
+  font-family: "Smooch Sans", sans-serif;
+  font-size: 14px;
+  background: var(--field-bg);
+  color: var(--field-text);
+  border: 1px solid var(--surface-border-open);
+  border-radius: 8px;
+  outline: none;
+  cursor: pointer;
+}
+
+/* ─────────────────────────────────────────────────── */
 
 .transaction-list {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 10px;
+  padding: 10px 0 75px;
 }
 
 .transaction-card {
@@ -435,15 +2547,23 @@ button, input, select, textarea {
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
-  transition: background 0.15s ease, border-color 0.15s ease;
 }
 
-.transaction-card:active {
-  background: var(--surface-active);
+/* No tap-press style on .transaction-card — the accordion expansion +
+   chevron rotation already signal that the tap registered, and any bg /
+   filter change here would either fight the type-tint utility classes or
+   visibly dim every nested element on every tap. */
+
+.transaction-card--credit {
+  box-shadow: inset 4px 0 0 var(--credit-color);
 }
 
-.transaction-card--open {
-  border-color: var(--surface-border-open);
+/* Credit-card spend hasn't actually left the user's balance yet (settled
+   later via repayment), so render the name + amount in a muted gray instead
+   of the usual red/green/blue to signal that. */
+.transaction-card--credit .transaction-name,
+.transaction-card--credit .transaction-amount {
+  color: #9a9a9a;
 }
 
 /* Summary row — always visible */
@@ -460,15 +2580,63 @@ button, input, select, textarea {
   font-weight: 600;
   color: var(--text-primary);
   flex: 1;
+  min-width: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+.tx-recurring-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  flex-shrink: 0;
+}
+
+.tx-recurring-tag--sip {
+  background: rgba(212, 163, 90, 0.16);
+  color: #d4a35a;
+}
+
+.tx-recurring-tag--lic {
+  background: rgba(224, 123, 58, 0.16);
+  color: #e07b3a;
+}
+
+/* ── Ledger row tints ──────────────────────────────────
+   Three tints applied at the same set of sites (transaction cards,
+   solvency card-detail linked-tx list). Mental model:
+     • Inflow (income, repayment, self-transfer recipient side, sell
+       proceeds, surrender / maturity)         → green
+     • Investment outflow (SIP, EMI installment, fund buy, premium,
+       custom auto-deduct)                     → blue
+     • Plain spend / expense                   → red (expense accent)
+
+   All three mix at 8% against --surface-active so they read in both
+   light and dark themes and contrast the row from the section bg. */
+
+.ledger-tint-income {
+  background: color-mix(in srgb, var(--amount-income) 8%, var(--surface-active));
+}
+
+.ledger-tint-invest {
+  background: color-mix(in srgb, var(--amount-investment) 8%, var(--surface-active));
+}
+
+.ledger-tint-expense {
+  background: color-mix(in srgb, var(--amount-expense) 8%, var(--surface-active));
+}
+
 .transaction-summary-right {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
   flex-shrink: 0;
 }
 
@@ -477,40 +2645,69 @@ button, input, select, textarea {
   font-weight: 700;
 }
 
-.amount-expense { color: var(--amount-expense); }
-.amount-income  { color: var(--amount-income); }
+.amount-expense {
+  color: var(--amount-expense);
+}
+.amount-income {
+  color: var(--amount-income);
+}
+.amount-investment {
+  color: var(--amount-investment);
+}
+.amount-transfer {
+  color: var(--text-secondary);
+}
+
+.tx-recurring-tag--transfer {
+  background: var(--surface-active);
+  color: var(--text-secondary);
+}
+
+/* Bank chip inside a transaction card's detail row */
+.detail-bank-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  white-space: nowrap;
+}
+
+.detail-bank-chip--missing {
+  background: var(--surface-active);
+  color: var(--text-label);
+  font-style: italic;
+}
+
+.detail-value--transfer {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.detail-transfer-arrow {
+  color: var(--text-label);
+  font-size: 11px;
+}
 
 .transaction-chevron {
   font-size: 11px;
   color: var(--text-chevron);
-  transition: transform 0.25s ease;
 }
 
-.chevron-open {
-  transform: rotate(180deg);
+.transaction-card--open {
+  border-color: var(--surface-border-open);
 }
 
-/* Accordion — grid trick for smooth height transition */
-
-.transaction-details {
-  display: grid;
-  grid-template-rows: 0fr;
-  transition: grid-template-rows 0.25s ease;
-  overflow: hidden;
-}
-
-.transaction-details--open {
-  grid-template-rows: 1fr;
-}
-
-.transaction-details-inner {
-  min-height: 0;
-}
+/* Accordion detail rows */
 
 .detail-rows {
-  margin-top: 12px;
-  padding-top: 12px;
+  padding: 12px 0 6px;
   border-top: 1px solid var(--detail-divider);
+  margin-top: 12px;
   display: flex;
   flex-direction: column;
   gap: 9px;
@@ -554,24 +2751,39 @@ button, input, select, textarea {
   border-radius: 20px;
 }
 
-.delete-btn {
+.tx-actions {
+  display: flex;
+  gap: 16px;
+  margin-top: 4px;
+}
+
+.tx-action-btn {
   display: flex;
   align-items: center;
-  gap: 7px;
-  margin-top: 4px;
+  gap: 8px;
   padding: 0;
   background: none;
   border: none;
   font-family: "Smooch Sans", sans-serif;
   font-size: 15px;
   font-weight: 600;
-  color: var(--delete-color);
   cursor: pointer;
-  opacity: 0.8;
+  opacity: 0.75;
+  transition: opacity 0.15s;
 }
 
-.delete-btn:active {
+.tx-action-btn:active {
   opacity: 1;
+}
+
+.tx-action-btn--invest {
+  color: var(--amount-income);
+}
+.tx-action-btn--edit {
+  color: var(--text-secondary);
+}
+.tx-action-btn--delete {
+  color: var(--delete-color);
 }
 
 /* Delete confirmation modal */
@@ -586,7 +2798,7 @@ button, input, select, textarea {
   margin: 0;
   font-size: 18px;
   font-weight: 600;
-  color: #080816;
+  color: var(--text-primary);
 }
 
 .delete-confirm-amount {
@@ -598,13 +2810,24 @@ button, input, select, textarea {
 .delete-confirm-hint {
   margin: 4px 0 16px;
   font-size: 13px;
-  color: rgba(8, 8, 22, 0.45);
+  color: var(--text-secondary);
+}
+
+.detail-card-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  background: var(--surface-active);
+  color: var(--text-secondary);
 }
 
 .danger-button {
   display: flex;
   align-items: center;
-  gap: 7px;
+  gap: 8px;
   padding: 8px 18px;
   background: #c0392b;
   color: #fff;
@@ -638,41 +2861,226 @@ button, input, select, textarea {
 
 .action-footer {
   display: flex;
-  justify-content: center;
-  gap: 15px;
+  align-items: center;
   flex-shrink: 0;
   padding: 5px 10px;
   background: var(--bar-bg);
   border-radius: 15px 15px 0 0;
 }
 
+/* Three-section layout when Self Transfer is visible:
+     [ left-spacer | centred Income+Expense | transfer-right ]
+   When Self Transfer is hidden, only `action-footer-main` is rendered and
+   it stretches to fill the footer naturally — Income+Expense stay centred
+   via `justify-content: center` inside `--main`. */
+.action-footer-main {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 15px;
+}
+
+.action-footer-side {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  width: 44px;
+}
+
+.action-footer-side--right {
+  justify-content: flex-end;
+}
+
+.action-footer--sticky {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 50;
+}
+
+/* Compact icon-only Self Transfer button — lives in the right side slot of
+   the action footer's 3-section layout, so it never overlaps the centred
+   Income / Expense pair. Visually subordinate (neutral surface, no gradient)
+   so the pair stays dominant. */
+.action-transfer-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  background: var(--surface-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--surface-border-open);
+  border-radius: 50%;
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s, transform 0.1s;
+}
+
+.action-transfer-btn:hover:not(:disabled) {
+  background: var(--surface-active);
+}
+
+.action-transfer-btn:active:not(:disabled) {
+  transform: scale(0.95);
+}
+
+.action-transfer-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── Bank chip selector ───────────────────────────── */
+
+.bank-chip-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.bank-chip-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-label);
+  padding-left: 2px;
+}
+
+.bank-chip-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.bank-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 12px;
+  background: transparent;
+  border: 1px solid var(--surface-border);
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.bank-chip:hover {
+  color: var(--text-primary);
+  background: var(--surface-active);
+}
+
+.bank-chip--active {
+  color: var(--text-primary);
+  border-color: var(--surface-border-open);
+}
+
+.bank-chip-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.bank-chip--active .bank-chip-dot {
+  background: rgba(255, 255, 255, 0.85) !important;
+}
+
+.bank-chip--untagged {
+  border-style: dashed;
+  opacity: 0.85;
+}
+
+/* ── Self Transfer form ───────────────────────────── */
+
+.self-transfer-row {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 10px;
+}
+
+.self-transfer-arrow {
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.self-transfer-warn {
+  margin: 0;
+  padding: 8px 10px;
+  background: color-mix(in srgb, var(--amount-expense) 10%, transparent);
+  color: var(--amount-expense);
+  border: 1px solid color-mix(in srgb, var(--amount-expense) 30%, transparent);
+  border-radius: 8px;
+  font-size: 12px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.self-transfer-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-label);
+  line-height: 1.4;
+}
+
+.self-transfer-empty {
+  text-align: center;
+  padding: 24px 12px;
+}
+
+.self-transfer-empty-icon {
+  font-size: 32px;
+  color: var(--text-secondary);
+  opacity: 0.6;
+  margin-bottom: 10px;
+  display: block;
+}
+
+.self-transfer-empty-sub {
+  margin: 6px 0 16px;
+  font-size: 13px;
+  color: var(--text-label);
+}
+
 .expense-form {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  padding-top: 12px;
 }
 
 .field {
   position: relative;
+  min-width: 0;
 }
 
 .field input,
 .field select,
 .field textarea {
   width: 100%;
+  min-width: 0;
   padding: 8px 10px 8px 18px;
   font-size: 17px;
   font-weight: 500;
   border-radius: 8px;
-  border: 1px solid #ccc;
-  background: #ffffff;
+  border: 1px solid var(--field-border);
+  background: var(--field-bg);
   box-sizing: border-box;
   font-family: "Smooch Sans", sans-serif;
   outline: none;
   box-shadow: none;
   -webkit-tap-highlight-color: transparent;
-  text-align: left !important;
-  color: #080816;
+  text-align: left;
+  color: var(--field-text);
 }
 
 .field input:focus,
@@ -680,6 +3088,7 @@ button, input, select, textarea {
 .field textarea:focus {
   outline: none;
   box-shadow: none;
+  border-color: var(--surface-border-open);
 }
 
 .field label {
@@ -688,15 +3097,48 @@ button, input, select, textarea {
   top: -10px;
   font-size: 17px;
   padding: 0 5px;
-  background: white;
-  color: #919199;
+  background: var(--modal-bg);
+  color: var(--field-label);
   pointer-events: none;
-  transition: transform 0.2s ease, font-size 0.2s ease, color 0.2s ease,
-    top 0.2s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: calc(100% - 24px);
 }
 
+input[type="date"],
+input[type="time"],
 input[type="datetime-local"] {
-  width: 100%;
+  -webkit-appearance: none;
+  appearance: none;
+  min-width: 0;
+  height: 44px;
+  text-align: center;
+  color-scheme: dark;
+}
+
+[data-theme="light"] input[type="date"],
+[data-theme="light"] input[type="time"],
+[data-theme="light"] input[type="datetime-local"] {
+  color-scheme: light;
+}
+
+.field input:-webkit-autofill,
+.field input:-webkit-autofill:hover,
+.field input:-webkit-autofill:focus {
+  -webkit-box-shadow: 0 0 0 1000px var(--field-bg) inset !important;
+  -webkit-text-fill-color: var(--field-text) !important;
+}
+
+.field input[type="number"]::-webkit-inner-spin-button,
+.field input[type="number"]::-webkit-outer-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.field input[type="number"] {
+  appearance: textfield;
+  -moz-appearance: textfield;
 }
 
 input,
@@ -705,6 +3147,13 @@ textarea {
   -webkit-appearance: auto;
   appearance: auto;
   -webkit-tap-highlight-color: transparent;
+}
+
+.form-field-hint {
+  margin: -6px 0 0;
+  font-size: 12px;
+  color: var(--text-label);
+  padding-left: 4px;
 }
 
 .form-actions {
@@ -719,7 +3168,7 @@ textarea {
   font-size: 20px;
   font-family: "Smooch Sans", sans-serif;
   font-weight: 600;
-  color: #080816;
+  color: var(--text-secondary);
   cursor: pointer;
   opacity: 1;
 }
@@ -728,7 +3177,6 @@ textarea {
   .insights {
     margin-top: 2px;
   }
-
 
   .balance {
     margin: 0;
@@ -753,4 +3201,1998 @@ textarea {
   .cancel-button:hover {
     opacity: 1;
   }
+}
+
+/* ── Landing page ─────────────────────────────────────── */
+
+.landing {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f0e8e2;
+  position: relative;
+  overflow: hidden;
+  padding: 24px 16px;
+  box-sizing: border-box;
+}
+
+.landing-bg {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.landing-orb {
+  position: absolute;
+  border-radius: 50%;
+  filter: blur(80px);
+  opacity: 0.5;
+}
+
+.landing-orb--1 {
+  width: 480px;
+  height: 480px;
+  background: #d4a574;
+  top: -160px;
+  left: -120px;
+  animation: orb-drift-1 14s ease-in-out infinite alternate;
+}
+
+.landing-orb--2 {
+  width: 360px;
+  height: 360px;
+  background: #7a3e1a;
+  bottom: -100px;
+  right: -80px;
+  animation: orb-drift-2 11s ease-in-out infinite alternate;
+}
+
+.landing-orb--3 {
+  width: 300px;
+  height: 300px;
+  background: #6b8e7b;
+  top: 40%;
+  left: 50%;
+  animation: orb-drift-3 16s ease-in-out infinite alternate;
+}
+
+@keyframes orb-drift-1 {
+  from {
+    transform: translate(0, 0) scale(1);
+  }
+  to {
+    transform: translate(40px, 30px) scale(1.1);
+  }
+}
+
+@keyframes orb-drift-2 {
+  from {
+    transform: translate(0, 0) scale(1);
+  }
+  to {
+    transform: translate(-30px, -25px) scale(1.08);
+  }
+}
+
+@keyframes orb-drift-3 {
+  from {
+    transform: translate(-50%, -50%) scale(1);
+  }
+  to {
+    transform: translate(calc(-50% + 35px), calc(-50% - 25px)) scale(1.12);
+  }
+}
+
+.landing-card {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 400px;
+  background: rgba(255, 255, 255, 0.76);
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  border: 1px solid rgba(255, 255, 255, 0.65);
+  border-radius: 28px;
+  padding: 40px 36px 36px;
+  box-sizing: border-box;
+  box-shadow:
+    0 12px 48px rgba(90, 45, 10, 0.16),
+    0 2px 10px rgba(90, 45, 10, 0.08);
+  text-align: center;
+}
+
+.landing-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 28px;
+}
+
+/* ── Cup SVG ── */
+.cup-body {
+  fill: #7a4010;
+}
+
+.cup-rim {
+  fill: #5a2e08;
+  stroke: #a06030;
+  stroke-width: 1;
+}
+
+.cup-surface {
+  fill: #2e1204;
+  opacity: 0.85;
+}
+
+.cup-handle {
+  fill: none;
+  stroke: #7a4010;
+  stroke-width: 5.5;
+  stroke-linecap: round;
+}
+
+.cup-highlight {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.2);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+
+/* ── Steam animation ── */
+.steam-wisp {
+  fill: none;
+  stroke: #b07850;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: bottom center;
+  animation: steam-rise 2.4s ease-in-out infinite;
+}
+
+.steam-wisp--1 {
+  animation-delay: 0s;
+}
+.steam-wisp--2 {
+  animation-delay: 0.8s;
+}
+.steam-wisp--3 {
+  animation-delay: 1.6s;
+}
+
+@keyframes steam-rise {
+  0% {
+    transform: translateY(0);
+    opacity: 0;
+  }
+  15% {
+    opacity: 0.75;
+  }
+  70% {
+    opacity: 0.35;
+  }
+  100% {
+    transform: translateY(-16px);
+    opacity: 0;
+  }
+}
+
+.landing-logo-amp {
+  font-size: 20px;
+  font-weight: 800;
+  color: #b07040;
+}
+
+.landing-title {
+  margin: 0 0 8px;
+  font-size: 34px;
+  font-weight: 800;
+  color: #2a1508;
+  letter-spacing: -0.3px;
+  line-height: 1.15;
+}
+
+.landing-tagline {
+  margin: 0 0 24px;
+  font-size: 17px;
+  color: rgba(42, 21, 8, 0.5);
+  font-weight: 500;
+}
+
+.landing-pills {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+}
+
+.landing-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 14px;
+  border-radius: 20px;
+  background: rgba(122, 64, 16, 0.08);
+  color: #7a4010;
+  font-size: 14px;
+  font-weight: 600;
+  border: 1px solid rgba(122, 64, 16, 0.13);
+}
+
+.landing-divider {
+  height: 1px;
+  background: rgba(42, 21, 8, 0.1);
+  margin: 0 0 24px;
+}
+
+.landing-card .google-login-wrap {
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.landing-card .google-login-btn {
+  width: 100%;
+  justify-content: center;
+  font-size: 17px;
+  padding: 13px 20px;
+  border-radius: 14px;
+  background: rgba(42, 21, 8, 0.06);
+  border-color: rgba(42, 21, 8, 0.14);
+  color: #2a1508;
+}
+
+.landing-card .google-login-btn:hover:not(:disabled) {
+  background: rgba(42, 21, 8, 0.1);
+}
+
+.landing-footer {
+  margin: 0;
+  font-size: 13px;
+  color: rgba(42, 21, 8, 0.38);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+/* ── Dynamic Investment Form (schema-driven) ──────────
+   .dyn-investment-form inherits its base from .expense-form; only the row
+   grid + new field-type rules live here. */
+
+.dyn-form-row {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 1fr;
+}
+
+.dyn-form-row--cols-2 {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.dyn-form-row--cols-3 {
+  /* Desktop: three across. Tablet & below clamp to two so fields stay
+     comfortable — the schema can still declare three, the renderer just
+     wraps responsively. */
+  grid-template-columns: repeat(3, 1fr);
+}
+
+@media (max-width: 1023px) {
+  .dyn-form-row--cols-3 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .dyn-form-row--cols-2,
+  .dyn-form-row--cols-3 {
+    grid-template-columns: 1fr;
+  }
+}
+
+.dyn-form-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.dyn-form-checkbox input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--amount-investment);
+}
+
+.dyn-form-hint {
+  margin: 0;
+  padding: 4px 0;
+  font-size: 12px;
+  color: var(--text-label);
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+/* Soft variant — multi-line explanatory hints under form controls.
+   Same colour, slightly relaxed line-height so a 2-3 line block
+   reads cleanly. */
+.dyn-form-hint--soft {
+  display: flex;
+  line-height: 1.45;
+}
+
+.dyn-form-hint--soft i {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+/* Multi-select chips */
+
+.dyn-multi-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dyn-multi-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-label);
+  padding-left: 2px;
+}
+
+.dyn-multi-count {
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.dyn-multi-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.dyn-multi-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  background: transparent;
+  border: 1px solid var(--surface-border);
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.dyn-multi-chip:hover {
+  color: var(--text-primary);
+  background: var(--surface-active);
+}
+
+.dyn-multi-chip--on {
+  background: color-mix(in srgb, var(--amount-investment) 14%, transparent);
+  color: var(--amount-investment);
+  border-color: color-mix(in srgb, var(--amount-investment) 35%, transparent);
+}
+
+/* ── Ticker search field (dynamic form) ─────────────── */
+
+.dyn-ticker-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.dyn-ticker-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.dyn-ticker-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.dyn-ticker-hint {
+  font-weight: 400;
+  color: var(--text-label);
+}
+
+.dyn-ticker-fetch {
+  flex-shrink: 0;
+  width: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface-bg);
+  border: 1px solid var(--surface-border);
+  border-radius: 10px;
+  color: var(--amount-investment);
+  font-size: 14px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.dyn-ticker-fetch:hover:not(:disabled) {
+  background: var(--surface-active);
+  border-color: var(--surface-border-open);
+}
+
+.dyn-ticker-fetch:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.dyn-ticker-results {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 220px;
+  overflow-y: auto;
+  background: var(--surface-bg);
+  border: 1px solid var(--surface-border);
+  border-radius: 10px;
+}
+
+.dyn-ticker-result {
+  display: grid;
+  grid-template-columns: minmax(80px, auto) 1fr auto;
+  gap: 8px;
+  align-items: baseline;
+  width: 100%;
+  padding: 8px 10px;
+  background: transparent;
+  border: none;
+  text-align: left;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.dyn-ticker-result:hover {
+  background: var(--surface-active);
+}
+
+.dyn-ticker-symbol {
+  font-weight: 700;
+  color: var(--amount-investment);
+}
+
+.dyn-ticker-name {
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dyn-ticker-exch {
+  font-size: 10px;
+  color: var(--text-label);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.dyn-ticker-msg {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.dyn-ticker-msg--err {
+  color: var(--amount-expense);
+}
+
+/* Month grid as a dynamic field: same chrome as LIC but a thin top
+   margin so it sits cleanly inside multi-field rows. */
+.dyn-month-grid {
+  margin-top: 0;
+}
+
+/* Deduct-from-balance group */
+
+.dyn-deduct-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 0;
+}
+
+/* Auto-deduct schedule group — distinguished by a coloured left accent
+   bar rather than a filled background. The bar reads as a clear visual
+   "this is a contained sub-section" without the heavier surface-fill
+   look that competes with the modal's own background. */
+
+.dyn-auto-deduct {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 0 10px 14px;
+  border-left: 3px solid color-mix(in srgb, var(--amount-investment) 50%, transparent);
+}
+
+.dyn-auto-deduct-head {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.dyn-auto-deduct-locked {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--amount-investment);
+}
+
+.dyn-auto-deduct-body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ── Preferences: Investment Types panel ──────────── */
+
+.pref-inv-types-summary {
+  margin: 8px 0 12px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.pref-inv-types-flat {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pref-inv-type-flat {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--surface-border);
+  border-radius: 10px;
+  transition: border-color 0.15s, background 0.15s;
+  touch-action: pan-y;
+}
+
+.pref-inv-type-flat--on {
+  border-color: color-mix(in srgb, var(--amount-investment) 35%, transparent);
+  background: color-mix(in srgb, var(--amount-investment) 5%, var(--bg));
+}
+
+/* While dragging — lift via shadow + reduce opacity so the row is clearly
+   the one being moved. Mirrors the .pref-cat-row--dragging look. */
+.pref-inv-type-flat--dragging {
+  z-index: 2;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+}
+
+/* Grip handle: tighter alignment + crisp tap target. The chevron-stack
+   icon and base sizing come from the shared .pref-cat-handle class. */
+.pref-inv-type-handle {
+  margin-top: 2px;
+}
+
+.pref-inv-type-source {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: var(--surface-active);
+  color: var(--text-label);
+  vertical-align: middle;
+}
+
+.pref-inv-type-desc {
+  display: block;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+  margin-top: 4px;
+}
+
+.pref-inv-type-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.pref-inv-type-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.pref-inv-type-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.pref-inv-type-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.pref-inv-type-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.pref-inv-type-sub {
+  font-size: 12px;
+  color: var(--text-label);
+}
+
+/* The Discover catalog is now inline in the Preferences flat list — no
+   separate modal styling needed. */
+
+/* ── Investment Types — designer entry points ─────── */
+
+.pref-inv-type-edit {
+  margin-right: 4px;
+}
+
+.pref-inv-create-btn {
+  margin-top: 12px;
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ── Investment Type Designer (modal) ──────────────── */
+
+.itd-designer {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.itd-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.itd-section-label {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-label);
+}
+
+.itd-profile-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.itd-profile-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.itd-profile-pill {
+  padding: 7px 14px;
+  background: transparent;
+  border: 1px solid var(--surface-border);
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.itd-profile-pill:hover:not(:disabled) {
+  color: var(--text-primary);
+  background: var(--surface-active);
+}
+
+.itd-profile-pill--on {
+  background: color-mix(in srgb, var(--amount-investment) 18%, transparent);
+  color: var(--amount-investment);
+  border-color: color-mix(in srgb, var(--amount-investment) 45%, transparent);
+}
+
+.itd-profile-pill:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.itd-locked-hint {
+  margin: 0;
+  padding: 8px 10px;
+  background: var(--surface-active);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  line-height: 1.4;
+}
+
+.itd-locked-hint--info {
+  background: color-mix(in srgb, var(--amount-investment) 10%, transparent);
+  color: var(--amount-investment);
+}
+
+/* ── Edit / Preview split layout ───────────────────── */
+
+.itd-preview-toggle {
+  display: none;
+  background: var(--surface-bg);
+  border: 1px solid var(--surface-border);
+  border-radius: 999px;
+  padding: 4px;
+  align-self: stretch;
+}
+
+.itd-preview-tab {
+  flex: 1;
+  padding: 8px 16px;
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.itd-preview-tab--on {
+  background: var(--bg);
+  color: var(--text-primary);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.itd-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+  align-items: start;
+}
+
+.itd-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.itd-pane--preview {
+  position: sticky;
+  top: 8px;
+}
+
+.itd-preview-frame {
+  padding: 12px;
+  border: 1px dashed var(--surface-border-open);
+  border-radius: 12px;
+  max-height: 60vh;
+  overflow-y: auto;
+  /* Read-only preview — the `inert` attribute on the wrapper handles
+     keyboard + assistive-tech blocking; these CSS rules cover the
+     visual + pointer signal. cursor:not-allowed makes the intent
+     obvious; pointer-events:none is the belt-and-suspenders fallback
+     for any browser quirks around inert. */
+  pointer-events: none;
+  cursor: not-allowed;
+  user-select: none;
+}
+
+.itd-preview-frame * {
+  cursor: not-allowed !important;
+}
+
+/* ── Row editor ────────────────────────────────────── */
+
+/* Designer row container — same left-accent treatment as the auto-deduct
+   group so the modal's sub-sections all read with the same vocabulary
+   instead of fighting each other with different surface fills. */
+.itd-row-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 0 8px 14px;
+  border-left: 3px solid color-mix(in srgb, var(--amount-investment) 35%, transparent);
+}
+
+.itd-row-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.itd-row-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-label);
+}
+
+.itd-row-meta {
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.itd-row-fields {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.itd-row-fields > .itd-field-chip {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
+/* ── Drag-to-reorder visuals ────────────────────────── */
+
+.itd-field-drag-handle {
+  cursor: grab;
+  border: none;
+  font-family: inherit;
+  padding: 0;
+  margin: 0;
+  touch-action: none;
+}
+
+.itd-field-drag-handle:active {
+  cursor: grabbing;
+}
+
+.itd-pane--dragging,
+.itd-pane--dragging .itd-field-drag-handle {
+  cursor: grabbing;
+  user-select: none;
+}
+
+.itd-field-chip--dragging {
+  opacity: 0.4;
+  border-style: dashed;
+}
+
+/* Thin vertical bar that marks the drop slot inside a row. */
+.itd-insert-bar {
+  flex: 0 0 4px;
+  align-self: stretch;
+  min-height: 32px;
+  background: var(--amount-investment);
+  border-radius: 2px;
+  box-shadow: 0 0 8px color-mix(in srgb, var(--amount-investment) 60%, transparent);
+  animation: itd-insert-pulse 0.9s ease-in-out infinite alternate;
+}
+
+@keyframes itd-insert-pulse {
+  from { opacity: 0.6; }
+  to   { opacity: 1; }
+}
+
+/* Drop zone shown below the last row during drag, for "new row at end". */
+.itd-new-row-zone {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 14px;
+  background: var(--surface-bg);
+  border: 2px dashed var(--surface-border-open);
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-label);
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.itd-new-row-zone--active {
+  background: color-mix(in srgb, var(--amount-investment) 10%, transparent);
+  border-color: var(--amount-investment);
+  color: var(--amount-investment);
+}
+
+.itd-row-empty {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 10px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-label);
+  font-style: italic;
+}
+
+.itd-add-field-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: var(--bg);
+  border: 1px dashed var(--surface-border-open);
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.itd-add-field-btn:hover:not(:disabled) {
+  background: var(--surface-active);
+}
+
+.itd-add-field-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.itd-add-row-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 10px 16px;
+  background: transparent;
+  border: 1px dashed var(--surface-border-open);
+  border-radius: 12px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.itd-add-row-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--amount-investment);
+  background: color-mix(in srgb, var(--amount-investment) 6%, transparent);
+}
+
+/* ── Field chip ────────────────────────────────────── */
+
+.itd-field-chip {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  background: var(--bg);
+  border: 1px solid var(--surface-border);
+  border-radius: 10px;
+  min-width: 0;
+}
+
+.itd-field-chip--locked {
+  background: var(--surface-bg);
+  border-style: dashed;
+}
+
+.itd-field-chip-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.itd-field-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 8px;
+  background: var(--surface-active);
+  color: var(--text-secondary);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.itd-field-chip-meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.itd-field-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.itd-field-req {
+  color: var(--amount-expense);
+  font-weight: 700;
+}
+
+.itd-field-type {
+  font-size: 10px;
+  color: var(--text-label);
+}
+
+.itd-field-locked-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  background: var(--surface-active);
+  color: var(--text-label);
+  flex-shrink: 0;
+}
+
+.itd-field-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  justify-content: flex-end;
+}
+
+.itd-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  background: var(--surface-bg);
+  border: 1px solid var(--surface-border);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 10px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.itd-icon-btn:hover:not(:disabled) {
+  background: var(--surface-active);
+  color: var(--text-primary);
+}
+
+.itd-icon-btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.itd-icon-btn--danger:hover {
+  color: var(--amount-expense);
+}
+
+@media (max-width: 768px) {
+  .itd-preview-toggle {
+    display: flex;
+  }
+  .itd-split {
+    grid-template-columns: 1fr;
+  }
+  .itd-pane--hidden-mobile {
+    display: none;
+  }
+  .itd-pane--preview {
+    position: static;
+  }
+  .itd-preview-frame {
+    max-height: none;
+  }
+}
+
+/* ── Field-type picker (sub-modal) ─────────────────── */
+
+.itd-picker {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.itd-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+}
+
+.itd-picker-tile {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 8px;
+  background: var(--surface-bg);
+  border: 1px solid var(--surface-border);
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.itd-picker-tile i {
+  font-size: 18px;
+  color: var(--amount-investment);
+}
+
+.itd-picker-tile:hover {
+  background: var(--surface-active);
+  border-color: var(--surface-border-open);
+}
+
+/* ── Field-config sub-modal ────────────────────────── */
+
+.itd-field-config {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.itd-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 0 8px 14px;
+  border-left: 3px solid color-mix(in srgb, var(--amount-investment) 35%, transparent);
+}
+
+.itd-options-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.itd-option-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--bg);
+  border: 1px solid var(--surface-border);
+  border-radius: 8px;
+  font-size: 13px;
+}
+
+/* ── Statement Import (Phase A) ───────────────────────── */
+
+/* Compact launch button — for the Expenses page header. */
+.exp-page-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin: 8px 0 4px;
+}
+
+.stmt-launch-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: var(--surface-bg);
+  border: 1px solid var(--surface-border);
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.stmt-launch-btn:hover {
+  background: var(--surface-active);
+  border-color: var(--surface-border-open);
+  color: var(--amount-investment);
+}
+
+.stmt-launch-btn i {
+  color: var(--amount-investment);
+}
+
+/* Dashboard quick-action card. */
+.stmt-launch-card {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 14px 16px;
+  background: var(--surface-bg);
+  border: 1px solid var(--surface-border);
+  border-radius: 14px;
+  font-family: inherit;
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, transform 0.08s;
+}
+
+.stmt-launch-card:hover {
+  background: var(--surface-active);
+  border-color: color-mix(in srgb, var(--amount-investment) 40%, var(--surface-border));
+}
+
+.stmt-launch-card:active {
+  transform: scale(0.995);
+}
+
+.stmt-launch-card-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--amount-investment) 14%, transparent);
+  color: var(--amount-investment);
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.stmt-launch-card-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.stmt-launch-card-title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.stmt-launch-card-sub {
+  font-size: 12px;
+  color: var(--text-label);
+}
+
+.stmt-launch-card-chev {
+  color: var(--text-label);
+  font-size: 13px;
+}
+
+/* ── Import modal — input step ────────────────────────── */
+
+.stmt-import {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.stmt-mode-toggle {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--surface-bg);
+  border: 1px solid var(--surface-border);
+  border-radius: 999px;
+  align-self: flex-start;
+}
+
+.stmt-mode-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.stmt-mode-tab--on {
+  background: var(--bg);
+  color: var(--text-primary);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+
+.stmt-dropzone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 36px 20px;
+  background: var(--surface-bg);
+  border: 2px dashed var(--surface-border-open);
+  border-radius: 14px;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.stmt-dropzone:hover,
+.stmt-dropzone--over {
+  background: color-mix(in srgb, var(--amount-investment) 8%, transparent);
+  border-color: var(--amount-investment);
+}
+
+.stmt-dropzone-icon {
+  font-size: 28px;
+  color: var(--amount-investment);
+}
+
+.stmt-dropzone-primary {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.stmt-dropzone-secondary {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-label);
+  text-align: center;
+}
+
+.stmt-paste {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.stmt-paste-area {
+  width: 100%;
+  padding: 12px;
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 12px;
+  background: var(--bg);
+  color: var(--text-primary);
+  border: 1px solid var(--surface-border);
+  border-radius: 10px;
+  resize: vertical;
+}
+
+.stmt-parse-btn {
+  align-self: flex-start;
+}
+
+.stmt-status {
+  margin: 0;
+  padding: 8px 12px;
+  background: var(--surface-bg);
+  border-radius: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.stmt-status--err {
+  background: color-mix(in srgb, var(--amount-expense) 14%, transparent);
+  color: var(--amount-expense);
+}
+
+/* ── Review step ──────────────────────────────────────── */
+
+.stmt-review {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.stmt-review-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.stmt-review-back {
+  font-size: 12px;
+}
+
+.stmt-review-bulk {
+  display: flex;
+  gap: 6px;
+}
+
+.stmt-bulk-btn {
+  padding: 6px 10px;
+  background: var(--surface-bg);
+  border: 1px solid var(--surface-border);
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.stmt-bulk-btn:hover {
+  background: var(--surface-active);
+  color: var(--text-primary);
+}
+
+.stmt-rows {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 56vh;
+  overflow-y: auto;
+}
+
+.stmt-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--surface-border);
+  border-left-width: 3px;
+  border-radius: 10px;
+  transition: border-color 0.12s, opacity 0.12s;
+}
+
+.stmt-row--on {
+  border-color: var(--surface-border-open);
+}
+
+.stmt-row--dup {
+  opacity: 0.55;
+  border-style: dashed;
+}
+
+.stmt-row--conf-high {
+  border-left-color: var(--amount-income);
+}
+
+.stmt-row--conf-med {
+  border-left-color: #d4a35a;
+}
+
+.stmt-row--conf-low {
+  border-left-color: var(--amount-expense);
+}
+
+.stmt-row-check {
+  margin-top: 4px;
+  flex-shrink: 0;
+}
+
+.stmt-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stmt-row-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.stmt-row-date {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-label);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.stmt-row-amount {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.stmt-row-amount--in {
+  color: var(--amount-income);
+}
+
+.stmt-row-amount--out {
+  color: var(--amount-expense);
+}
+
+.stmt-row-desc {
+  font-size: 13px;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stmt-row-dup-badge {
+  font-size: 11px;
+  color: var(--text-label);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.stmt-row-hint {
+  font-size: 11px;
+  color: var(--text-label);
+  font-style: italic;
+}
+
+.stmt-row-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.stmt-row-select {
+  padding: 4px 8px;
+  background: var(--surface-bg);
+  border: 1px solid var(--surface-border);
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+/* Summary footer — left accent bar instead of a filled card so the
+   importer's sub-sections all use the same visual language as the
+   designer rows + auto-deduct group. */
+
+.stmt-summary {
+  padding: 8px 0 8px 14px;
+  border-left: 3px solid color-mix(in srgb, var(--amount-investment) 35%, transparent);
+}
+
+.stmt-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.stmt-summary-grid > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.stmt-summary-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-label);
+}
+
+.stmt-summary-value {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.stmt-summary-value--in {
+  color: var(--amount-income);
+}
+
+.stmt-summary-value--out {
+  color: var(--amount-expense);
+}
+
+.stmt-summary-sub {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-label);
+}
+
+/* ── Password prompt (Phase B PDF unlock) ──────────────── */
+
+.stmt-pwd {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  background: color-mix(in srgb, var(--amount-investment) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--amount-investment) 35%, transparent);
+  border-radius: 12px;
+}
+
+.stmt-pwd-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.stmt-pwd-head i {
+  color: var(--amount-investment);
+}
+
+.stmt-pwd-hint {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.stmt-pwd-form {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+
+.stmt-pwd-input {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 12px;
+  background: var(--bg);
+  border: 1px solid var(--surface-border);
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.stmt-pwd-input:focus {
+  outline: none;
+  border-color: var(--amount-investment);
+}
+
+.stmt-pwd-err {
+  margin: 0;
+  font-size: 12px;
+  color: var(--amount-expense);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ── Detected bank badge ──────────────────────────────── */
+
+.stmt-detected {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  background: color-mix(in srgb, var(--amount-investment) 10%, transparent);
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--amount-investment);
+  align-self: flex-start;
+}
+
+/* ── Merchant memory (Phase C) ────────────────────────── */
+
+.pref-merchant-mem {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.pref-merchant-mem-empty {
+  margin-top: 12px;
+  padding: 12px;
+  background: var(--surface-bg);
+  border: 1px dashed var(--surface-border);
+  border-radius: 10px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.pref-merchant-mem-empty p {
+  margin: 0;
+}
+
+.pref-merchant-mem-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pref-merchant-mem-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 1fr) auto auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 1px solid var(--surface-border);
+  border-radius: 10px;
+}
+
+@media (max-width: 640px) {
+  .pref-merchant-mem-row {
+    grid-template-columns: 1fr auto;
+    grid-template-areas:
+      "main remove"
+      "type cat";
+  }
+  .pref-merchant-mem-main { grid-area: main; }
+  .pref-merchant-mem-row .pref-merchant-mem-select:nth-of-type(1) { grid-area: type; }
+  .pref-merchant-mem-row .pref-merchant-mem-select:nth-of-type(2) { grid-area: cat; }
+  .pref-merchant-mem-row .pref-cat-btn { grid-area: remove; }
+}
+
+.pref-merchant-mem-main {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.pref-merchant-mem-pattern {
+  font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pref-merchant-mem-meta {
+  font-size: 11px;
+  color: var(--text-label);
+}
+
+.pref-merchant-mem-select {
+  padding: 4px 8px;
+  background: var(--surface-bg);
+  border: 1px solid var(--surface-border);
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+/* ── Reconciliation step (Phase D) ────────────────────── */
+
+.stmt-reconcile {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.stmt-reconcile-intro {
+  margin: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+.stmt-recon-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+.stmt-recon-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  background: var(--bg);
+  border: 1px solid var(--surface-border);
+  border-left: 3px solid var(--amount-investment);
+  border-radius: 12px;
+  transition: opacity 0.18s, border-color 0.18s;
+}
+
+.stmt-recon-card--applied {
+  border-left-color: var(--amount-income);
+  background: color-mix(in srgb, var(--amount-income) 5%, var(--bg));
+}
+
+.stmt-recon-card--dismissed {
+  opacity: 0.5;
+  border-left-color: var(--surface-border);
+}
+
+.stmt-recon-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.stmt-recon-kind {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--amount-investment);
+}
+
+.stmt-recon-card--applied .stmt-recon-kind {
+  color: var(--amount-income);
+}
+
+.stmt-recon-conf {
+  font-size: 11px;
+  color: var(--text-label);
+  font-variant-numeric: tabular-nums;
+}
+
+.stmt-recon-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.stmt-recon-body {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.stmt-recon-tx-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.stmt-recon-tx-list li {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 2px 0;
+  font-size: 12px;
+}
+
+.stmt-recon-tx-more {
+  font-style: italic;
+  color: var(--text-label);
+}
+
+.stmt-recon-tx-total {
+  margin-top: 4px;
+  padding-top: 4px !important;
+  border-top: 1px dashed var(--surface-border);
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.stmt-recon-amt {
+  font-variant-numeric: tabular-nums;
+}
+
+.stmt-recon-pair {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stmt-recon-pair-row {
+  display: grid;
+  grid-template-columns: 56px 1fr auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  background: var(--surface-bg);
+  border-radius: 6px;
+  font-size: 12px;
+}
+
+.stmt-recon-pair-arrow {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-label);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.stmt-recon-pair-name {
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.stmt-recon-pair-date {
+  color: var(--text-label);
+}
+
+.stmt-recon-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.stmt-recon-skip {
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+.stmt-recon-applied,
+.stmt-recon-dismissed {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.stmt-recon-applied {
+  color: var(--amount-income);
+}
+
+.stmt-recon-dismissed {
+  color: var(--text-label);
 }

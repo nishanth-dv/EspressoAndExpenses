@@ -2,6 +2,7 @@ import { memo, useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import { useSelector } from "react-redux";
 import DayPicker from "./DayPicker";
+import OptionField from "../components/OptionField";
 import { BANKS as DEFAULT_BANKS } from "../utils/constants";
 
 function randomColor() {
@@ -115,17 +116,15 @@ const CardForm = ({ onSubmit, onCancel, existing, cards = [] }) => {
         <label>Card name</label>
       </div>
 
-      <div className="field">
-        <select name="bank" value={form.bank} onChange={handleChange} required>
-          <option value="" disabled hidden />
-          {BANKS.map((b) => (
-            <option key={b} value={b}>
-              {b}
-            </option>
-          ))}
-        </select>
-        <label>Bank</label>
-      </div>
+      <OptionField
+        name="bank"
+        value={form.bank}
+        onChange={handleChange}
+        label="Bank"
+        required
+        placeholder=""
+        options={BANKS}
+      />
 
       {siblings.length > 0 && (
         <label className="card-combine-toggle">

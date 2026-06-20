@@ -1,6 +1,3 @@
-import * as XLSX from "xlsx";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
 import {
   INR,
   getSummary,
@@ -17,6 +14,23 @@ import {
 import { calcReturns, getTypeInfo } from "./investmentUtils";
 import { calcHealthScore, cardUtilization, COMMITMENT_TYPES } from "./solvencyUtils";
 import { CATEGORIES } from "./constants";
+
+// xlsx, jspdf and jspdf-autotable are large (~400 KB combined, pulling in
+// html2canvas + dompurify). They're only needed the moment a user actually
+// downloads a report, so we dynamically import them on first use and cache
+// the modules at module scope. This keeps them out of the initial bundle.
+let XLSX;
+let jsPDF;
+let autoTable;
+
+async function ensureExcelLib() {
+  if (!XLSX) XLSX = await import("xlsx");
+}
+
+async function ensurePdfLibs() {
+  if (!jsPDF) jsPDF = (await import("jspdf")).default;
+  if (!autoTable) autoTable = (await import("jspdf-autotable")).default;
+}
 
 const DATE_FMT = new Intl.DateTimeFormat("en-IN", {
   day: "2-digit",
@@ -195,11 +209,12 @@ function buildSolvencyRows(cards, commitments, lendings) {
 
 // ── Excel export ─────────────────────────────────────
 
-export function exportToExcel(
+export async function exportToExcel(
   { transactions, allTransactions, insights, budgets, investments, cards, commitments, lendings, sections },
   filterLabel,
   filterFilename,
 ) {
+  await ensureExcelLib();
   const wb = XLSX.utils.book_new();
 
   if (sections.dashboard) {
@@ -280,11 +295,12 @@ function pdfSection(doc, title, head, body, startY) {
   return doc.lastAutoTable.finalY + 8;
 }
 
-export function exportToPDF(
+export async function exportToPDF(
   { transactions, allTransactions, insights, budgets, investments, cards, commitments, lendings, sections },
   filterLabel,
   filterFilename,
 ) {
+  await ensurePdfLibs();
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const subtitle = filterLabel ? `Filter: ${filterLabel}` : null;
   let firstPage = true;

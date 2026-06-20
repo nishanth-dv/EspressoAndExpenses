@@ -114,30 +114,6 @@
   color: var(--text-secondary);
 }
 
-/* ── Two-column layout ───────────────────────────────── */
-
-.inv-two-col {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-}
-
-@media (min-width: 768px) {
-  .inv-two-col {
-    flex-direction: row;
-    align-items: flex-start;
-  }
-
-  .inv-allocation {
-    flex: 0 0 280px;
-  }
-
-  .inv-holdings-section {
-    flex: 1;
-    min-width: 0;
-  }
-}
-
 /* ── Allocation Ring ─────────────────────────────────── */
 
 .inv-allocation-inner {
@@ -212,7 +188,7 @@
   gap: 5px;
   padding: 5px 12px;
   border-radius: 20px;
-  border: 1px solid var(--surface-border);
+  border: none;
   background: var(--bar-bg);
   color: var(--bar-text);
   font-family: "Smooch Sans", sans-serif;
@@ -232,14 +208,152 @@
   opacity: 0.85;
 }
 
+/* Self-contained scroll box (as shipped) so the holdings list never makes the
+   whole page taller than the viewport — that's what keeps the last card
+   reachable above the fixed action footer. The per-type groups scroll inside
+   here; the family rail sits above it, outside the scroll. */
 .inv-holdings-list {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 18px;
   max-height: 480px;
   overflow-y: auto;
   scrollbar-width: thin;
   padding-right: 2px;
+  animation: invListFade 0.22s ease;
+}
+
+@keyframes invListFade {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ── Portfolio family rail + per-type groups ─────────── */
+
+/* Per-type filter as an underline sub-tab bar. Sits one level below the
+   Overview/Portfolio and Holdings/History segmented controls, so it uses a
+   quieter underline pattern to read as a sub-level rather than competing. */
+.inv-family-rail {
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  /* overflow-x:auto forces overflow-y to compute to auto as well; pin it to
+     hidden so the chips' -1px underline overlap can't trigger a vertical
+     scrollbar. This rail scrolls horizontally only. */
+  overflow-y: hidden;
+  scrollbar-width: none;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--surface-border);
+  -webkit-overflow-scrolling: touch;
+}
+
+.inv-family-rail::-webkit-scrollbar {
+  display: none;
+}
+
+.inv-family-chip {
+  flex: 0 0 auto;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 14px 10px;
+  /* Overlap the rail's bottom border so the active underline replaces it. */
+  margin-bottom: -1px;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: "Smooch Sans", sans-serif;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.inv-family-chip i {
+  font-size: 12px;
+  opacity: 0.85;
+}
+
+.inv-family-chip:hover {
+  color: var(--text-primary);
+}
+
+.inv-family-chip--active {
+  color: var(--accent, #5b8dee);
+  border-bottom-color: var(--accent, #5b8dee);
+}
+
+.inv-family-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--surface-border);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.inv-family-chip--active .inv-family-count {
+  background: color-mix(in srgb, var(--accent, #5b8dee) 18%, transparent);
+  color: var(--accent, #5b8dee);
+}
+
+.inv-type-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.inv-type-group-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.inv-type-group-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 7px;
+  font-size: 12px;
+  flex-shrink: 0;
+}
+
+.inv-type-group-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-label);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.inv-type-group-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--surface-border);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
 }
 
 .inv-holding-card {
@@ -1698,6 +1812,75 @@
   flex: 1;
 }
 
+.inv-existing-chooser {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.inv-existing-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  padding: 12px 14px;
+  background: var(--surface-bg);
+  border: 1px solid var(--surface-border);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.inv-existing-row:hover {
+  background: color-mix(in srgb, var(--amount-investment) 6%, var(--surface-bg));
+  border-color: var(--amount-investment);
+}
+
+.inv-existing-row:active {
+  transform: scale(0.995);
+}
+
+.inv-existing-row-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-align: left;
+}
+
+.inv-existing-row-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--amount-investment);
+}
+
+.inv-existing-create {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  margin-top: 4px;
+  padding: 12px 14px;
+  background: transparent;
+  border: 1px dashed color-mix(in srgb, var(--amount-investment) 40%, var(--surface-border));
+  border-radius: 12px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--amount-investment);
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.inv-existing-create:hover {
+  background: color-mix(in srgb, var(--amount-investment) 6%, transparent);
+  border-color: var(--amount-investment);
+}
+
 /* ── Per-holding Ledger ──────────────────────────────── */
 
 .inv-icon-btn--ledger:hover {
@@ -1915,6 +2098,38 @@
   flex-shrink: 0;
 }
 
+.inv-ledger-amount-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 1px;
+  font-size: 15px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.inv-ledger-amount-input {
+  width: 84px;
+  padding: 3px 6px;
+  border: 1px solid var(--surface-border);
+  border-radius: 7px;
+  background: var(--surface-bg);
+  color: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  text-align: right;
+}
+
+.inv-ledger-amount-input:focus {
+  outline: none;
+  border-color: currentColor;
+}
+
+.inv-ledger-amount-input::-webkit-outer-spin-button,
+.inv-ledger-amount-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
 .inv-ledger-sub {
   margin: 2px 0 0;
   font-size: 13px;
@@ -1979,10 +2194,16 @@
   background: var(--surface-bg);
   border: 1px solid var(--surface-border);
   border-radius: 12px;
-  margin-bottom: 12px;
+  /* Extra breathing room above and below the Overview/Portfolio switcher so it
+     reads as its own band, separated from the hero cards and the content. */
+  margin: 8px 0;
 }
 
 .inv-page-tab {
+  position: relative;
+  /* Own stacking context so the sliding pill (z-index:-1) tucks behind the
+     label/icon but stays contained within the button (never behind the band). */
+  z-index: 0;
   flex: 1;
   display: inline-flex;
   align-items: center;
@@ -1997,17 +2218,60 @@
   font-weight: 600;
   color: var(--text-secondary);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  /* Background is carried by the framer-motion pill, which slides between tabs
+     via layout animation — only the text color cross-fades here. */
+  transition: color 0.15s;
 }
 
-.inv-page-tab:hover {
+/* The active fill: a single shared-layout motion element (layoutId) so it
+   slides from the old tab to the new one. Sits behind the label via z-index. */
+.inv-page-tab-pill {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: 9px;
+  background: var(--bar-bg);
+}
+
+/* Only brighten inactive tabs on hover. The active tab already paints its text
+   with --bar-text to contrast the --bar-bg pill; letting :hover (higher
+   specificity than --active) override it flips the label to --text-primary,
+   which in Classic dark is the same light shade as the pill — the label
+   vanishes the moment the cursor rests on the tab you just selected. */
+.inv-page-tab:hover:not(.inv-page-tab--active) {
   color: var(--text-primary);
 }
 
 .inv-page-tab--active {
-  background: var(--bar-bg);
   color: var(--bar-text);
 }
+
+.inv-type-tabs {
+  margin-bottom: 16px;
+  padding: 4px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.inv-type-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.inv-type-tabs .inv-page-tab {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.inv-page-tab--active .inv-family-count {
+  background: color-mix(in srgb, var(--bar-text) 22%, transparent);
+  color: var(--bar-text);
+}
+
+/* Both tab rows share the same .inv-page-tab-pill (a framer-motion layoutId
+   element), so the inner type rail's active pill is identical to the
+   Overview/Portfolio tabs and slides the same way. Glass repaints the pill over
+   an opaque base (glass.css) because --bar-bg is translucent there; Classic
+   leaves it a single clean --bar-bg fill. */
 
 /* ── LIC chips on holding card ─────────────────────── */
 
@@ -2045,6 +2309,91 @@
   font-size: 12px;
   font-weight: 600;
   color: var(--amount-investment);
+}
+
+.inv-lic-overdue {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.inv-lic-arrears {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.inv-lic-pay-overdue {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 11px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--amount-investment) 40%, transparent);
+  background: color-mix(in srgb, var(--amount-investment) 10%, transparent);
+  color: var(--amount-investment);
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.inv-lic-pay-overdue:hover {
+  background: color-mix(in srgb, var(--amount-investment) 18%, transparent);
+}
+
+.inv-grace-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 4px;
+  padding: 14px 12px;
+  background: transparent;
+  border: 1px solid var(--surface-border-open);
+  border-radius: 12px;
+}
+
+.inv-grace-msg {
+  display: flex;
+  gap: 8px;
+  margin: 0;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--text-secondary);
+}
+
+.inv-grace-msg i {
+  color: var(--amount-investment);
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.inv-grace-msg strong {
+  color: var(--text-primary);
+}
+
+.inv-field-hint {
+  margin: -4px 2px 4px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+
+.inv-grace-row {
+  display: flex;
+  gap: 10px;
+}
+
+.inv-grace-value {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.inv-grace-unit {
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 .inv-action-menu-item--disabled {

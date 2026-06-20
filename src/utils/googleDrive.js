@@ -1,8 +1,9 @@
 /* global google */
 
-// Identity + Drive in one scope so the user only ever sees one Google popup.
+// Identity + Drive + read-only Gmail (for auto-capture of bank/UPI alert
+// mails) in one scope set so the user only ever sees one Google popup.
 const SCOPES =
-  "openid profile email https://www.googleapis.com/auth/drive.file";
+  "openid profile email https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/gmail.readonly";
 
 const LS_TOKEN = "gapi_access_token";
 const LS_EXPIRY = "gapi_token_expiry";
@@ -230,13 +231,28 @@ export async function createOrFetchFile(fileName, initialData) {
   return { fileId, data, created: false };
 }
 
+const SAVE_ATTEMPTS = 3;
+
 export async function updateFile(fileId, updatedData) {
-  await driveRequest(
-    `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`,
-    {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(updatedData, null, 2),
-    },
-  );
+  let lastErr;
+  for (let i = 0; i < SAVE_ATTEMPTS; i += 1) {
+    try {
+      const res = await driveRequest(
+        `https://www.googleapis.com/upload/drive/v3/files/${fileId}?uploadType=media`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(updatedData, null, 2),
+        },
+      );
+      if (!res.ok) throw new Error(`Drive save failed (${res.status})`);
+      return;
+    } catch (e) {
+      lastErr = e;
+      if (i < SAVE_ATTEMPTS - 1) {
+        await new Promise((r) => setTimeout(r, 600 * 2 ** i));
+      }
+    }
+  }
+  throw lastErr;
 }

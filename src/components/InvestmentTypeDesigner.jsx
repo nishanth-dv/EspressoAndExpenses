@@ -20,7 +20,7 @@
 // Built-in types open in extras-only mode — the metadata and profile are
 // read-only, anchors are locked.
 
-import { memo, useRef, useState } from "react";
+import { memo, useRef, useState, useMemo } from "react";
 import PropTypes from "prop-types";
 import { useDispatch } from "react-redux";
 import Modal from "../preStyledElements/modal/Modal";
@@ -68,6 +68,7 @@ function makeEmptyType() {
     color,
     icon: "fa-cube",
     mathProfile: "manual",
+    affectsBalance: true,
     rows: [{ id: `r-${crypto.randomUUID().slice(0, 4)}`, fields: getAnchorsForProfile("manual") }],
   };
 }
@@ -120,6 +121,15 @@ const InvestmentTypeDesigner = ({ existing, onClose, onCreated }) => {
   const [editingFieldRef, setEditingFieldRef] = useState(null); // { rowIdx, fieldIdx }
   const [pickerTarget, setPickerTarget] = useState(null);       // rowIdx to add into
   const [previewVisibleMobile, setPreviewVisibleMobile] = useState(false);
+  const [confirmBalanceChange, setConfirmBalanceChange] = useState(false);
+  const [pendingSave, setPendingSave] = useState(null);
+
+  // True when the schema already has an explicit per-investment deduct toggle —
+  // in that case the type-level toggle would be redundant.
+  const hasDeductField = useMemo(
+    () => (draft.rows ?? []).some((r) => r.fields?.some((f) => f.type === "deduct-from-balance")),
+    [draft.rows],
+  );
 
   // ── Drag-to-reorder state ─────────────────────────────
   //
@@ -357,26 +367,37 @@ const InvestmentTypeDesigner = ({ existing, onClose, onCreated }) => {
     });
   }
 
-  function handleSave() {
-    if (!draft.label?.trim()) return;
+  function buildSchema() {
     const cleanedRows = (draft.rows ?? []).filter(
       (r, i) => i === 0 || r.fields.length > 0,
     );
-    const schema = {
-      ...draft,
-      label: draft.label.trim(),
-      rows: cleanedRows,
-    };
+    return { ...draft, label: draft.label.trim(), rows: cleanedRows };
+  }
+
+  function commitSave(schema) {
     if (isNew) {
       dispatch(persistAddInvestmentType(schema));
-      // Let the caller react to a fresh type — e.g. the InvestmentForm
-      // type-picker auto-selects the new type so the user lands straight
-      // in its Add Investment flow without a second tap.
       onCreated?.(schema);
     } else {
       dispatch(persistUpdateInvestmentType(schema));
     }
     onClose();
+  }
+
+  function handleSave() {
+    if (!draft.label?.trim()) return;
+    const schema = buildSchema();
+    // Warn before retroactively toggling balance impact on an existing type.
+    if (!isNew && !hasDeductField) {
+      const oldAffects = existing?.affectsBalance ?? true;
+      const newAffects = schema.affectsBalance ?? true;
+      if (oldAffects !== newAffects) {
+        setPendingSave(schema);
+        setConfirmBalanceChange(true);
+        return;
+      }
+    }
+    commitSave(schema);
   }
 
   const canSave = !!draft.label?.trim();
@@ -453,6 +474,43 @@ const InvestmentTypeDesigner = ({ existing, onClose, onCreated }) => {
                 but don't contribute to CAGR or allocation math.
               </p>
             )}
+
+          {/* Balance impact toggle — hidden when the schema already has a
+              per-investment deduct-from-balance field to avoid duplication. */}
+          {!hasDeductField && (
+            <div className="itd-balance-section">
+              <p className="itd-section-label">
+                Balance impact
+                {!isNew && (
+                  <span className="itd-section-label-hint"> — changing this affects all existing investments of this type</span>
+                )}
+              </p>
+              <div className="itd-profile-pills">
+                <button
+                  type="button"
+                  className={`itd-profile-pill${(draft.affectsBalance ?? true) ? " itd-profile-pill--on" : ""}`}
+                  onClick={() => updateDraft({ affectsBalance: true })}
+                  disabled={isBuiltIn}
+                >
+                  <i className="fa-solid fa-wallet" /> Affects Balance
+                </button>
+                <button
+                  type="button"
+                  className={`itd-profile-pill${(draft.affectsBalance ?? true) ? "" : " itd-profile-pill--on"}`}
+                  onClick={() => updateDraft({ affectsBalance: false })}
+                  disabled={isBuiltIn}
+                >
+                  <i className="fa-solid fa-chart-pie" /> Portfolio Only
+                </button>
+              </div>
+              <p className="itd-locked-hint itd-locked-hint--info">
+                {(draft.affectsBalance ?? true)
+                  ? <><i className="fa-solid fa-circle-info" /> Investments of this type will deduct from your cash balance when added.</>
+                  : <><i className="fa-solid fa-circle-info" /> Investments of this type are tracked in your portfolio only — cash balance is unaffected.</>
+                }
+              </p>
+            </div>
+          )}
           </div>
         </div>
 
@@ -597,6 +655,47 @@ const InvestmentTypeDesigner = ({ existing, onClose, onCreated }) => {
             }
             onClose={() => setEditingFieldRef(null)}
           />
+        </Modal>
+      )}
+
+      {/* ── Retroactive balance change confirmation ── */}
+      {confirmBalanceChange && pendingSave && (
+        <Modal
+          open
+          onClose={() => { setConfirmBalanceChange(false); setPendingSave(null); }}
+          title="Recalculate balance?"
+        >
+          <div className="delete-confirm-body">
+            <p className="delete-confirm-hint">
+              {(pendingSave.affectsBalance ?? true)
+                ? "Turning on balance impact will deduct the invested amount for all existing investments of this type from your cash balance."
+                : "Turning off balance impact will remove existing deductions for all investments of this type from your cash balance."
+              }
+            </p>
+            <p className="delete-confirm-hint">
+              Your balance will recalculate immediately. This cannot be undone automatically.
+            </p>
+            <div className="form-actions">
+              <button
+                type="button"
+                className="cancel-button"
+                onClick={() => { setConfirmBalanceChange(false); setPendingSave(null); }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="generic-button"
+                onClick={() => {
+                  setConfirmBalanceChange(false);
+                  commitSave(pendingSave);
+                  setPendingSave(null);
+                }}
+              >
+                <i className="fa-solid fa-rotate" /> Apply &amp; Recalculate
+              </button>
+            </div>
+          </div>
         </Modal>
       )}
     </Modal>
@@ -988,6 +1087,31 @@ function FieldConfig({ field, onChange, onClose }) {
           />
           <label>Max months selectable (1 to 12)</label>
         </div>
+      )}
+
+      {field.type === "auto-deduct" && (
+        <>
+          <label className="dyn-form-checkbox">
+            <input
+              type="checkbox"
+              checked={!!field.config?.variableAmount}
+              onChange={(e) =>
+                onChange({
+                  config: {
+                    ...(field.config ?? {}),
+                    variableAmount: e.target.checked,
+                  },
+                })
+              }
+            />
+            <span>Amount varies each period</span>
+          </label>
+          <p className="dyn-form-hint dyn-form-hint--soft">
+            <i className="fa-solid fa-circle-info" /> New investments of this
+            type start with editable per-period amounts — each pending row can be
+            adjusted before logging. Users can still flip this per investment.
+          </p>
+        </>
       )}
 
       {hasOptions && (

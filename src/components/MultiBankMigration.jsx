@@ -5,7 +5,31 @@ import PropTypes from "prop-types";
 // and self transfers) and lets the user assign a bank account per group.
 // Auto-suggests when the paymentMode string contains the bank name —
 // "HDFC UPI" → HDFC account, etc.
+const INR = new Intl.NumberFormat("en-IN", {
+  style: "currency",
+  currency: "INR",
+  maximumFractionDigits: 0,
+});
+
+function fmtDate(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "2-digit" });
+}
+
 const MultiBankMigration = ({ accounts, transactions, onApply, onClose }) => {
+  const [expanded, setExpanded] = useState(() => new Set());
+
+  function toggleExpanded(key) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
   const groups = useMemo(() => {
     const map = new Map();
     for (const t of transactions) {
@@ -80,15 +104,28 @@ const MultiBankMigration = ({ accounts, transactions, onApply, onClose }) => {
       <ul className="multibank-migration-list">
         {groups.map((g) => {
           const value = assignments[g.paymentMode] ?? "";
+          const isOpen = expanded.has(g.paymentMode);
           return (
             <li key={g.paymentMode} className="multibank-migration-row">
               <div className="multibank-migration-meta">
-                <span className="multibank-migration-name">
-                  {g.paymentMode}
-                </span>
-                <span className="multibank-migration-count">
-                  {g.txs.length} txn{g.txs.length === 1 ? "" : "s"}
-                </span>
+                <button
+                  type="button"
+                  className="multibank-migration-name-btn"
+                  onClick={() => toggleExpanded(g.paymentMode)}
+                  aria-expanded={isOpen}
+                >
+                  <i
+                    className={`fa-solid fa-chevron-right multibank-migration-chevron${
+                      isOpen ? " multibank-migration-chevron--open" : ""
+                    }`}
+                  />
+                  <span className="multibank-migration-name">
+                    {g.paymentMode}
+                  </span>
+                  <span className="multibank-migration-count">
+                    {g.txs.length} txn{g.txs.length === 1 ? "" : "s"}
+                  </span>
+                </button>
               </div>
               <select
                 className="multibank-migration-select"
@@ -108,6 +145,28 @@ const MultiBankMigration = ({ accounts, transactions, onApply, onClose }) => {
                 ))}
                 <option value="skip">Skip — leave untagged</option>
               </select>
+              {isOpen && (
+                <ul className="multibank-migration-txs">
+                  {g.txs
+                    .slice()
+                    .sort((a, b) =>
+                      (b.occurredAt ?? "").localeCompare(a.occurredAt ?? ""),
+                    )
+                    .map((t) => (
+                      <li key={t.id} className="multibank-migration-tx">
+                        <span className="multibank-migration-tx-name">
+                          {t.name || "(no name)"}
+                        </span>
+                        <span className="multibank-migration-tx-date">
+                          {fmtDate(t.occurredAt)}
+                        </span>
+                        <span className="multibank-migration-tx-amt">
+                          {INR.format(parseFloat(t.amount) || 0)}
+                        </span>
+                      </li>
+                    ))}
+                </ul>
+              )}
             </li>
           );
         })}

@@ -6,14 +6,8 @@
 // transfers. Self transfers don't move aggregate balance but DO move
 // per-account balance, so they're applied here.
 export function computeAccountBalance(account, transactions = []) {
-  const opening = parseFloat(account?.openingBalance) || 0;
-  const openingDate = account?.openingDate ? new Date(account.openingDate) : null;
-  let bal = opening;
+  let bal = 0;
   for (const t of transactions) {
-    const occurredAt = t.occurredAt ? new Date(t.occurredAt) : null;
-    // Only count transactions on/after the opening date — earlier ones
-    // pre-date the user's declared opening balance and would double-count.
-    if (openingDate && occurredAt && occurredAt < openingDate) continue;
     if (t.transactionType === "self_transfer") {
       if (t.fromAccountId === account.id) bal -= parseFloat(t.amount) || 0;
       if (t.toAccountId === account.id) bal += parseFloat(t.amount) || 0;
@@ -75,22 +69,13 @@ export function getAccountMonthlyDelta(account, transactions = []) {
   return delta;
 }
 
-// Aggregate balance — sum of all accounts plus any untagged-transaction
-// contribution. Untagged transactions stay visible in the "All" view per
-// the migration plan, so they need to be included here too.
+// Aggregate balance — sum of every account's balance, nothing else.
+// Untagged transactions (no accountId) are deliberately excluded: with no
+// bank to attribute them to, they're kept for history/visibility only and
+// never move the "All" balance. The user is told this when they save one,
+// so the omission is intentional, not a missed entry.
 export function computeAggregateBalance(accounts = [], transactions = []) {
   let total = 0;
   for (const a of accounts) total += computeAccountBalance(a, transactions);
-  // Untagged income/expense/investment also affects the user's overall
-  // money picture — count it once (no double-count because computeAccountBalance
-  // only sums tagged-to-this-account rows).
-  for (const t of transactions) {
-    if (t.accountId) continue;
-    if (t.transactionType === "self_transfer") continue;
-    if (t.transactionType === "income") total += parseFloat(t.amount) || 0;
-    else if (t.transactionType === "investment") total -= parseFloat(t.amount) || 0;
-    else if (t.cardId) continue;
-    else total -= parseFloat(t.amount) || 0;
-  }
   return total;
 }

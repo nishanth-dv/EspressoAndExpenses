@@ -19,12 +19,18 @@ import {
   persistAddAccount,
   persistDeleteAccount,
   persistUpdateAccount,
+  persistSetOpeningBalance,
   persistBulkTagAccounts,
   persistUpdateMerchantAlias,
   persistRemoveMerchantAlias,
 } from "../redux/slices/transactionSlice";
 import MultiBankMigration from "../components/MultiBankMigration";
+import AutoCapturePanel from "../components/AutoCapturePanel";
 import InvestmentTypesPanel from "../components/InvestmentTypesPanel";
+import SubscriptionTypesPanel from "../components/SubscriptionTypesPanel";
+import NotificationsPanel from "../components/NotificationsPanel";
+import PagesPanel from "../components/PagesPanel";
+import { getPage } from "../utils/pages";
 import {
   BANKS,
   CATEGORIES,
@@ -34,31 +40,123 @@ import {
   PAYMENT_MODES,
 } from "../utils/constants";
 import { matchAutoCategory } from "../utils/autoCategory";
+import { computeAccountBalance } from "../utils/accountUtils";
+
+const INR0 = new Intl.NumberFormat("en-IN", {
+  style: "currency",
+  currency: "INR",
+  maximumFractionDigits: 0,
+});
 
 const SCOPES = [
   { key: "expense", label: "Expense" },
   { key: "income", label: "Income" },
 ];
 
+// The category zones the Preferences sections are grouped under, in order.
+const PREF_CATEGORIES = [
+  { key: "general", label: "General", icon: "fa-sliders" },
+  { key: "transactions", label: "Transactions & data", icon: "fa-list-ul" },
+  { key: "pages", label: "Page settings", icon: "fa-layer-group" },
+];
+
+// Metadata for every section: which zone it lives in, an optional page it
+// tunes (drives the page chip), the title, and search keywords. The render
+// order below must keep sections grouped by category for the headings to read
+// correctly — it already does.
+const SECTION_META = {
+  pages: {
+    cat: "pages",
+    title: "Pages",
+    kw: "pages enable disable navigation nav menu hide show layout",
+  },
+  appearance: {
+    cat: "general",
+    title: "Appearance",
+    kw: "theme dark light glass classic skin colour color appearance display field style chips dropdown one tap pick quick clicks pills",
+  },
+  voice: { cat: "general", title: "Voice add", kw: "voice microphone speech add dictate" },
+  autoCapture: {
+    cat: "transactions",
+    title: "Auto-capture",
+    kw: "auto capture read sms email alert bank upi automatic inbox parse gmail",
+  },
+  privacy: { cat: "general", title: "Privacy mode", kw: "privacy blur hide amounts incognito" },
+  notifications: {
+    cat: "general",
+    title: "Notifications",
+    kw: "notifications reminders alerts bell due card emi sip subscription renewal trial reminder surprises",
+  },
+  categories: {
+    cat: "transactions",
+    title: "Categories",
+    kw: "categories expense income tags labels",
+  },
+  paymentModes: {
+    cat: "transactions",
+    title: "Payment modes",
+    kw: "payment modes cash upi debit credit card methods",
+  },
+  banks: { cat: "transactions", title: "Banks", kw: "banks accounts lenders" },
+  multibank: {
+    cat: "transactions",
+    title: "Multi-bank tracking",
+    kw: "multi bank accounts balance per account split",
+  },
+  entryTabs: {
+    cat: "transactions",
+    title: "Entry type tabs",
+    kw: "entry type tabs expense investment subscription switch modal kind segment pick category",
+  },
+  stmtImport: {
+    cat: "transactions",
+    title: "Statement import",
+    kw: "statement import csv pdf excel xlsx bank merchant parse upload",
+  },
+  rules: {
+    cat: "transactions",
+    title: "Auto-categorize rules",
+    kw: "auto categorize rules merchant pattern match",
+  },
+  solvency: {
+    cat: "pages",
+    page: "solvency",
+    title: "Solvency tuning",
+    kw: "solvency due overdue emi card window obligations dues health",
+  },
+  investmentTypes: {
+    cat: "pages",
+    page: "investments",
+    title: "Investment types",
+    kw: "investment types sip stock mutual fund fd ppf nps",
+  },
+  subscriptionTypes: {
+    cat: "pages",
+    page: "subscriptions",
+    title: "Subscription types",
+    kw: "subscription types netflix spotify brand recurring",
+  },
+  benchmarks: {
+    cat: "pages",
+    page: "investments",
+    title: "Investment benchmarks",
+    kw: "benchmark fd inflation rate portfolio pulse returns",
+  },
+};
+
 const COLLAPSE_TRANSITION = {
   duration: 0.25,
   ease: [0.25, 0.46, 0.45, 0.94],
 };
 
-// Random pleasant hue for new bank account chips. Same scheme as CardForm.
-function randomBankColor() {
-  const h = Math.floor(Math.random() * 360);
-  const s = 55 + Math.floor(Math.random() * 25);
-  const l = 42 + Math.floor(Math.random() * 18);
-  return `hsl(${h}, ${s}%, ${l}%)`;
-}
-
 const MultiBankAccountList = memo(function MultiBankAccountList({
   banks,
   accounts,
+  transactions,
   onAdd,
+  onEdit,
   onRemove,
-  onUpdate,
+  onManageBanks,
 }) {
   const tracked = new Set(accounts.map((a) => a.bank));
   const available = banks.filter((b) => !tracked.has(b));
@@ -75,8 +173,9 @@ const MultiBankAccountList = memo(function MultiBankAccountList({
             <BankAccountRow
               key={a.id}
               account={a}
+              transactions={transactions}
+              onEdit={onEdit}
               onRemove={() => onRemove(a.id)}
-              onUpdate={onUpdate}
             />
           ))}
         </ul>
@@ -101,6 +200,17 @@ const MultiBankAccountList = memo(function MultiBankAccountList({
           </div>
         </>
       )}
+
+      <button
+        type="button"
+        className="pref-multibank-manage-banks"
+        onClick={onManageBanks}
+      >
+        <i className="fa-solid fa-circle-info" />
+        {available.length > 0
+          ? "Don't see your bank? Add it in Banks"
+          : "Need another bank? Add it in Banks"}
+      </button>
     </div>
   );
 });
@@ -108,30 +218,24 @@ const MultiBankAccountList = memo(function MultiBankAccountList({
 MultiBankAccountList.propTypes = {
   banks: PropTypes.arrayOf(PropTypes.string).isRequired,
   accounts: PropTypes.array.isRequired,
+  transactions: PropTypes.array.isRequired,
   onAdd: PropTypes.func.isRequired,
+  onEdit: PropTypes.func.isRequired,
   onRemove: PropTypes.func.isRequired,
-  onUpdate: PropTypes.func.isRequired,
+  onManageBanks: PropTypes.func.isRequired,
 };
 
 const BankAccountRow = memo(function BankAccountRow({
   account,
+  transactions,
+  onEdit,
   onRemove,
-  onUpdate,
 }) {
-  const [openingDraft, setOpeningDraft] = useState(
-    String(account.openingBalance ?? 0),
-  );
-  const [editing, setEditing] = useState(false);
-
-  function commit() {
-    const next = parseFloat(openingDraft) || 0;
-    if (next === (parseFloat(account.openingBalance) || 0)) {
-      setEditing(false);
-      return;
-    }
-    onUpdate({ ...account, openingBalance: next });
-    setEditing(false);
-  }
+  const live = computeAccountBalance(account, transactions);
+  const hasEntered = account.openingBalance != null;
+  const entered = hasEntered ? parseFloat(account.openingBalance) || 0 : null;
+  const drift = hasEntered ? live - entered : 0;
+  const driftMatters = Math.abs(drift) > 1;
 
   return (
     <li className="pref-multibank-row">
@@ -141,35 +245,43 @@ const BankAccountRow = memo(function BankAccountRow({
       />
       <div className="pref-multibank-meta">
         <span className="pref-multibank-name">{account.bank}</span>
-        {editing ? (
-          <input
-            className="pref-multibank-balance-input"
-            type="number"
-            inputMode="decimal"
-            autoFocus
-            value={openingDraft}
-            onChange={(e) => setOpeningDraft(e.target.value)}
-            onBlur={commit}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") commit();
-              if (e.key === "Escape") {
-                setOpeningDraft(String(account.openingBalance ?? 0));
-                setEditing(false);
-              }
-            }}
-          />
-        ) : (
-          <button
-            type="button"
-            className="pref-multibank-balance"
-            onClick={() => setEditing(true)}
-          >
-            Opening ₹
-            {(parseFloat(account.openingBalance) || 0).toLocaleString("en-IN")}
-            <i className="fa-solid fa-pen" />
-          </button>
-        )}
+        <span className="pref-multibank-balance-live">
+          {INR0.format(live)}
+          {hasEntered && driftMatters && (
+            <span
+              className={`pref-multibank-drift${
+                drift < 0
+                  ? " pref-multibank-drift--down"
+                  : " pref-multibank-drift--up"
+              }`}
+              title={`You set ${INR0.format(entered)}; computed balance is ${INR0.format(live)}.`}
+            >
+              <i className="fa-solid fa-triangle-exclamation" />
+              {drift > 0 ? "+" : "−"}
+              {INR0.format(Math.abs(drift))} drift
+            </span>
+          )}
+          {hasEntered && !driftMatters && (
+            <span className="pref-multibank-drift pref-multibank-drift--ok">
+              <i className="fa-solid fa-circle-check" /> up to date
+            </span>
+          )}
+          {!hasEntered && (
+            <span className="pref-multibank-drift pref-multibank-drift--unset">
+              No current balance set
+            </span>
+          )}
+        </span>
       </div>
+      <button
+        type="button"
+        className="pref-cat-btn"
+        onClick={() => onEdit(account)}
+        aria-label={`Edit ${account.bank}`}
+        title={`Edit ${account.bank}`}
+      >
+        <i className="fa-solid fa-pen" />
+      </button>
       <button
         type="button"
         className="pref-cat-btn pref-cat-btn--danger"
@@ -189,9 +301,85 @@ BankAccountRow.propTypes = {
     bank: PropTypes.string.isRequired,
     color: PropTypes.string,
     openingBalance: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    createdAt: PropTypes.string,
   }).isRequired,
+  transactions: PropTypes.array.isRequired,
+  onEdit: PropTypes.func.isRequired,
   onRemove: PropTypes.func.isRequired,
-  onUpdate: PropTypes.func.isRequired,
+};
+
+function randomBankColor() {
+  const h = Math.floor(Math.random() * 360);
+  const s = 55 + Math.floor(Math.random() * 25);
+  const l = 42 + Math.floor(Math.random() * 18);
+  return `hsl(${h}, ${s}%, ${l}%)`;
+}
+
+const BankAccountModal = ({ bank, account, onSave, onClose }) => {
+  const [balance, setBalance] = useState(
+    account?.openingBalance != null ? String(account.openingBalance) : "",
+  );
+  const [color, setColor] = useState(() => account?.color || randomBankColor());
+
+  function save() {
+    const amt = parseFloat(balance);
+    onSave({ color, balance: Number.isFinite(amt) && amt >= 0 ? amt : 0 });
+  }
+
+  return (
+    <div className="bank-account-modal">
+      <div className="bank-account-modal-bank">
+        <span className="pref-multibank-dot" style={{ background: color }} />
+        <span className="bank-account-modal-bank-name">{bank}</span>
+      </div>
+
+      <div className="field">
+        <input
+          type="number"
+          inputMode="decimal"
+          value={balance}
+          onChange={(e) => setBalance(e.target.value)}
+          placeholder=" "
+          autoFocus
+        />
+        <label>Current balance</label>
+      </div>
+
+      <div className="bank-account-color-field">
+        <span className="bank-account-color-label">Account colour</span>
+        <div className="bank-account-color-random">
+          <div
+            className="bank-account-color-preview"
+            style={{ background: color }}
+          />
+          <button
+            type="button"
+            className="bank-account-color-regenerate"
+            onClick={() => setColor(randomBankColor())}
+          >
+            <i className="fa-solid fa-shuffle" />
+            New colour
+          </button>
+        </div>
+      </div>
+
+      <div className="form-actions">
+        <button type="button" className="cancel-button" onClick={onClose}>
+          Cancel
+        </button>
+        <button type="button" className="generic-button" onClick={save}>
+          {account ? "Save" : "Add account"}
+        </button>
+      </div>
+    </div>
+  );
+};
+
+BankAccountModal.propTypes = {
+  bank: PropTypes.string.isRequired,
+  account: PropTypes.object,
+  onSave: PropTypes.func.isRequired,
+  onClose: PropTypes.func.isRequired,
 };
 
 const PrefSection = memo(function PrefSection({
@@ -201,11 +389,17 @@ const PrefSection = memo(function PrefSection({
   expanded,
   onToggle,
   children,
+  pageTag,
+  visible = true,
+  highlighted = false,
 }) {
+  if (!visible) return null;
   return (
     <section
       id={`pref-section-${id}`}
-      className={`pref-section${expanded ? " pref-section--open" : ""}`}
+      className={`pref-section${expanded ? " pref-section--open" : ""}${
+        highlighted ? " pref-section--highlight" : ""
+      }`}
     >
       <button
         type="button"
@@ -214,7 +408,15 @@ const PrefSection = memo(function PrefSection({
         aria-expanded={expanded}
       >
         <span className="pref-section-header-text">
-          <span className="pref-section-title">{title}</span>
+          <span className="pref-section-title-row">
+            <span className="pref-section-title">{title}</span>
+            {pageTag && (
+              <span className="pref-page-chip">
+                <i className={`fa-solid ${pageTag.icon}`} />
+                {pageTag.label}
+              </span>
+            )}
+          </span>
           {summary && (
             <span className="pref-section-summary">{summary}</span>
           )}
@@ -239,6 +441,19 @@ const PrefSection = memo(function PrefSection({
     </section>
   );
 });
+
+function ZoneHeading({ icon, label }) {
+  return (
+    <div className="pref-zone-heading">
+      <i className={`fa-solid ${icon}`} />
+      <span>{label}</span>
+    </div>
+  );
+}
+ZoneHeading.propTypes = {
+  icon: PropTypes.string.isRequired,
+  label: PropTypes.string.isRequired,
+};
 
 // ── MerchantMemoryPanel ────────────────────────────────
 //
@@ -524,6 +739,19 @@ const PreferencesPage = () => {
     (state) =>
       state.transactions.transactionData?.preferences?.privacyMode ?? false,
   );
+  const quickSelect = useSelector(
+    (state) =>
+      state.transactions.transactionData?.preferences?.quickSelect ?? false,
+  );
+  const notificationsEnabled = useSelector(
+    (state) =>
+      state.transactions.transactionData?.preferences?.notificationsEnabled ??
+      true,
+  );
+  const notificationTypes = useSelector(
+    (state) =>
+      state.transactions.transactionData?.preferences?.notificationTypes ?? {},
+  );
   const healthScore = useSelector(
     (state) =>
       state.transactions.transactionData?.preferences?.healthScore ??
@@ -539,6 +767,11 @@ const PreferencesPage = () => {
       state.transactions.transactionData?.preferences?.multiBankEnabled ??
       false,
   );
+  const entryTabsEnabled = useSelector(
+    (state) =>
+      state.transactions.transactionData?.preferences?.entryTabsEnabled ??
+      false,
+  );
   const statementImportEnabled = useSelector(
     (state) =>
       state.transactions.transactionData?.preferences?.statementImportEnabled ??
@@ -550,10 +783,17 @@ const PreferencesPage = () => {
   const accounts = useSelector(
     (state) => state.transactions.transactionData?.accounts ?? [],
   );
+  const autoReadInboxCount = useSelector(
+    (state) => (state.transactions.transactionData?.autoReadInbox ?? []).length,
+  );
   const enabledInvestmentTypes = useSelector(
     (state) =>
       state.transactions.transactionData?.preferences
         ?.enabledInvestmentTypes ?? [],
+  );
+  const subscriptionTypeCount = useSelector(
+    (state) =>
+      (state.transactions.transactionData?.subscriptionTypes ?? []).length,
   );
   const untaggedCount = useMemo(
     () =>
@@ -590,6 +830,15 @@ const PreferencesPage = () => {
     return hash ? new Set([hash]) : new Set();
   });
 
+  // Category zone filter + live search across all sections.
+  const [activeCat, setActiveCat] = useState(() => {
+    const hash = window.location.hash.replace(/^#/, "");
+    return SECTION_META[hash]?.cat ?? "all";
+  });
+  const [query, setQuery] = useState("");
+  const [highlightSection, setHighlightSection] = useState(null);
+  const [bankModal, setBankModal] = useState(null);
+
   useLayoutEffect(() => {
     const hash = window.location.hash.replace(/^#/, "");
     if (!hash) return;
@@ -606,6 +855,75 @@ const PreferencesPage = () => {
     });
   }
   const isOpen = (id) => openSections.has(id);
+
+  function revealSection(id) {
+    const meta = SECTION_META[id];
+    if (meta && activeCat !== "all" && meta.cat !== activeCat) {
+      setActiveCat(meta.cat);
+    }
+    setQuery("");
+    setOpenSections((prev) => new Set(prev).add(id));
+    setHighlightSection(id);
+    requestAnimationFrame(() => {
+      const el = document.getElementById(`pref-section-${id}`);
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+    window.setTimeout(() => {
+      setHighlightSection((cur) => (cur === id ? null : cur));
+    }, 1800);
+  }
+
+  function handleSaveBankAccount({ color, balance }) {
+    if (!bankModal) return;
+    if (bankModal.mode === "add") {
+      const id = crypto.randomUUID();
+      dispatch(
+        persistAddAccount({
+          id,
+          bank: bankModal.bank,
+          color,
+          createdAt: new Date().toISOString(),
+        }),
+      );
+      dispatch(persistSetOpeningBalance({ accountId: id, amount: balance }));
+    } else {
+      dispatch(persistUpdateAccount({ ...bankModal.account, color }));
+      dispatch(
+        persistSetOpeningBalance({
+          accountId: bankModal.account.id,
+          amount: balance,
+        }),
+      );
+    }
+    setBankModal(null);
+  }
+
+  // A section is visible when it matches the active zone tab AND the search
+  // query (every typed token must appear in the section's title or keywords).
+  const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  function sectionVisible(id) {
+    const meta = SECTION_META[id];
+    if (!meta) return true;
+    if (activeCat !== "all" && meta.cat !== activeCat) return false;
+    if (tokens.length === 0) return true;
+    const hay = `${meta.title} ${meta.kw}`.toLowerCase();
+    return tokens.every((t) => hay.includes(t));
+  }
+  // Whether a category has at least one visible section right now (drives the
+  // zone heading + the "no results" empty state).
+  function catHasVisible(cat) {
+    return Object.keys(SECTION_META).some(
+      (id) => SECTION_META[id].cat === cat && sectionVisible(id),
+    );
+  }
+  const anyVisible = PREF_CATEGORIES.some((c) => catHasVisible(c.key));
+  // The page chip (icon + label) for a page-settings section, if any.
+  const pageTagFor = (id) => {
+    const pageKey = SECTION_META[id]?.page;
+    if (!pageKey) return undefined;
+    const page = getPage(pageKey);
+    return page ? { label: page.label, icon: page.icon } : undefined;
+  };
 
   // Drag state.
   //   fromIndex     – original slot of the card being dragged
@@ -686,8 +1004,25 @@ const PreferencesPage = () => {
       );
     } else if (deleteTarget.kind === "rule") {
       dispatch(persistRemoveAutoCategoryRule(deleteTarget.id));
+    } else if (deleteTarget.kind === "account") {
+      dispatch(persistDeleteAccount(deleteTarget.id));
     }
     setDeleteTarget(null);
+  }
+
+  function handleRemoveAccount(id) {
+    const acc = accounts.find((a) => a.id === id);
+    if (!acc) return;
+    const txCount = allTransactions.filter(
+      (t) =>
+        t.openingForAccount !== id &&
+        (t.accountId === id || t.fromAccountId === id || t.toAccountId === id),
+    ).length;
+    if (txCount > 0) {
+      setDeleteTarget({ kind: "account", id, name: acc.bank, count: txCount });
+    } else {
+      dispatch(persistDeleteAccount(id));
+    }
   }
 
   const deleteCopy = deleteTarget
@@ -710,6 +1045,12 @@ const PreferencesPage = () => {
         rule: {
           title: "Delete auto-category rule?",
           hint: "Future transactions won't be auto-categorised by this rule.",
+        },
+        account: {
+          title: "Delete bank account?",
+          hint: `${deleteTarget.count} tagged transaction${
+            deleteTarget.count === 1 ? "" : "s"
+          } will be kept but untagged (moved to “All”). This bank's current-balance entry will be removed.`,
         },
       }[deleteTarget.kind]
     : null;
@@ -966,7 +1307,65 @@ const PreferencesPage = () => {
         <h1 className="pref-title">Preferences</h1>
       </div>
 
+      <div className="pref-controls">
+        <div className="pref-search">
+          <i className="fa-solid fa-magnifying-glass" />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search settings"
+            aria-label="Search settings"
+          />
+          {query && (
+            <button
+              type="button"
+              className="pref-search-clear"
+              onClick={() => setQuery("")}
+              aria-label="Clear search"
+            >
+              <i className="fa-solid fa-xmark" />
+            </button>
+          )}
+        </div>
+        <div className="pref-zone-tabs" role="tablist">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={activeCat === "all"}
+            className={`pref-zone-tab${activeCat === "all" ? " pref-zone-tab--active" : ""}`}
+            onClick={() => setActiveCat("all")}
+          >
+            All
+          </button>
+          {PREF_CATEGORIES.map((c) => (
+            <button
+              key={c.key}
+              type="button"
+              role="tab"
+              aria-selected={activeCat === c.key}
+              className={`pref-zone-tab${activeCat === c.key ? " pref-zone-tab--active" : ""}`}
+              onClick={() => setActiveCat(c.key)}
+            >
+              <i className={`fa-solid ${c.icon}`} />
+              {c.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {!anyVisible && (
+        <p className="pref-no-results">
+          No settings match “{query}”.
+        </p>
+      )}
+
+      {catHasVisible("general") && (
+        <ZoneHeading icon="fa-sliders" label="General" />
+      )}
+
       <PrefSection
+        visible={sectionVisible("appearance")}
         id="appearance"
         title="Appearance"
         summary={`${theme === "dark" ? "Dark" : "Light"} · ${skin === "glass" ? "Glass" : "Classic"}`}
@@ -1034,9 +1433,73 @@ const PreferencesPage = () => {
             <span className="skin-picker-hint">Translucent, glossy, modern</span>
           </button>
         </div>
+
+        <div
+          className="pref-row"
+          style={{
+            alignItems: "flex-start",
+            marginTop: 22,
+            borderTop: "1px solid var(--surface-border)",
+            paddingTop: 20,
+          }}
+        >
+          <div className="pref-row-text">
+            <p className="pref-row-label">Field style</p>
+            <p className="pref-row-hint">
+              How choices like Category and Payment mode appear in forms. Chips
+              let you pick in one tap instead of opening a dropdown.
+            </p>
+          </div>
+        </div>
+        <div className="field-style-picker">
+          <button
+            type="button"
+            className={`field-style-tile${!quickSelect ? " field-style-tile--active" : ""}`}
+            onClick={() => dispatch(persistSetPreference("quickSelect", false))}
+            aria-pressed={!quickSelect}
+          >
+            <span className="field-style-modal">
+              <span className="field-style-modal-head">
+                <span className="field-style-modal-title" />
+                <i className="fa-solid fa-xmark field-style-modal-x" />
+              </span>
+              <span className="field-style-mini-label">Category</span>
+              <span className="field-style-mini-select">
+                Food
+                <i className="fa-solid fa-chevron-down" />
+              </span>
+            </span>
+            <span className="field-style-name">Dropdown</span>
+            <span className="field-style-desc">Tap to open, then pick</span>
+          </button>
+          <button
+            type="button"
+            className={`field-style-tile${quickSelect ? " field-style-tile--active" : ""}`}
+            onClick={() => dispatch(persistSetPreference("quickSelect", true))}
+            aria-pressed={quickSelect}
+          >
+            <span className="field-style-modal">
+              <span className="field-style-modal-head">
+                <span className="field-style-modal-title" />
+                <i className="fa-solid fa-xmark field-style-modal-x" />
+              </span>
+              <span className="field-style-mini-label">Category</span>
+              <span className="field-style-mini-chips">
+                <span className="field-style-mini-chip field-style-mini-chip--active">
+                  Food
+                </span>
+                <span className="field-style-mini-chip">Bills</span>
+                <span className="field-style-mini-chip">Fuel</span>
+              </span>
+            </span>
+            <span className="field-style-name">One-tap chips</span>
+            <span className="field-style-desc">Pick in a single tap</span>
+          </button>
+        </div>
       </PrefSection>
 
       <PrefSection
+        visible={sectionVisible("voice")}
         id="voice"
         title="Voice add"
         summary={voiceEnabled ? "On" : "Off"}
@@ -1067,6 +1530,7 @@ const PreferencesPage = () => {
       </PrefSection>
 
       <PrefSection
+        visible={sectionVisible("privacy")}
         id="privacy"
         title="Privacy mode"
         summary={privacyMode ? "On" : "Off"}
@@ -1097,6 +1561,48 @@ const PreferencesPage = () => {
       </PrefSection>
 
       <PrefSection
+        visible={sectionVisible("notifications")}
+        id="notifications"
+        title="Notifications"
+        summary={notificationsEnabled ? "On" : "Off"}
+        expanded={isOpen("notifications")}
+        onToggle={toggleSection}
+      >
+        <div className="pref-row">
+          <div className="pref-row-text">
+            <p className="pref-row-label">Enable notifications</p>
+            <p className="pref-row-hint">
+              Shows a bell in the top bar with reminders for upcoming dues,
+              renewals and SIPs. Tap any reminder to jump straight to it.
+            </p>
+          </div>
+          <button
+            type="button"
+            className={`pref-switch${notificationsEnabled ? " pref-switch--on" : ""}`}
+            role="switch"
+            aria-checked={notificationsEnabled}
+            aria-label="Toggle notifications"
+            onClick={() =>
+              dispatch(
+                persistSetPreference("notificationsEnabled", !notificationsEnabled),
+              )
+            }
+          >
+            <span className="pref-switch-thumb" />
+          </button>
+        </div>
+        <NotificationsPanel
+          types={notificationTypes}
+          disabled={!notificationsEnabled}
+        />
+      </PrefSection>
+
+      {catHasVisible("transactions") && (
+        <ZoneHeading icon="fa-list-ul" label="Transactions & data" />
+      )}
+
+      <PrefSection
+        visible={sectionVisible("categories")}
         id="categories"
         title="Categories"
         summary={`${(categoryMap.expense ?? []).length} expense · ${
@@ -1168,6 +1674,7 @@ const PreferencesPage = () => {
       </PrefSection>
 
       <PrefSection
+        visible={sectionVisible("paymentModes")}
         id="paymentModes"
         title="Payment modes"
         summary={`${paymentModes.length} mode${paymentModes.length === 1 ? "" : "s"}`}
@@ -1302,11 +1809,13 @@ const PreferencesPage = () => {
       </PrefSection>
 
       <PrefSection
+        visible={sectionVisible("banks")}
         id="banks"
         title="Banks"
         summary={`${banks.length} bank${banks.length === 1 ? "" : "s"}`}
         expanded={isOpen("banks")}
         onToggle={toggleSection}
+        highlighted={highlightSection === "banks"}
       >
         <p className="pref-section-hint">
           Drag the grip handle to reorder. Shows up in the Add Card form&apos;s
@@ -1426,6 +1935,7 @@ const PreferencesPage = () => {
       </PrefSection>
 
       <PrefSection
+        visible={sectionVisible("multibank")}
         id="multibank"
         title="Multi-bank tracking"
         summary={
@@ -1466,20 +1976,13 @@ const PreferencesPage = () => {
             <MultiBankAccountList
               banks={banks}
               accounts={accounts}
-              onAdd={(bank) =>
-                dispatch(
-                  persistAddAccount({
-                    id: crypto.randomUUID(),
-                    bank,
-                    color: randomBankColor(),
-                    openingBalance: 0,
-                    openingDate: new Date().toISOString(),
-                    createdAt: new Date().toISOString(),
-                  }),
-                )
+              transactions={allTransactions}
+              onAdd={(bank) => setBankModal({ mode: "add", bank })}
+              onEdit={(account) =>
+                setBankModal({ mode: "edit", bank: account.bank, account })
               }
-              onRemove={(id) => dispatch(persistDeleteAccount(id))}
-              onUpdate={(acc) => dispatch(persistUpdateAccount(acc))}
+              onRemove={handleRemoveAccount}
+              onManageBanks={() => revealSection("banks")}
             />
             {accounts.length > 0 && untaggedCount > 0 && (
               <div className="pref-multibank-migrate">
@@ -1507,6 +2010,56 @@ const PreferencesPage = () => {
       </PrefSection>
 
       <PrefSection
+        visible={sectionVisible("entryTabs")}
+        id="entryTabs"
+        title="Entry type tabs"
+        summary={entryTabsEnabled ? "On" : "Off"}
+        expanded={isOpen("entryTabs")}
+        onToggle={toggleSection}
+      >
+        <div className="pref-row">
+          <div className="pref-row-text">
+            <p className="pref-row-label">Show Expense / Investment / Subscription tabs</p>
+            <p className="pref-row-hint">
+              Adds a tab strip at the top of the expense form so you pick the
+              entry type up front. When on, Investment and Subscription are
+              removed from the category list (you switch with the tabs instead).
+            </p>
+          </div>
+          <button
+            type="button"
+            className={`pref-switch${entryTabsEnabled ? " pref-switch--on" : ""}`}
+            role="switch"
+            aria-checked={entryTabsEnabled}
+            aria-label="Toggle entry type tabs"
+            onClick={() =>
+              dispatch(
+                persistSetPreference("entryTabsEnabled", !entryTabsEnabled),
+              )
+            }
+          >
+            <span className="pref-switch-thumb" />
+          </button>
+        </div>
+      </PrefSection>
+
+      <PrefSection
+        visible={sectionVisible("autoCapture")}
+        id="autoCapture"
+        title="Auto-capture"
+        summary={
+          autoReadInboxCount > 0
+            ? `${autoReadInboxCount} awaiting review`
+            : "Paste a bank alert"
+        }
+        expanded={isOpen("autoCapture")}
+        onToggle={toggleSection}
+      >
+        <AutoCapturePanel />
+      </PrefSection>
+
+      <PrefSection
+        visible={sectionVisible("stmtImport")}
         id="stmtImport"
         title="Statement import"
         summary={
@@ -1559,6 +2112,7 @@ const PreferencesPage = () => {
       </PrefSection>
 
       <PrefSection
+        visible={sectionVisible("rules")}
         id="rules"
         title="Auto-categorize rules"
         summary={`${autoCategoryRules.length} rule${autoCategoryRules.length === 1 ? "" : "s"}`}
@@ -1709,7 +2263,24 @@ const PreferencesPage = () => {
         </form>
       </PrefSection>
 
+      {catHasVisible("pages") && (
+        <ZoneHeading icon="fa-layer-group" label="Page settings" />
+      )}
+
       <PrefSection
+        id="pages"
+        title="Pages"
+        summary="Turn pages on or off"
+        expanded={isOpen("pages")}
+        onToggle={toggleSection}
+        visible={sectionVisible("pages")}
+      >
+        <PagesPanel />
+      </PrefSection>
+
+      <PrefSection
+        visible={sectionVisible("solvency")}
+        pageTag={pageTagFor("solvency")}
         id="solvency"
         title="Solvency tuning"
         summary={`Overdue ${dueWindows.overdueDays}d · Soon ${dueWindows.soonDays}d · Window ${dueWindows.upcomingDays}d`}
@@ -1844,6 +2415,8 @@ const PreferencesPage = () => {
       </PrefSection>
 
       <PrefSection
+        visible={sectionVisible("investmentTypes")}
+        pageTag={pageTagFor("investmentTypes")}
         id="investmentTypes"
         title="Investment types"
         summary={`${enabledInvestmentTypes.length} enabled`}
@@ -1854,6 +2427,24 @@ const PreferencesPage = () => {
       </PrefSection>
 
       <PrefSection
+        visible={sectionVisible("subscriptionTypes")}
+        pageTag={pageTagFor("subscriptionTypes")}
+        id="subscriptionTypes"
+        title="Subscription types"
+        summary={
+          subscriptionTypeCount > 0
+            ? `${subscriptionTypeCount} custom`
+            : "Built-in brands"
+        }
+        expanded={isOpen("subscriptionTypes")}
+        onToggle={toggleSection}
+      >
+        <SubscriptionTypesPanel />
+      </PrefSection>
+
+      <PrefSection
+        visible={sectionVisible("benchmarks")}
+        pageTag={pageTagFor("benchmarks")}
         id="benchmarks"
         title="Investment benchmarks"
         summary={`FD ${fdRate}% · Inflation ${inflationRate}%`}
@@ -1902,6 +2493,21 @@ const PreferencesPage = () => {
           </label>
         </div>
       </PrefSection>
+
+      {bankModal && (
+        <Modal
+          open={!!bankModal}
+          onClose={() => setBankModal(null)}
+          title={bankModal.mode === "edit" ? "Edit account" : "Add account"}
+        >
+          <BankAccountModal
+            bank={bankModal.bank}
+            account={bankModal.account}
+            onSave={handleSaveBankAccount}
+            onClose={() => setBankModal(null)}
+          />
+        </Modal>
+      )}
 
       {migrationOpen && (
         <Modal

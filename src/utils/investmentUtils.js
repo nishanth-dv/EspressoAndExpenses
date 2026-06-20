@@ -9,6 +9,66 @@ export function getTypeInfo(typeKey) {
   );
 }
 
+// ── Grace period + late penalty ───────────────────────────
+// Default grace per investment type before a missed contribution is
+// considered lapsed. unit: days | months | instalments. Types absent here
+// have no recurring contribution and therefore no grace concept.
+export const GRACE_PERIOD_DEFAULTS = {
+  lic: { value: 30, unit: "days" },
+  plan: { value: 30, unit: "days" },
+  rd: { value: 30, unit: "days" },
+  sip: { value: 3, unit: "instalments" },
+  ppf: { value: 12, unit: "months" },
+  nps: { value: 12, unit: "months" },
+  apy: { value: 30, unit: "days" },
+  chit: { value: 15, unit: "days" },
+};
+
+export function typeHasGrace(typeKey) {
+  return Object.prototype.hasOwnProperty.call(GRACE_PERIOD_DEFAULTS, typeKey);
+}
+
+export function getGraceDefault(typeKey) {
+  return GRACE_PERIOD_DEFAULTS[typeKey] ?? null;
+}
+
+// Effective grace for an investment: its own override, else the type default.
+export function resolveGrace(inv) {
+  if (inv?.gracePeriod && inv.gracePeriod.value != null) return inv.gracePeriod;
+  return getGraceDefault(inv?.type);
+}
+
+// Translate a grace config onto the day axis. cadenceDays is the spacing
+// between scheduled instalments (used for the "instalments" unit).
+export function graceToDays(grace, cadenceDays = 30) {
+  if (!grace) return 0;
+  const v = parseFloat(grace.value) || 0;
+  if (grace.unit === "months") return Math.round(v * 30);
+  if (grace.unit === "instalments") return Math.round(v * cadenceDays);
+  return v;
+}
+
+const GRACE_UNIT_LABEL = {
+  days: "day",
+  months: "month",
+  instalments: "missed instalment",
+};
+
+export function graceLabel(grace) {
+  if (!grace) return "";
+  const v = parseFloat(grace.value) || 0;
+  const unit = GRACE_UNIT_LABEL[grace.unit] ?? grace.unit;
+  return `${v} ${unit}${v === 1 ? "" : "s"}`;
+}
+
+// Penalty charged on a missed instalment once it's past grace.
+export function computeLatePenalty(penalty, instalmentAmount) {
+  if (!penalty?.enabled) return 0;
+  const amt = parseFloat(penalty.amount) || 0;
+  if (penalty.mode === "percent") return (instalmentAmount * amt) / 100;
+  return amt;
+}
+
 // Returns "unit" | "fixed" | "manual" | "cashflow" for the math engine.
 // Lookup order:
 //   1. userTypes — covers custom keys + user overrides

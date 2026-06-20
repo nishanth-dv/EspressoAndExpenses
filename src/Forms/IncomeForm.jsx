@@ -1,4 +1,4 @@
-import { memo, useState } from "react";
+import { memo, useState, useMemo } from "react";
 import PropTypes from "prop-types";
 import { useDispatch, useSelector } from "react-redux";
 import { INCOME_CATEGORIES } from "../utils/constants";
@@ -7,6 +7,13 @@ import { parseVoiceTranscript } from "../utils/voiceParser";
 import { useVoiceCapture } from "../hooks/useVoiceCapture";
 import { showToast } from "../redux/slices/toastSlice";
 import BankChipSelector from "../components/BankChipSelector";
+import OptionField from "../components/OptionField";
+import DateField from "../components/DateField";
+import FormError from "../components/FormError";
+import SmartFillBar from "../components/SmartFillBar";
+import { predictEntry, normalizeName } from "../utils/smartFill";
+import { NoteBulletHint } from "../components/NoteText";
+import { computeCardOutstanding } from "../utils/solvencyUtils";
 
 const EMPTY = {
   name: "",
@@ -15,6 +22,7 @@ const EMPTY = {
   description: "",
   occurredAt: "",
   accountId: "",
+  repaymentFor: "",
 };
 
 function fromExisting(existing) {
@@ -25,7 +33,12 @@ function fromExisting(existing) {
     description: existing.description ?? "",
     occurredAt: existing.occurredAt ?? "",
     accountId: existing.accountId ?? "",
+    repaymentFor: existing.repaymentFor ?? "",
   };
+}
+
+function isCashbackCategory(category) {
+  return (category ?? "").trim().toLowerCase().replace(/\s+/g, "") === "cashback";
 }
 
 const IncomeForm = ({ onSubmit, onCancel, existing }) => {
@@ -52,8 +65,39 @@ const IncomeForm = ({ onSubmit, onCancel, existing }) => {
   const accounts = useSelector(
     (state) => state.transactions.transactionData?.accounts ?? [],
   );
+  const cards = useSelector(
+    (state) => state.transactions.transactionData?.cards ?? [],
+  );
+  const allTransactions = useSelector(
+    (state) => state.transactions.transactionData?.transactions ?? [],
+  );
+  const commitments = useSelector(
+    (state) => state.transactions.transactionData?.commitments ?? [],
+  );
+
+  const isCashback = isCashbackCategory(form.category);
 
   const [parserText, setParserText] = useState("");
+  const [formError, setFormError] = useState(null);
+  const [smartHide, setSmartHide] = useState("");
+  const invalidKeys = new Set((formError ?? []).map((m) => m.key));
+
+  const prediction = useMemo(
+    () => predictEntry(form.name, allTransactions, { type: "income" }),
+    [form.name, allTransactions],
+  );
+  const showSmartFill =
+    !!prediction && !form.amount && smartHide !== normalizeName(form.name);
+
+  function applySmartFill() {
+    setForm((f) => ({
+      ...f,
+      amount: prediction.amount || f.amount,
+      category: prediction.category || f.category,
+      accountId: prediction.accountId || f.accountId,
+    }));
+    setSmartHide(normalizeName(form.name));
+  }
 
   function applyParsed(parsed) {
     setForm((f) => {
@@ -92,6 +136,7 @@ const IncomeForm = ({ onSubmit, onCancel, existing }) => {
   });
 
   function handleChange(e) {
+    setFormError(null);
     if (e.target.name === "name") {
       const value = e.target.value;
       setForm((f) => {
@@ -104,11 +149,35 @@ const IncomeForm = ({ onSubmit, onCancel, existing }) => {
       });
       return;
     }
+    if (e.target.name === "category") {
+      const value = e.target.value;
+      setForm((f) => ({
+        ...f,
+        category: value,
+        repaymentFor: isCashbackCategory(value) ? f.repaymentFor : "",
+      }));
+      return;
+    }
     setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
   }
 
   function handleSubmit(e) {
     e.preventDefault();
+
+    const missing = [];
+    if (!form.name.trim())
+      missing.push({ key: "name", label: "Income source" });
+    if (!form.amount) missing.push({ key: "amount", label: "Amount" });
+    if (!form.category) missing.push({ key: "category", label: "Category" });
+    if (!form.occurredAt)
+      missing.push({ key: "occurredAt", label: "Date & time" });
+    if (missing.length > 0) {
+      setFormError(missing);
+      return;
+    }
+    setFormError(null);
+
+    const creditsCard = isCashback && !!form.repaymentFor;
     const transaction = existing
       ? { ...existing, ...form }
       : {
@@ -117,12 +186,18 @@ const IncomeForm = ({ onSubmit, onCancel, existing }) => {
           transactionType: "income",
           id: crypto.randomUUID(),
         };
-    if (!transaction.accountId) delete transaction.accountId;
+    if (creditsCard) {
+      transaction.repaymentFor = form.repaymentFor;
+      delete transaction.accountId;
+    } else {
+      delete transaction.repaymentFor;
+      if (!transaction.accountId) delete transaction.accountId;
+    }
     onSubmit(transaction);
   }
 
   return (
-    <form className="expense-form" onSubmit={handleSubmit}>
+    <form className="expense-form" onSubmit={handleSubmit} noValidate>
       {voiceEnabled && (
         <div
           className={`voice-bar${voice.listening ? " voice-bar--on" : ""}`}
@@ -189,6 +264,15 @@ const IncomeForm = ({ onSubmit, onCancel, existing }) => {
         <label>Income source</label>
       </div>
 
+      {showSmartFill && (
+        <SmartFillBar
+          prediction={prediction}
+          accounts={accounts}
+          onApply={applySmartFill}
+          onDismiss={() => setSmartHide(normalizeName(form.name))}
+        />
+      )}
+
       <div className="field">
         <input
           name="amount"
@@ -201,42 +285,57 @@ const IncomeForm = ({ onSubmit, onCancel, existing }) => {
         <label>Amount</label>
       </div>
 
-      <div className="field">
-        <select
-          name="category"
-          value={form.category}
-          onChange={handleChange}
-          required
-        >
-          <option value="" disabled hidden />
-          {categories.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </select>
-        <label>Category</label>
-      </div>
+      <OptionField
+        name="category"
+        value={form.category}
+        onChange={handleChange}
+        label="Category"
+        required
+        placeholder=""
+        options={categories}
+        invalid={invalidKeys.has("category")}
+      />
 
-      {multiBankEnabled && accounts.length > 0 && (
-        <BankChipSelector
-          accounts={accounts}
-          value={form.accountId}
-          onChange={(id) => setForm((f) => ({ ...f, accountId: id }))}
-          label="Received in"
+      {isCashback && (
+        <OptionField
+          name="repaymentFor"
+          value={form.repaymentFor}
+          onChange={handleChange}
+          label="Apply cashback to"
+          options={[
+            ...cards.map((c) => ({
+              value: c.id,
+              label: `${c.name}${c.bank ? ` (${c.bank})` : ""} · ₹${computeCardOutstanding(
+                c,
+                allTransactions,
+                commitments,
+              ).toLocaleString("en-IN")} due`,
+            })),
+            { value: "", label: "Other" },
+          ]}
         />
       )}
 
-      <div className="field">
-        <input
-          name="occurredAt"
-          type="datetime-local"
-          value={form.occurredAt}
-          onChange={handleChange}
-          required
-        />
-        <label>Date & time</label>
-      </div>
+      {multiBankEnabled &&
+        accounts.length > 0 &&
+        !(isCashback && form.repaymentFor) && (
+          <BankChipSelector
+            accounts={accounts}
+            value={form.accountId}
+            onChange={(id) => setForm((f) => ({ ...f, accountId: id }))}
+            label="Received in"
+          />
+        )}
+
+      <DateField
+        name="occurredAt"
+        value={form.occurredAt}
+        onChange={handleChange}
+        label="Date & time"
+        withTime
+        required
+        invalid={invalidKeys.has("occurredAt")}
+      />
 
       <div className="field">
         <textarea
@@ -248,7 +347,10 @@ const IncomeForm = ({ onSubmit, onCancel, existing }) => {
           spellCheck={false}
         />
         <label>Description / Notes</label>
+        <NoteBulletHint text={form.description} />
       </div>
+
+      <FormError fields={formError?.map((m) => m.label)} />
 
       <div className="form-actions">
         <button type="button" className="cancel-button" onClick={onCancel}>

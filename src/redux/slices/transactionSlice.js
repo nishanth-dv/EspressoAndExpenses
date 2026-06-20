@@ -5,6 +5,17 @@ import {
   getInvestmentMathProfile,
 } from "../../utils/investmentUtils";
 import {
+  BUILTIN_INVESTMENT_TYPES,
+  getInvestmentTypeSchema,
+} from "../../utils/investmentTypeSchemas";
+import { DISCOVER_INVESTMENT_TYPES } from "../../data/investmentTypesDiscover";
+import {
+  parseAlertEmail,
+  buildCaptureTransaction,
+  DEFAULT_ALERT_SENDERS,
+} from "../../utils/autoRead/emailParser";
+import { listMessages, getMessage } from "../../utils/autoRead/gmailClient";
+import {
   BANKS,
   CATEGORIES,
   DEFAULT_DATA,
@@ -36,7 +47,9 @@ function investedValue(inv) {
 function balanceDelta(tx) {
   const amount = parseFloat(tx.amount) || 0;
   if (tx.transactionType === "self_transfer") return 0;
-  if (tx.transactionType === "income") return amount;
+  if (tx.transactionType === "income") {
+    return tx.repaymentFor ? 0 : amount;
+  }
   if (tx.transactionType === "investment") return -amount;
   if (tx.cardId) return 0;
   return -amount;
@@ -56,6 +69,9 @@ function expenseDelta(tx) {
 }
 
 import { showToast } from "./toastSlice";
+import {
+  computeAggregateBalance,
+} from "../../utils/accountUtils";
 
 export const initializeDrive = createAsyncThunk(
   "transactions/initializeDrive",
@@ -107,6 +123,15 @@ export const initializeDrive = createAsyncThunk(
       };
       migrated = true;
     }
+    if (
+      Array.isArray(data.categories?.expense) &&
+      !data.categories.expense.includes("Subscription")
+    ) {
+      const otherIdx = data.categories.expense.indexOf("Other");
+      const at = otherIdx === -1 ? data.categories.expense.length : otherIdx;
+      data.categories.expense.splice(at, 0, "Subscription");
+      migrated = true;
+    }
     if (!data.lists) {
       data.lists = {
         paymentModes: [...PAYMENT_MODES],
@@ -124,6 +149,16 @@ export const initializeDrive = createAsyncThunk(
     // pre-dating the feature still load cleanly.
     if (!Array.isArray(data.accounts)) {
       data.accounts = [];
+      migrated = true;
+    }
+    // Subscriptions list — empty backfill for files predating the feature.
+    if (!Array.isArray(data.subscriptions)) {
+      data.subscriptions = [];
+      migrated = true;
+    }
+    // User-defined subscription types — empty backfill.
+    if (!Array.isArray(data.subscriptionTypes)) {
+      data.subscriptionTypes = [];
       migrated = true;
     }
     // Learned merchant aliases — populated by the statement importer.
@@ -184,9 +219,6 @@ export const initializeDrive = createAsyncThunk(
     // dynamically so this file doesn't statically depend on the schema list.
     if (!Array.isArray(data.preferences?.enabledInvestmentTypes) ||
         data.preferences.enabledInvestmentTypes.length === 0) {
-      const { BUILTIN_INVESTMENT_TYPES } = await import(
-        "../../utils/investmentTypeSchemas"
-      );
       data.preferences.enabledInvestmentTypes = BUILTIN_INVESTMENT_TYPES.map(
         (t) => t.key,
       );
@@ -197,22 +229,56 @@ export const initializeDrive = createAsyncThunk(
     // a sensible sequence the first time. User-driven reorders persist here.
     if (!Array.isArray(data.preferences?.investmentTypeOrder) ||
         data.preferences.investmentTypeOrder.length === 0) {
-      const { BUILTIN_INVESTMENT_TYPES } = await import(
-        "../../utils/investmentTypeSchemas"
-      );
-      const { DISCOVER_INVESTMENT_TYPES } = await import(
-        "../../data/investmentTypesDiscover"
-      );
       data.preferences.investmentTypeOrder = [
         ...BUILTIN_INVESTMENT_TYPES.map((t) => t.key),
         ...DISCOVER_INVESTMENT_TYPES.map((t) => t.key),
       ];
       migrated = true;
     }
+    // Notification dismissals are a top-level map (not a preference). Ensure it
+    // exists for files created before the notifications feature.
+    if (!data.notificationDismissals || typeof data.notificationDismissals !== "object") {
+      data.notificationDismissals = {};
+      migrated = true;
+    }
+    // Auto-capture review inbox — parsed alerts awaiting the user's accept.
+    if (!Array.isArray(data.autoReadInbox)) {
+      data.autoReadInbox = [];
+      migrated = true;
+    } else {
+      const clean = data.autoReadInbox.filter((i) => i && i.id && i.parsed);
+      if (clean.length !== data.autoReadInbox.length) {
+        data.autoReadInbox = clean;
+        migrated = true;
+      }
+    }
+    // Auto-capture (Gmail) settings.
+    if (!data.autoRead || typeof data.autoRead !== "object") {
+      data.autoRead = {
+        enabled: false,
+        source: "gmail",
+        cursor: null,
+        senders: [...DEFAULT_ALERT_SENDERS],
+        processedIds: [],
+      };
+      migrated = true;
+    }
     if (migrated) await updateFile(fileId, data);
     return { fileId, data };
   },
 );
+
+// Drop any dismissed-notification entry whose expiry has passed, so the map
+// can never grow unbounded. A null expiry is a *permanent* acknowledgement
+// (milestones) and is always kept. Returns a fresh object.
+function pruneDismissals(map) {
+  const now = Date.now();
+  const out = {};
+  for (const [k, v] of Object.entries(map ?? {})) {
+    if (v == null || new Date(v).getTime() > now) out[k] = v;
+  }
+  return out;
+}
 
 const transactionSlice = createSlice({
   name: "transactions",
@@ -365,6 +431,59 @@ const transactionSlice = createSlice({
       if (!state.transactionData.lendings) return;
       state.transactionData.lendings = state.transactionData.lendings.filter((l) => l.id !== payload);
     },
+    // ── Subscriptions ─────────────────────────────────────
+    addSubscription: (state, { payload }) => {
+      if (!state.transactionData.subscriptions)
+        state.transactionData.subscriptions = [];
+      state.transactionData.subscriptions.push(payload);
+    },
+    updateSubscription: (state, { payload }) => {
+      if (!state.transactionData.subscriptions) return;
+      const idx = state.transactionData.subscriptions.findIndex(
+        (s) => s.id === payload.id,
+      );
+      if (idx !== -1) state.transactionData.subscriptions[idx] = payload;
+    },
+    deleteSubscription: (state, { payload }) => {
+      if (!state.transactionData.subscriptions) return;
+      state.transactionData.subscriptions =
+        state.transactionData.subscriptions.filter((s) => s.id !== payload);
+    },
+    // ── Subscription types (user-defined brands/services) ─
+    addSubscriptionType: (state, { payload }) => {
+      if (!state.transactionData.subscriptionTypes)
+        state.transactionData.subscriptionTypes = [];
+      const idx = state.transactionData.subscriptionTypes.findIndex(
+        (t) => t.key === payload.key,
+      );
+      if (idx !== -1) state.transactionData.subscriptionTypes[idx] = payload;
+      else state.transactionData.subscriptionTypes.push(payload);
+    },
+    deleteSubscriptionType: (state, { payload: key }) => {
+      if (!state.transactionData.subscriptionTypes) return;
+      state.transactionData.subscriptionTypes =
+        state.transactionData.subscriptionTypes.filter((t) => t.key !== key);
+    },
+    // ── Auto-capture inbox ────────────────────────────────
+    addInboxItem: (state, { payload }) => {
+      if (!Array.isArray(state.transactionData.autoReadInbox)) {
+        state.transactionData.autoReadInbox = [];
+      }
+      state.transactionData.autoReadInbox.unshift(payload);
+    },
+    removeInboxItem: (state, { payload }) => {
+      if (!Array.isArray(state.transactionData.autoReadInbox)) return;
+      state.transactionData.autoReadInbox =
+        state.transactionData.autoReadInbox.filter(
+          (i) => i && i.id !== payload,
+        );
+    },
+    setAutoRead: (state, { payload }) => {
+      state.transactionData.autoRead = {
+        ...(state.transactionData.autoRead ?? {}),
+        ...payload,
+      };
+    },
     // ── Bank Accounts (multi-bank tracking) ───────────────
     addAccount: (state, { payload }) => {
       if (!state.transactionData.accounts) state.transactionData.accounts = [];
@@ -380,13 +499,25 @@ const transactionSlice = createSlice({
       state.transactionData.accounts = state.transactionData.accounts.filter(
         (a) => a.id !== payload,
       );
-      // Untag any transactions that referenced this account so they don't
-      // dangle. They fall back into the aggregate "All" view.
-      state.transactionData.transactions?.forEach((t) => {
-        if (t.accountId === payload) delete t.accountId;
-        if (t.fromAccountId === payload) delete t.fromAccountId;
-        if (t.toAccountId === payload) delete t.toAccountId;
-      });
+      const txns = state.transactionData.transactions;
+      if (txns) {
+        for (let i = txns.length - 1; i >= 0; i--) {
+          if (txns[i].openingForAccount === payload) {
+            if (state.transactionData.insights) {
+              state.transactionData.insights.balance -= balanceDelta(txns[i]);
+              state.transactionData.insights.expenses -= expenseDelta(txns[i]);
+            }
+            txns.splice(i, 1);
+          }
+        }
+        // Untag any transactions that referenced this account so they don't
+        // dangle. They fall back into the aggregate "All" view.
+        txns.forEach((t) => {
+          if (t.accountId === payload) delete t.accountId;
+          if (t.fromAccountId === payload) delete t.fromAccountId;
+          if (t.toAccountId === payload) delete t.toAccountId;
+        });
+      }
     },
     // Bulk re-tag past untagged transactions, used by the migration modal.
     // Payload: { matches: [{ predicate, accountId }] } evaluated in order.
@@ -439,6 +570,21 @@ const transactionSlice = createSlice({
         state.transactionData.preferences = { ...DEFAULT_PREFERENCES };
       }
       state.transactionData.preferences[key] = value;
+    },
+    // ── Notification dismissals ───────────────────────────
+    // Derived notifications are never stored — we persist only the user's
+    // explicit early dismissals as { eventKey: expiryISO }. Every write prunes
+    // expired entries first, so the map self-cleans and a dismissed reminder
+    // re-appears next cycle (a new cycle = a new eventKey).
+    dismissNotification: (state, { payload: { key, expiresAt } }) => {
+      const map = pruneDismissals(state.transactionData.notificationDismissals);
+      map[key] = expiresAt;
+      state.transactionData.notificationDismissals = map;
+    },
+    clearNotifications: (state, { payload }) => {
+      const map = pruneDismissals(state.transactionData.notificationDismissals);
+      for (const { key, expiresAt } of payload ?? []) map[key] = expiresAt;
+      state.transactionData.notificationDismissals = map;
     },
     // ── Lists (paymentModes etc.) ─────────────────────────
     setList: (state, { payload: { key, value } }) => {
@@ -644,6 +790,9 @@ export const {
   deleteTransaction,
   setInsightsBalance,
   setBudget,
+  addInboxItem,
+  removeInboxItem,
+  setAutoRead,
   addInvestment,
   updateInvestment,
   deleteInvestment,
@@ -659,6 +808,11 @@ export const {
   addLending,
   updateLending,
   deleteLending,
+  addSubscription,
+  updateSubscription,
+  deleteSubscription,
+  addSubscriptionType,
+  deleteSubscriptionType,
   addAccount,
   updateAccount,
   deleteAccount,
@@ -667,6 +821,8 @@ export const {
   updateInvestmentType,
   deleteInvestmentType,
   setPreference,
+  dismissNotification,
+  clearNotifications,
   addCategory,
   renameCategory,
   removeCategory,
@@ -697,6 +853,161 @@ export const persistTransaction =
             : "Expense added",
       }),
     );
+  };
+
+// ── Auto-capture (review-inbox) thunks ───────────────
+
+export const persistQueueAlert =
+  (text, receivedAt) =>
+  async (dispatch, getState) => {
+  const parsed = parseAlertEmail(text);
+  if (!parsed) {
+    dispatch(
+      showToast({ message: "Couldn't read that alert", type: "error" }),
+    );
+    return { ok: false };
+  }
+  const data = getState().transactions.transactionData;
+  if (parsed.reference) {
+    const dupTx = (data.transactions ?? []).some(
+      (t) => t.reference === parsed.reference,
+    );
+    const dupQ = (data.autoReadInbox ?? []).some(
+      (i) => i.parsed?.reference === parsed.reference,
+    );
+    if (dupTx || dupQ) {
+      dispatch(showToast({ message: "Already captured this transaction" }));
+      return { ok: false, duplicate: true };
+    }
+  }
+  const at =
+    receivedAt && !Number.isNaN(new Date(receivedAt).getTime())
+      ? new Date(receivedAt).toISOString()
+      : new Date().toISOString();
+  dispatch(
+    addInboxItem({
+      id: crypto.randomUUID(),
+      parsed,
+      confidence: parsed.confidence,
+      capturedAt: at,
+    }),
+  );
+  const { fileID, transactionData } = getState().transactions;
+  await updateFile(fileID, transactionData);
+  return { ok: true };
+};
+
+export const persistAcceptInboxItem =
+  (id, edits = {}) =>
+  async (dispatch, getState) => {
+    const data = getState().transactions.transactionData;
+    const item = (data.autoReadInbox ?? []).find((i) => i.id === id);
+    if (!item) return;
+    const tx = {
+      ...buildCaptureTransaction(item.parsed, {
+        transactions: data.transactions ?? [],
+        accounts: data.accounts ?? [],
+        receivedAt: item.capturedAt,
+      }),
+      ...edits,
+    };
+    if (tx.cardId || !tx.accountId) delete tx.accountId;
+
+    dispatch(addTransaction(tx));
+    dispatch(removeInboxItem(id));
+    const { fileID, transactionData } = getState().transactions;
+    await updateFile(fileID, transactionData);
+    dispatch(showToast({ message: "Captured transaction added" }));
+  };
+
+export const persistRejectInboxItem = (id) => async (dispatch, getState) => {
+  dispatch(removeInboxItem(id));
+  const { fileID, transactionData } = getState().transactions;
+  await updateFile(fileID, transactionData);
+};
+
+// Pulls recent bank/UPI alert mails from Gmail and queues new ones into the
+// review inbox. Dedupes by UPI reference + processed message ids, and stamps
+// each item's capture time with the email's received time (accurate clock).
+export const persistSyncGmail = () => async (dispatch, getState) => {
+  const cfg = getState().transactions.transactionData.autoRead ?? {};
+  const senders =
+    cfg.senders && cfg.senders.length ? cfg.senders : DEFAULT_ALERT_SENDERS;
+  const afterSec = cfg.cursor
+    ? Math.floor(cfg.cursor / 1000)
+    : Math.floor((Date.now() - 7 * 86_400_000) / 1000);
+  const query = `(${senders.map((s) => `from:${s}`).join(" OR ")}) after:${afterSec}`;
+
+  let msgs;
+  try {
+    msgs = await listMessages(query, 25);
+  } catch (e) {
+    if (e.code === "gmail-scope") {
+      return { ok: false, error: "gmail-scope" };
+    }
+    dispatch(showToast({ message: "Gmail sync failed", type: "error" }));
+    return { ok: false, error: "fetch" };
+  }
+
+  const processed = new Set(cfg.processedIds ?? []);
+  let added = 0;
+  let maxDate = cfg.cursor ?? 0;
+
+  for (const { id } of msgs) {
+    if (processed.has(id)) continue;
+    let msg;
+    try {
+      msg = await getMessage(id);
+    } catch {
+      continue;
+    }
+    processed.add(id);
+    if (msg.internalDate > maxDate) maxDate = msg.internalDate;
+
+    const parsed = parseAlertEmail(msg.text);
+    if (!parsed) continue;
+
+    const cur = getState().transactions.transactionData;
+    if (parsed.reference) {
+      const dup =
+        (cur.transactions ?? []).some(
+          (t) => t.reference === parsed.reference,
+        ) ||
+        (cur.autoReadInbox ?? []).some(
+          (i) => i.parsed?.reference === parsed.reference,
+        );
+      if (dup) continue;
+    }
+
+    dispatch(
+      addInboxItem({
+        id: crypto.randomUUID(),
+        parsed,
+        confidence: parsed.confidence,
+        capturedAt: new Date(msg.internalDate).toISOString(),
+        sourceMsgId: id,
+      }),
+    );
+    added += 1;
+  }
+
+  dispatch(
+    setAutoRead({
+      source: "gmail",
+      cursor: maxDate || cfg.cursor || null,
+      processedIds: Array.from(processed).slice(-300),
+    }),
+  );
+  const { fileID, transactionData } = getState().transactions;
+  await updateFile(fileID, transactionData);
+  return { ok: true, added };
+};
+
+export const persistAutoReadEnabled =
+  (enabled) => async (dispatch, getState) => {
+    dispatch(setAutoRead({ enabled }));
+    const { fileID, transactionData } = getState().transactions;
+    await updateFile(fileID, transactionData);
   };
 
 export const persistBudget =
@@ -840,6 +1151,7 @@ function buildLicPaymentTx(policy, occurredAt) {
     occurredAt: occurredAt.toISOString(),
     createdAt: new Date().toISOString(),
     licPolicyId: policy.id,
+    accountId: policy.accountId || undefined,
   };
 }
 
@@ -854,14 +1166,14 @@ function buildLicPaymentTx(policy, occurredAt) {
 //      FD, RD, etc.) that set `investment.affectsBalance` directly.
 //      Treat undefined as true to preserve the historical default.
 async function shouldDeductFromBalance(investment, userTypes) {
-  const { getInvestmentTypeSchema } = await import(
-    "../../utils/investmentTypeSchemas"
-  );
   const schema = getInvestmentTypeSchema(investment.type, userTypes);
   const deductField = schema?.rows
     ?.flatMap((r) => r.fields ?? [])
     .find((f) => f.type === "deduct-from-balance");
   if (deductField) return !!investment[deductField.key];
+  // Type-level affectsBalance (set in Investment Type Designer) overrides the
+  // per-investment default so new investments inherit the type's intent.
+  if (schema?.affectsBalance === false) return false;
   return investment.affectsBalance !== false;
 }
 
@@ -883,31 +1195,40 @@ export const persistAddInvestment =
     // (optionally) one for the current month if the form's checkbox was set.
     // This mirrors the SIP audit-trail pattern.
     if (investment.type === "lic") {
-      const past = pastPremiumDates(
-        investment.startDate,
-        investment.premiumMonths,
-      );
-      for (const date of past) {
-        dispatch(addTransaction(buildLicPaymentTx(investment, date)));
-      }
-      if (investment.currentInstallmentPaid?.paid) {
-        const now = new Date();
-        if (
-          investment.premiumMonths?.includes(now.getMonth() + 1)
-        ) {
-          dispatch(
-            addTransaction(
-              buildLicPaymentTx(
-                investment,
-                new Date(now.getFullYear(), now.getMonth(), 1),
+      if (investment.affectsBalance !== false) {
+        const past = pastPremiumDates(
+          investment.startDate,
+          investment.premiumMonths,
+        );
+        for (const date of past) {
+          dispatch(addTransaction(buildLicPaymentTx(investment, date)));
+        }
+        if (investment.currentInstallmentPaid?.paid) {
+          const now = new Date();
+          if (investment.premiumMonths?.includes(now.getMonth() + 1)) {
+            dispatch(
+              addTransaction(
+                buildLicPaymentTx(
+                  investment,
+                  new Date(now.getFullYear(), now.getMonth(), 1),
+                ),
               ),
-            ),
-          );
+            );
+          }
         }
       }
       const { fileID, transactionData } = getState().transactions;
-      await updateFile(fileID, transactionData);
-      dispatch(showToast({ message: "Policy added" }));
+      try {
+        await updateFile(fileID, transactionData);
+        dispatch(showToast({ message: "Policy added" }));
+      } catch {
+        dispatch(
+          showToast({
+            message: "Couldn't save to Drive — check your connection and try again.",
+            type: "error",
+          }),
+        );
+      }
       return;
     }
     // SIP: balance comes from monthly instalments only.
@@ -934,13 +1255,23 @@ export const persistAddInvestment =
             category: typeLabel,
             occurredAt: investment.startDate || investment.createdAt,
             createdAt: investment.createdAt,
+            accountId: investment.accountId || undefined,
           }),
         );
       }
     }
     const { fileID, transactionData } = getState().transactions;
-    await updateFile(fileID, transactionData);
-    dispatch(showToast({ message: "Investment added" }));
+    try {
+      await updateFile(fileID, transactionData);
+      dispatch(showToast({ message: "Investment added" }));
+    } catch {
+      dispatch(
+        showToast({
+          message: "Couldn't save to Drive — check your connection and try again.",
+          type: "error",
+        }),
+      );
+    }
   };
 
 export const persistUpdateInvestment =
@@ -953,35 +1284,51 @@ export const persistUpdateInvestment =
     dispatch(updateInvestment(investment));
 
     if (investment.type === "lic") {
-      // Sync the current calendar month's premium payment based on the
-      // form's checkbox. Past months stay untouched (the user can delete
-      // individual entries from the ledger if needed).
-      const now = new Date();
-      const currentMonthTx = before.transactions?.find((t) => {
-        if (t.licPolicyId !== investment.id) return false;
-        const d = new Date(t.occurredAt);
-        return (
-          d.getFullYear() === now.getFullYear() &&
-          d.getMonth() === now.getMonth()
-        );
-      });
-      const isPremiumMonth = investment.premiumMonths?.includes(
-        now.getMonth() + 1,
-      );
-      const wantsPaid =
-        isPremiumMonth && investment.currentInstallmentPaid?.paid;
-      if (wantsPaid && !currentMonthTx) {
-        dispatch(
-          addTransaction(
-            buildLicPaymentTx(
-              investment,
-              new Date(now.getFullYear(), now.getMonth(), 1),
-            ),
-          ),
-        );
-      } else if (!wantsPaid && currentMonthTx) {
-        dispatch(deleteTransaction(currentMonthTx.id));
+      // Remove any stale lump-sum transaction created by old code (id ===
+      // investment.id, no licPolicyId). LIC uses a per-premium ledger instead.
+      if (linkedTx && !linkedTx.licPolicyId) {
+        dispatch(deleteTransaction(linkedTx.id));
       }
+
+      const wantsBalance = investment.affectsBalance !== false;
+
+      if (wantsBalance) {
+        // Sync the current calendar month's premium payment based on the
+        // form's checkbox. Past months stay untouched.
+        const now = new Date();
+        const currentMonthTx = before.transactions?.find((t) => {
+          if (t.licPolicyId !== investment.id) return false;
+          const d = new Date(t.occurredAt);
+          return (
+            d.getFullYear() === now.getFullYear() &&
+            d.getMonth() === now.getMonth()
+          );
+        });
+        const isPremiumMonth = investment.premiumMonths?.includes(
+          now.getMonth() + 1,
+        );
+        const wantsPaid =
+          isPremiumMonth && investment.currentInstallmentPaid?.paid;
+        if (wantsPaid && !currentMonthTx) {
+          dispatch(
+            addTransaction(
+              buildLicPaymentTx(
+                investment,
+                new Date(now.getFullYear(), now.getMonth(), 1),
+              ),
+            ),
+          );
+        } else if (!wantsPaid && currentMonthTx) {
+          dispatch(deleteTransaction(currentMonthTx.id));
+        }
+      } else {
+        // affectsBalance toggled off — delete all per-premium transactions.
+        const allLicTxs = (before.transactions ?? []).filter(
+          (t) => t.licPolicyId === investment.id,
+        );
+        allLicTxs.forEach((t) => dispatch(deleteTransaction(t.id)));
+      }
+
       const { fileID, transactionData } = getState().transactions;
       await updateFile(fileID, transactionData);
       return;
@@ -1013,6 +1360,7 @@ export const persistUpdateInvestment =
             category: typeLabel,
             occurredAt: investment.startDate || investment.createdAt || oldInv.createdAt,
             createdAt: investment.createdAt || oldInv.createdAt,
+            accountId: investment.accountId || undefined,
           }),
         );
       } else if (linkedTx && wantsBalance && oldInv) {
@@ -1026,6 +1374,7 @@ export const persistUpdateInvestment =
               amount: String(investedValue(investment)),
               category: typeLabel,
               occurredAt: investment.startDate || linkedTx.occurredAt,
+              accountId: investment.accountId || undefined,
             },
           }),
         );
@@ -1033,6 +1382,61 @@ export const persistUpdateInvestment =
     }
     const { fileID, transactionData } = getState().transactions;
     await updateFile(fileID, transactionData);
+  };
+
+export const persistPayLicArrears =
+  ({ investmentId, periods, withPenalty }) =>
+  async (dispatch, getState) => {
+    const data = getState().transactions.transactionData;
+    const inv = data.investments?.find((i) => i.id === investmentId);
+    if (!inv || !Array.isArray(periods) || periods.length === 0) return;
+    const premium = parseFloat(inv.premiumAmount) || 0;
+
+    const txs = periods.map((iso) => buildLicPaymentTx(inv, new Date(iso)));
+
+    if (withPenalty && inv.latePenalty?.enabled) {
+      const per =
+        inv.latePenalty.mode === "percent"
+          ? (premium * (parseFloat(inv.latePenalty.amount) || 0)) / 100
+          : parseFloat(inv.latePenalty.amount) || 0;
+      if (per > 0) {
+        for (const iso of periods) {
+          txs.push({
+            id: crypto.randomUUID(),
+            transactionType: "expense",
+            name: `${inv.name} late penalty`,
+            amount: String(per),
+            category: "Late penalty",
+            occurredAt: new Date(iso).toISOString(),
+            createdAt: new Date().toISOString(),
+            licPolicyId: inv.id,
+            accountId: inv.accountId || undefined,
+          });
+        }
+      }
+    }
+
+    dispatch(bulkAddTransactions(txs));
+
+    const after = getState().transactions.transactionData;
+    const paidCount = (after.transactions ?? []).filter(
+      (t) => t.licPolicyId === inv.id && t.transactionType === "investment",
+    ).length;
+    dispatch(
+      updateInvestment({
+        ...inv,
+        investedAmount: paidCount * premium,
+        installmentsPaid: paidCount,
+      }),
+    );
+
+    const { fileID, transactionData } = getState().transactions;
+    await updateFile(fileID, transactionData);
+    dispatch(
+      showToast({
+        message: `Recorded ${periods.length} overdue premium${periods.length === 1 ? "" : "s"}`,
+      }),
+    );
   };
 
 export const persistDeleteInvestment = (id) => async (dispatch, getState) => {
@@ -1077,7 +1481,7 @@ export const persistHardDeleteInvestment =
 // an income transaction when `addToBalance` is true, then moves the policy
 // to History. The premium-payment ledger entries stay intact for audit.
 export const persistSurrenderLicPolicy =
-  ({ id, amount, addToBalance }) => async (dispatch, getState) => {
+  ({ id, amount, addToBalance, accountId }) => async (dispatch, getState) => {
     const { transactionData } = getState().transactions;
     const inv = transactionData.investments?.find((i) => i.id === id);
     if (!inv) return;
@@ -1101,6 +1505,7 @@ export const persistSurrenderLicPolicy =
           category: "Investment",
           occurredAt: now,
           createdAt: now,
+          accountId: accountId || undefined,
         }),
       );
     }
@@ -1112,7 +1517,7 @@ export const persistSurrenderLicPolicy =
 // Mark an LIC policy as matured (reached tenure end). Records the maturity
 // payout as income if `addToBalance`, then moves to History.
 export const persistMatureLicPolicy =
-  ({ id, amount, addToBalance }) => async (dispatch, getState) => {
+  ({ id, amount, addToBalance, accountId }) => async (dispatch, getState) => {
     const { transactionData } = getState().transactions;
     const inv = transactionData.investments?.find((i) => i.id === id);
     if (!inv) return;
@@ -1136,6 +1541,7 @@ export const persistMatureLicPolicy =
           category: "Investment",
           occurredAt: now,
           createdAt: now,
+          accountId: accountId || undefined,
         }),
       );
     }
@@ -1205,7 +1611,7 @@ export const persistResumeInvestment =
 // Uses direct reducers (not the update/delete thunks) so there is a single Drive write
 // and the original cost-basis linked transaction is NOT disturbed.
 export const persistSellInvestment =
-  ({ lots, qtyToSell, sellPrice, addToBalance, invName }) =>
+  ({ lots, qtyToSell, sellPrice, addToBalance, accountId, invName }) =>
   async (dispatch, getState) => {
     let remaining = qtyToSell;
     for (const lot of lots) {
@@ -1237,6 +1643,7 @@ export const persistSellInvestment =
           amount: String(Math.round(qtyToSell * sellPrice * 100) / 100),
           name: `Sold: ${invName}`,
           category: "Investment",
+          accountId: accountId || undefined,
         }),
       );
     }
@@ -1324,9 +1731,6 @@ export const persistLogAutoDeductPayment =
 
     const state = getState().transactions;
     const userTypes = state.transactionData?.investmentTypes ?? [];
-    const { getInvestmentTypeSchema } = await import(
-      "../../utils/investmentTypeSchemas"
-    );
     const schema = getInvestmentTypeSchema(inv.type, userTypes);
 
     const frequency = inv.autoDeduct?.frequency || "monthly";
@@ -1370,12 +1774,6 @@ export const persistAutoDeductInstalment =
 
     const state = getState().transactions;
     const userTypes = state.transactionData?.investmentTypes ?? [];
-
-    // Lazy-import to avoid a circular dependency. The schema helpers don't
-    // need React state, just the userTypes slice we already have in-hand.
-    const { getInvestmentTypeSchema } = await import(
-      "../../utils/investmentTypeSchemas"
-    );
     const schema = getInvestmentTypeSchema(inv.type, userTypes);
     if (!schema) return;
 
@@ -1444,6 +1842,25 @@ export const persistDeleteGoal = (id) => async (dispatch, getState) => {
 export const persistSetPreference =
   (key, value) => async (dispatch, getState) => {
     dispatch(setPreference({ key, value }));
+    const { fileID, transactionData } = getState().transactions;
+    await updateFile(fileID, transactionData);
+  };
+
+// Dismiss a single notification early. `expiresAt` is the event's own expiry
+// (its cycle end), so the dismissal lapses on its own without ever needing a
+// cleanup pass.
+export const persistDismissNotification =
+  ({ key, expiresAt }) => async (dispatch, getState) => {
+    dispatch(dismissNotification({ key, expiresAt }));
+    const { fileID, transactionData } = getState().transactions;
+    await updateFile(fileID, transactionData);
+  };
+
+// Clear-all: dismiss every currently-visible notification in one write.
+// `entries` is [{ key, expiresAt }, …].
+export const persistClearNotifications =
+  (entries) => async (dispatch, getState) => {
+    dispatch(clearNotifications(entries));
     const { fileID, transactionData } = getState().transactions;
     await updateFile(fileID, transactionData);
   };
@@ -1569,8 +1986,18 @@ export const persistApplyRulesToPast =
 export const persistRecomputeBalance = () => async (dispatch, getState) => {
   const { transactionData, fileID } = getState().transactions;
   const txns = transactionData.transactions ?? [];
-  let computed = 0;
-  for (const t of txns) computed += balanceDelta(t);
+  const accounts = transactionData.accounts ?? [];
+  const multiBankEnabled =
+    transactionData.preferences?.multiBankEnabled ?? false;
+
+  // In multi-bank mode use computeAggregateBalance so the stored value stays
+  // in sync with exactly what the carousel shows (excludes orphaned txns).
+  // In single-bank mode fall back to the simpler balanceDelta sum.
+  const computed =
+    multiBankEnabled && accounts.length > 0
+      ? computeAggregateBalance(accounts, txns)
+      : txns.reduce((sum, t) => sum + balanceDelta(t), 0);
+
   const stored = transactionData.insights?.balance ?? 0;
   const diff = stored - computed;
   if (Math.abs(diff) > 0.005) {
@@ -1601,6 +2028,50 @@ export const persistAddAccount =
 export const persistUpdateAccount =
   (account) => async (dispatch, getState) => {
     dispatch(updateAccount(account));
+    const { fileID, transactionData } = getState().transactions;
+    await updateFile(fileID, transactionData);
+  };
+
+export const persistSetOpeningBalance =
+  ({ accountId, amount }) =>
+  async (dispatch, getState) => {
+    const before = getState().transactions.transactionData;
+    const acc = before.accounts?.find((a) => a.id === accountId);
+    if (!acc) return;
+    const value = parseFloat(amount) || 0;
+    dispatch(updateAccount({ ...acc, openingBalance: value }));
+
+    const existing = before.transactions?.find(
+      (t) => t.openingForAccount === accountId,
+    );
+    if (existing) {
+      if (value > 0) {
+        dispatch(
+          updateTransaction({
+            oldTx: existing,
+            newTx: { ...existing, amount: String(value) },
+          }),
+        );
+      } else {
+        dispatch(deleteTransaction(existing.id));
+      }
+    } else if (value > 0) {
+      const now = new Date().toISOString();
+      dispatch(
+        addTransaction({
+          id: crypto.randomUUID(),
+          transactionType: "income",
+          name: "Current Balance",
+          category: "Current Balance",
+          amount: String(value),
+          accountId,
+          openingForAccount: accountId,
+          occurredAt: acc.createdAt ?? now,
+          createdAt: now,
+        }),
+      );
+    }
+
     const { fileID, transactionData } = getState().transactions;
     await updateFile(fileID, transactionData);
   };
@@ -1687,7 +2158,57 @@ export const persistAddInvestmentType =
 
 export const persistUpdateInvestmentType =
   (type) => async (dispatch, getState) => {
+    const before = getState().transactions.transactionData;
+    const oldType = before?.investmentTypes?.find((t) => t.key === type.key);
+    const balanceToggled =
+      oldType != null &&
+      (oldType.affectsBalance ?? true) !== (type.affectsBalance ?? true);
+
     dispatch(updateInvestmentType(type));
+
+    if (balanceToggled) {
+      const investments = before.investments ?? [];
+      const transactions = before.transactions ?? [];
+      const typeLabel = type.label ?? "Investment";
+      const wantsBalance = type.affectsBalance !== false;
+
+      for (const inv of investments) {
+        if (inv.type !== type.key || inv.inHistory) continue;
+        // LIC and SIP manage their own per-payment ledgers — skip.
+        if (inv.type === "lic" || inv.type === "sip") continue;
+        const linkedTx = transactions.find(
+          (t) => t.id === inv.id && t.transactionType === "investment",
+        );
+        if (!wantsBalance && linkedTx) {
+          dispatch(deleteTransaction(inv.id));
+        } else if (wantsBalance && !linkedTx) {
+          dispatch(
+            addTransaction({
+              id: inv.id,
+              transactionType: "investment",
+              name: inv.name,
+              amount: String(investedValue(inv)),
+              category: typeLabel,
+              occurredAt: inv.startDate || inv.createdAt,
+              createdAt: inv.createdAt,
+            }),
+          );
+        }
+      }
+
+      // Warn if balance would go negative after applying the change.
+      const updatedTxns = getState().transactions.transactionData?.transactions ?? [];
+      let newBalance = 0;
+      for (const t of updatedTxns) newBalance += balanceDelta(t);
+      if (newBalance < 0) {
+        dispatch(
+          showToast({
+            message: `Heads up: balance is now ₹${Math.abs(newBalance).toLocaleString("en-IN", { maximumFractionDigits: 2 })} negative after this change.`,
+          }),
+        );
+      }
+    }
+
     const { fileID, transactionData } = getState().transactions;
     await updateFile(fileID, transactionData);
   };

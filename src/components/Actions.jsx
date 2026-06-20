@@ -4,14 +4,17 @@ import { useLocation, useNavigate } from "react-router-dom";
 import {
   persistTransaction,
   persistAddInvestment,
+  persistUpdateInvestment,
   persistSelfTransfer,
 } from "../redux/slices/transactionSlice";
+import { persistAddSubscription } from "../redux/slices/solvencySlice";
 import ActionButton from "../preStyledElements/actionButton/ActionButton";
 import Modal from "../preStyledElements/modal/Modal";
 import ExpenseForm from "../Forms/ExpenseForm";
 import IncomeForm from "../Forms/IncomeForm";
 import InvestmentForm from "../Forms/InvestmentForm";
 import SelfTransferForm from "../Forms/SelfTransferForm";
+import SubscriptionForm from "../Forms/SubscriptionForm";
 
 const Actions = () => {
   const [isExpenseFormOpen, setIsExpenseFormOpen] = useState(
@@ -20,7 +23,12 @@ const Actions = () => {
   const [isIncomeFormOpen, setIsIncomeFormOpen] = useState(false);
   const [isInvestFormOpen, setIsInvestFormOpen] = useState(false);
   const [isTransferFormOpen, setIsTransferFormOpen] = useState(false);
+  const [isSubFormOpen, setIsSubFormOpen] = useState(false);
+  const [subPrefill, setSubPrefill] = useState(null);
   const [investPrefillAmount, setInvestPrefillAmount] = useState("");
+  const [investPreExisting, setInvestPreExisting] = useState(null);
+  const [investPrefillType, setInvestPrefillType] = useState("");
+  const [expenseInvestTarget, setExpenseInvestTarget] = useState(null);
   const dispatch = useDispatch();
   const driveReady = useSelector(
     (state) => state.transactions.status === "ready",
@@ -42,6 +50,7 @@ const Actions = () => {
   const onSolvencyPage = pathname.toLowerCase().includes("solvency");
   const onPreferencesPage = pathname.toLowerCase().includes("preferences");
   const onDashboardPage = pathname.toLowerCase().includes("dashboard");
+  const onSubscriptionsPage = pathname.toLowerCase().includes("subscriptions");
 
   useEffect(() => {
     if (window.location.hash.toLowerCase() === "#expense") {
@@ -74,13 +83,38 @@ const Actions = () => {
   const handleTransaction = (transaction) => {
     setIsIncomeFormOpen(false);
     setIsExpenseFormOpen(false);
+    setExpenseInvestTarget(null);
     dispatch(persistTransaction(transaction));
+  };
+
+  const handlePayInvestment = (inv) => {
+    setIsInvestFormOpen(false);
+    setInvestPrefillAmount("");
+    setInvestPrefillType("");
+    setInvestPreExisting(null);
+    setExpenseInvestTarget(inv);
+    setIsExpenseFormOpen(true);
+  };
+
+  const handleChangeInvestment = () => {
+    setIsExpenseFormOpen(false);
+    setExpenseInvestTarget(null);
+    setInvestPrefillAmount("");
+    setInvestPrefillType("");
+    setInvestPreExisting(null);
+    setIsInvestFormOpen(true);
   };
 
   const handleInvestment = (investment) => {
     setIsInvestFormOpen(false);
     setInvestPrefillAmount("");
-    dispatch(persistAddInvestment(investment));
+    setInvestPrefillType("");
+    if (investPreExisting) {
+      dispatch(persistUpdateInvestment(investment));
+    } else {
+      dispatch(persistAddInvestment(investment));
+    }
+    setInvestPreExisting(null);
   };
 
   const handleSelfTransfer = (payload) => {
@@ -88,15 +122,21 @@ const Actions = () => {
     dispatch(persistSelfTransfer(payload));
   };
 
+  const handleSubscription = (subscription) => {
+    setIsSubFormOpen(false);
+    setSubPrefill(null);
+    dispatch(persistAddSubscription(subscription));
+  };
+
   if (onSolvencyPage || onPreferencesPage) return null;
 
-  const showTransfer = !onInvestPage && canSelfTransfer;
+  const showTransfer = !onInvestPage && !onSubscriptionsPage && canSelfTransfer;
 
   return (
     <>
       <footer
         ref={footerRef}
-        className={`action-footer${(onTransactionsPage || onInvestPage || onDashboardPage) ? " action-footer--sticky" : ""}`}
+        className={`action-footer${(onTransactionsPage || onInvestPage || onDashboardPage || onSubscriptionsPage) ? " action-footer--sticky" : ""}`}
       >
         {/* Left spacer mirrors the right "side" slot so the centered group
             stays visually centred when the transfer button is present. */}
@@ -104,7 +144,16 @@ const Actions = () => {
           <div className="action-footer-side" aria-hidden="true" />
         )}
         <div className="action-footer-main">
-          {onInvestPage ? (
+          {onSubscriptionsPage ? (
+            <ActionButton
+              className="generic-button income-button"
+              disabled={!driveReady}
+              onClick={() => setIsSubFormOpen(true)}
+            >
+              <i className="fa-solid fa-rotate" />
+              Add Subscription
+            </ActionButton>
+          ) : onInvestPage ? (
             <ActionButton
               className="generic-button income-button"
               disabled={!driveReady}
@@ -165,16 +214,32 @@ const Actions = () => {
       {isExpenseFormOpen && (
         <Modal
           open={isExpenseFormOpen}
-          onClose={() => setIsExpenseFormOpen(false)}
-          title="Add Expense"
+          onClose={() => {
+            setIsExpenseFormOpen(false);
+            setExpenseInvestTarget(null);
+          }}
+          title={expenseInvestTarget ? "Pay Premium" : "Add Expense"}
         >
           <ExpenseForm
             onSubmit={handleTransaction}
-            onCancel={() => setIsExpenseFormOpen(false)}
-            onInvestmentSelect={(amount) => {
+            investmentTarget={expenseInvestTarget}
+            onChangeInvestmentTarget={handleChangeInvestment}
+            onCancel={() => {
+              setIsExpenseFormOpen(false);
+              setExpenseInvestTarget(null);
+            }}
+            onInvestmentSelect={({ amount, existing, type } = {}) => {
               setIsExpenseFormOpen(false);
               setInvestPrefillAmount(amount ?? "");
+              setInvestPreExisting(existing ?? null);
+              setInvestPrefillType(existing ? "" : (type ?? ""));
               setIsInvestFormOpen(true);
+            }}
+            onSubscriptionSelect={({ name, amount } = {}) => {
+              setIsExpenseFormOpen(false);
+              setExpenseInvestTarget(null);
+              setSubPrefill({ name: name ?? "", amount: amount ?? "" });
+              setIsSubFormOpen(true);
             }}
           />
         </Modal>
@@ -185,16 +250,23 @@ const Actions = () => {
           onClose={() => {
             setIsInvestFormOpen(false);
             setInvestPrefillAmount("");
+            setInvestPreExisting(null);
+            setInvestPrefillType("");
           }}
-          title="Add Investment"
+          title={investPreExisting ? "Update Investment" : "Add Investment"}
         >
           <InvestmentForm
             onSubmit={handleInvestment}
+            onPayExisting={handlePayInvestment}
             onCancel={() => {
               setIsInvestFormOpen(false);
               setInvestPrefillAmount("");
+              setInvestPreExisting(null);
+              setInvestPrefillType("");
             }}
             prefillAmount={investPrefillAmount}
+            existing={investPreExisting}
+            prefillType={investPrefillType}
           />
         </Modal>
       )}
@@ -207,6 +279,25 @@ const Actions = () => {
           <SelfTransferForm
             onSubmit={handleSelfTransfer}
             onCancel={() => setIsTransferFormOpen(false)}
+          />
+        </Modal>
+      )}
+      {isSubFormOpen && (
+        <Modal
+          open={isSubFormOpen}
+          onClose={() => {
+            setIsSubFormOpen(false);
+            setSubPrefill(null);
+          }}
+          title="Add Subscription"
+        >
+          <SubscriptionForm
+            onSubmit={handleSubscription}
+            prefill={subPrefill}
+            onCancel={() => {
+              setIsSubFormOpen(false);
+              setSubPrefill(null);
+            }}
           />
         </Modal>
       )}

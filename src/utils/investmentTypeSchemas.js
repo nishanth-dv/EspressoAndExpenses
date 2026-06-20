@@ -255,7 +255,12 @@ export const BUILTIN_INVESTMENT_TYPES = [
     label: "LIC",
     color: "#e07b3a",
     icon: "fa-shield-halved",
-    mathProfile: "fixed",
+    // Cash-flow (like APY): a living policy contributes nothing computed to the
+    // portfolio — no interpolated current value, no auto-calculated return, and
+    // its premiums don't add into the invested total. The real return % + bank
+    // credit happen only at maturity via LicMatureModal / persistMatureLicPolicy,
+    // where the user enters the actual maturity amount manually.
+    mathProfile: "cashflow",
     builtIn: true,
     description: "A life insurance policy from LIC. Covers your life and may pay out a maturity amount at the end. You can pick how often to pay the premium. Counts toward your 80C deduction.",
     rows: [

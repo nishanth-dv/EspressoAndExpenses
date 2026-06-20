@@ -84,7 +84,6 @@
 }
 
 .sol-emi-bill-row--sub {
-  padding-left: 12px;
   font-size: 12px;
   color: var(--text-label);
 }
@@ -711,7 +710,6 @@
 .sol-due-nav-arrow {
   font-size: 11px;
   color: var(--text-label);
-  margin-left: 6px;
   flex-shrink: 0;
   align-self: center;
 }
@@ -990,6 +988,80 @@
   font-weight: 600;
   margin-left: 2px;
   letter-spacing: 0.03em;
+}
+
+/* Pooled-impact banner: summarises a sibling card's draw on the shared limit
+   instead of listing its charges row-by-row in this card's ledger. */
+.sol-pool-banner {
+  margin: 4px 0 14px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(91, 141, 238, 0.08);
+  border: 1px solid rgba(91, 141, 238, 0.22);
+}
+
+.sol-pool-banner-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #5b8dee;
+}
+
+.sol-pool-banner-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+}
+
+.sol-pool-banner-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  padding: 7px 9px;
+  border: none;
+  border-radius: 7px;
+  background: var(--surface-bg, rgba(255, 255, 255, 0.04));
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+
+.sol-pool-banner-row:hover {
+  background: rgba(91, 141, 238, 0.14);
+}
+
+.sol-pool-banner-name {
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.sol-pool-banner-amt {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.sol-pool-banner-jump {
+  font-size: 10px;
+  color: #5b8dee;
+}
+
+.sol-pool-banner-note {
+  margin: 8px 0 0;
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--text-label);
 }
 
 .sol-linked-tx-source {
@@ -1287,6 +1359,22 @@
   font-size: 10px;
 }
 
+.sol-linked-tx-cycle {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  white-space: nowrap;
+}
+
+/* Covered date range under the statement-month name — quieter than the month. */
+.sol-linked-tx-cycle-range {
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-secondary);
+  text-transform: none;
+}
+
 .sol-linked-tx-date {
   font-size: 11px;
   color: var(--text-secondary);
@@ -1549,16 +1637,8 @@
 
 /* ── Forms ───────────────────────────────────────────── */
 
-.sol-form-row {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-  gap: 12px;
-  min-width: 0;
-}
-
-.sol-form-row > * {
-  min-width: 0;
-}
+/* .sol-form-row / .sol-form-row > * moved to the global styles.css so the
+   shared InvestmentForm rows lay out even when solvency.css isn't loaded. */
 
 .sol-color-field {
   display: flex;
@@ -1614,86 +1694,8 @@
 
 /* ── Day picker ──────────────────────────────────────── */
 
-.sol-day-picker {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.sol-day-trigger {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 100%;
-  display: flex;
-  align-items: center;
-  padding: 8px 10px 8px 18px;
-  border: 1px solid var(--field-border);
-  background: var(--field-bg);
-  color: var(--field-text);
-  border-radius: 8px;
-  font-family: "Smooch Sans", sans-serif;
-  font-size: 17px;
-  font-weight: 500;
-  cursor: pointer;
-  text-align: left;
-  transition: border-color 0.15s;
-  box-sizing: border-box;
-}
-
-.sol-day-trigger--open {
-  border-color: var(--surface-border-open, var(--bar-bg));
-}
-
-.sol-day-trigger-val {
-  flex: 1;
-  font-size: 17px;
-  font-weight: 500;
-  color: var(--field-text);
-}
-
-
-.sol-day-required {
-  color: var(--amount-expense);
-}
-
-.sol-day-grid {
-  display: grid;
-  grid-template-columns: repeat(7, 1fr);
-  gap: 5px;
-  width: 100%;
-  min-width: 0;
-  margin-top: 6px;
-}
-
-.sol-day-btn {
-  width: 100%;
-  aspect-ratio: 1;
-  box-sizing: border-box;
-  border: 1px solid var(--field-border);
-  background: var(--field-bg);
-  color: var(--field-text);
-  border-radius: 8px;
-  font-family: inherit;
-  font-size: 14px;
-  font-weight: 600;
-  cursor: pointer;
-  padding: 0;
-  transition:
-    background 0.1s,
-    border-color 0.1s,
-    color 0.1s;
-}
-
-.sol-day-btn:hover {
-  background: var(--surface-active);
-  border-color: var(--surface-border-open);
-}
-
-.sol-day-btn--active {
-  background: var(--bar-bg);
-  color: var(--bar-text);
-  border-color: transparent;
-}
+/* DayPicker styles moved to src/styles/daypicker.css (imported by the
+   DayPicker component) so the picker is styled wherever it's used. */
 
 .sol-auto-emi {
   margin: -4px 0 8px;

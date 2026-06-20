@@ -38,6 +38,7 @@ const ExportButton = ({ scope = "transactions" }) => {
   const [sections, setSections]     = useState({ dashboard: true, transactions: true, investments: true, solvency: true });
   const [filenameStem, setFilenameStem] = useState("");
   const [editingName, setEditingName]   = useState(false);
+  const [downloading, setDownloading]   = useState(false);
   const filenameRef = useRef(null);
 
   const noneSelected = !Object.values(sections).some(Boolean);
@@ -61,18 +62,21 @@ const ExportButton = ({ scope = "transactions" }) => {
     }, 0);
   }
 
-  function handleDownload() {
-    if (noneSelected) return;
+  async function handleDownload() {
+    if (noneSelected || downloading) return;
     const stem = filenameStem.trim() || filterFilename;
     const data = { transactions, allTransactions, insights, budgets, investments, cards, commitments, lendings, sections };
+    setDownloading(true);
     try {
-      if (format === "excel") exportToExcel(data, filterLabel, stem);
-      else exportToPDF(data, filterLabel, stem);
+      if (format === "excel") await exportToExcel(data, filterLabel, stem);
+      else await exportToPDF(data, filterLabel, stem);
       dispatch(showToast({ message: `${format === "excel" ? "Excel" : "PDF"} downloaded` }));
+      setOpen(false);
     } catch {
       dispatch(showToast({ message: "Download failed", type: "error" }));
+    } finally {
+      setDownloading(false);
     }
-    setOpen(false);
   }
 
   return (
@@ -127,10 +131,10 @@ const ExportButton = ({ scope = "transactions" }) => {
             </div>
 
             <div className="form-actions export-confirm-actions">
-              <button className="cancel-button" onClick={() => setOpen(false)}>Cancel</button>
-              <button className="export-confirm-btn" onClick={handleDownload} disabled={noneSelected}>
-                <i className={`fa-solid ${format === "excel" ? "fa-file-excel" : "fa-file-pdf"}`} />
-                Download
+              <button className="cancel-button" onClick={() => setOpen(false)} disabled={downloading}>Cancel</button>
+              <button className="export-confirm-btn" onClick={handleDownload} disabled={noneSelected || downloading}>
+                <i className={`fa-solid ${downloading ? "fa-spinner fa-spin" : format === "excel" ? "fa-file-excel" : "fa-file-pdf"}`} />
+                {downloading ? "Preparing…" : "Download"}
               </button>
             </div>
           </div>

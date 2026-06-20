@@ -5,7 +5,7 @@ import PropTypes from "prop-types";
 import NavigationLink from "../../components/NavItem";
 import "./MobileNavDrawer.css";
 
-const MobileNavDrawer = ({ open, setIsOpen }) => {
+const MobileNavDrawer = ({ open, setIsOpen, pages = [] }) => {
   const onClose = () => setIsOpen(false);
 
   return createPortal(
@@ -29,18 +29,11 @@ const MobileNavDrawer = ({ open, setIsOpen }) => {
           >
             <nav className="drawer-menu">
               <div className="flex column">
-                <NavigationLink to="/Dashboard" onClick={onClose}>
-                  Dashboard
-                </NavigationLink>
-                <NavigationLink to="/Transactions" onClick={onClose}>
-                  Transactions
-                </NavigationLink>
-                <NavigationLink to="/Invest" onClick={onClose}>
-                  Investments
-                </NavigationLink>
-                <NavigationLink to="/Solvency" onClick={onClose}>
-                  Solvency Audit
-                </NavigationLink>
+                {pages.map((p) => (
+                  <NavigationLink key={p.key} to={p.route} onClick={onClose}>
+                    {p.label}
+                  </NavigationLink>
+                ))}
               </div>
             </nav>
           </motion.aside>
@@ -54,6 +47,7 @@ const MobileNavDrawer = ({ open, setIsOpen }) => {
 MobileNavDrawer.propTypes = {
   open: PropTypes.bool.isRequired,
   setIsOpen: PropTypes.func.isRequired,
+  pages: PropTypes.array,
 };
 
 export default memo(MobileNavDrawer);

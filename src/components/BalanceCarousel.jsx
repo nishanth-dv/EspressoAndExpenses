@@ -14,6 +14,7 @@ import {
 } from "../redux/slices/transactionSlice";
 import { setFilter } from "../redux/slices/filterSlice";
 import Modal from "../preStyledElements/modal/Modal";
+import DateField from "./DateField";
 
 const INR = new Intl.NumberFormat("en-IN", {
   style: "currency",
@@ -417,14 +418,11 @@ function VerifyBalanceForm({ account, computed, onConfirm, onClose }) {
         <label>Actual balance (₹)</label>
       </div>
 
-      <div className="field">
-        <input
-          type="date"
-          value={asOf}
-          onChange={(e) => setAsOf(e.target.value)}
-        />
-        <label>As of</label>
-      </div>
+      <DateField
+        value={asOf}
+        onChange={(e) => setAsOf(e.target.value)}
+        label="As of"
+      />
 
       {valid && (
         <p

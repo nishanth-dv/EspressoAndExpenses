@@ -2,9 +2,13 @@ import { memo, useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSelector, useDispatch } from "react-redux";
 import { useSearchParams } from "react-router-dom";
+import { motion } from "framer-motion";
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
 import Modal from "../preStyledElements/modal/Modal";
 import InvestmentForm from "../Forms/InvestmentForm";
+import LiquidGlassCard from "../components/LiquidGlassCard";
+import BankChipSelector from "../components/BankChipSelector";
+import DateField from "../components/DateField";
 import { INVESTMENT_TYPES } from "../utils/constants";
 import { INR } from "../utils/dashboardUtils";
 import {
@@ -20,15 +24,18 @@ import {
   groupInvestmentsByTicker,
   findAutoDeductAmount,
   getInvestmentMathProfile,
+  resolveGrace,
+  graceToDays,
+  computeLatePenalty,
 } from "../utils/investmentUtils";
 import { getInvestmentTypeSchema } from "../utils/investmentTypeSchemas";
 import {
   persistAddInvestment,
   persistUpdateInvestment,
+  persistPayLicArrears,
   persistDeleteInvestment,
   persistDeleteTransaction,
   persistSIPInstalment,
-  persistAutoDeductInstalment,
   persistLogAutoDeductPayment,
   persistSellInvestment,
   persistPauseInvestment,
@@ -41,6 +48,11 @@ import { fetchCurrentPrice, fetchSIPData } from "../utils/priceService";
 import { filterInvestmentsByDate, getFilterLabel } from "../utils/filterUtils";
 import { showToast } from "../redux/slices/toastSlice";
 import FilterBar from "../components/FilterBar";
+// The Investment page reuses the .dashboard / .dash-section layout primitives,
+// which are defined in dashboard.css. Import it here so those base styles are
+// present even when the Dashboard route (the only other importer) hasn't been
+// visited — otherwise the section cards render unstyled in the classic skin.
+import "../styles/dashboard.css";
 import "../styles/investment.css";
 
 // ── LIC helpers ───────────────────────────────────────
@@ -49,14 +61,26 @@ import "../styles/investment.css";
 // month, a payment is considered "made" when there's a `licPolicyId` tx
 // in that calendar month.
 
-const LIC_GRACE_DAYS = 30;
-
 function getLicStatus(lot, allTransactions) {
   if (!lot?.startDate || !lot?.premiumMonths?.length) return null;
   const start = new Date(lot.startDate);
   const startDay = start.getDate();
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+  // Premiums due before the policy was added to the app are assumed paid —
+  // a backdated startDate would otherwise read as a run of missed premiums.
+  const enrolledRaw = lot.createdAt ? new Date(lot.createdAt) : start;
+  const enrolled = new Date(
+    enrolledRaw.getFullYear(),
+    enrolledRaw.getMonth(),
+    enrolledRaw.getDate(),
+  );
+
+  const cadenceDays = Math.round(365 / (lot.premiumMonths.length || 12));
+  const graceDays = graceToDays(resolveGrace(lot), cadenceDays);
+  const premium = parseFloat(lot.premiumAmount) || 0;
+  const penaltyPer = computeLatePenalty(lot.latePenalty, premium);
 
   const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
   const horizon = new Date(now.getFullYear() + 1, now.getMonth() + 1, 1);
@@ -68,6 +92,8 @@ function getLicStatus(lot, allTransactions) {
     paymentSet.add(`${d.getFullYear()}-${d.getMonth()}`);
   }
 
+  const overdue = [];
+  let nextDue = null;
   while (cursor < horizon) {
     if (lot.premiumMonths.includes(cursor.getMonth() + 1)) {
       const key = `${cursor.getFullYear()}-${cursor.getMonth()}`;
@@ -79,17 +105,38 @@ function getLicStatus(lot, allTransactions) {
         ).getDate();
         const dueDay = Math.min(startDay, lastDay);
         const due = new Date(cursor.getFullYear(), cursor.getMonth(), dueDay);
-        const diffDays = Math.round((due - today) / 86_400_000);
-        if (diffDays >= 0) return { next: due, daysLeft: diffDays, status: "due" };
-        const daysPast = -diffDays;
-        if (daysPast <= LIC_GRACE_DAYS)
-          return { next: due, daysLeft: -daysPast, status: "grace" };
-        return { next: due, daysLeft: -daysPast, status: "lapsed" };
+        if (due >= enrolled) {
+          const diffDays = Math.round((due - today) / 86_400_000);
+          if (diffDays >= 0) {
+            if (!nextDue) nextDue = { due, daysLeft: diffDays };
+          } else {
+            overdue.push({ due, daysPast: -diffDays });
+          }
+        }
       }
     }
     cursor.setMonth(cursor.getMonth() + 1);
   }
-  return null;
+
+  if (overdue.length === 0) {
+    if (nextDue) return { next: nextDue.due, daysLeft: nextDue.daysLeft, status: "due" };
+    return null;
+  }
+
+  const earliest = overdue[0];
+  const lapsed = earliest.daysPast > graceDays;
+  return {
+    next: earliest.due,
+    daysLeft: -earliest.daysPast,
+    status: lapsed ? "lapsed" : "grace",
+    graceDays,
+    overdueCount: overdue.length,
+    overduePeriods: overdue.map((o) => o.due),
+    premium,
+    penaltyPer,
+    arrears: overdue.length * premium,
+    totalPenalty: lapsed ? overdue.length * penaltyPer : 0,
+  };
 }
 
 function licPremiumStats(lot, allTransactions) {
@@ -101,6 +148,45 @@ function licPremiumStats(lot, allTransactions) {
     paidAmount += parseFloat(t.amount) || 0;
   }
   return { paidCount, paidAmount };
+}
+
+// Premiums scheduled before the policy was added to the app are assumed paid
+// (see getLicStatus). Returns the count plus the first/last due dates of that
+// pre-enrollment run, so the card tally and the ledger's "Legacy Investment"
+// row both reflect the policy's real history instead of showing nothing.
+function licAssumedPaid(lot) {
+  const empty = { count: 0, first: null, last: null };
+  if (!lot?.startDate || !lot?.premiumMonths?.length) return empty;
+  const start = new Date(lot.startDate);
+  const startDay = start.getDate();
+  const enrolledRaw = lot.createdAt ? new Date(lot.createdAt) : start;
+  const enrolled = new Date(
+    enrolledRaw.getFullYear(),
+    enrolledRaw.getMonth(),
+    enrolledRaw.getDate(),
+  );
+  let count = 0;
+  let first = null;
+  let last = null;
+  const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+  while (cursor < enrolled) {
+    if (lot.premiumMonths.includes(cursor.getMonth() + 1)) {
+      const lastDay = new Date(
+        cursor.getFullYear(),
+        cursor.getMonth() + 1,
+        0,
+      ).getDate();
+      const dueDay = Math.min(startDay, lastDay);
+      const due = new Date(cursor.getFullYear(), cursor.getMonth(), dueDay);
+      if (due < enrolled) {
+        count++;
+        if (!first) first = due;
+        last = due;
+      }
+    }
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+  return { count, first, last };
 }
 
 function isLicTenureComplete(lot) {
@@ -142,30 +228,30 @@ function PortfolioHero({ investments }) {
 
   return (
     <div className="inv-hero">
-      <div className="inv-hero-card">
+      <LiquidGlassCard className="inv-hero-card">
         <p className="inv-hero-label">Total Invested</p>
         <p className="inv-hero-value">{INR.format(totalInvested)}</p>
-      </div>
-      <div className="inv-hero-card">
+      </LiquidGlassCard>
+      <LiquidGlassCard className="inv-hero-card">
         <p className="inv-hero-label">Current Value</p>
         <p className="inv-hero-value" style={{ color: retColor }}>
           {INR.format(totalCurrent)}
         </p>
-      </div>
-      <div className="inv-hero-card">
+      </LiquidGlassCard>
+      <LiquidGlassCard className="inv-hero-card">
         <p className="inv-hero-label">Total Returns</p>
         <p className="inv-hero-value" style={{ color: retColor }}>
           {pos ? "+" : ""}
           {INR.format(totalReturn)}
         </p>
-      </div>
-      <div className="inv-hero-card">
+      </LiquidGlassCard>
+      <LiquidGlassCard className="inv-hero-card">
         <p className="inv-hero-label">Return %</p>
         <p className="inv-hero-value" style={{ color: retColor }}>
           {pos ? "+" : ""}
           {returnPct.toFixed(2)}%
         </p>
-      </div>
+      </LiquidGlassCard>
     </div>
   );
 }
@@ -671,10 +757,27 @@ function fmtUpdated(iso) {
   });
 }
 
+// Shared bank-destination picker for the balance-affecting modals (sell,
+// surrender, mature). When multi-bank tracking is on, the proceeds have to
+// land in a specific account — otherwise it's ambiguous which bank's balance
+// the income credits. Returns "" (Untagged) by default.
+function useBalanceBankPicker() {
+  const multiBankEnabled = useSelector(
+    (s) => s.transactions.transactionData?.preferences?.multiBankEnabled ?? false,
+  );
+  const accounts = useSelector(
+    (s) => s.transactions.transactionData?.accounts ?? [],
+  );
+  const [accountId, setAccountId] = useState("");
+  return { multiBankEnabled, accounts, accountId, setAccountId };
+}
+
 function SellModal({ inv, onConfirm, onClose }) {
   const [qty, setQty] = useState("");
   const [sellPrice, setSellPrice] = useState(String(inv.currentPrice || ""));
   const [addToBalance, setAddToBalance] = useState(true);
+  const { multiBankEnabled, accounts, accountId, setAccountId } =
+    useBalanceBankPicker();
   const totalQty = inv.quantity;
   const sellQty = parseFloat(qty) || 0;
   const sellPriceNum = parseFloat(sellPrice) || 0;
@@ -747,6 +850,14 @@ function SellModal({ inv, onConfirm, onClose }) {
           </span>
         </span>
       </label>
+      {addToBalance && multiBankEnabled && accounts.length > 0 && (
+        <BankChipSelector
+          accounts={accounts}
+          value={accountId}
+          onChange={setAccountId}
+          label="Received into"
+        />
+      )}
       <div className="form-actions inv-sell-actions">
         <button type="button" className="cancel-button" onClick={onClose}>
           Cancel
@@ -755,7 +866,7 @@ function SellModal({ inv, onConfirm, onClose }) {
           type="button"
           className="inv-sell-confirm-btn"
           disabled={!isValid}
-          onClick={() => onConfirm({ qty: sellQty, sellPrice: sellPriceNum, addToBalance })}
+          onClick={() => onConfirm({ qty: sellQty, sellPrice: sellPriceNum, addToBalance, accountId })}
         >
           <i className="fa-solid fa-arrow-trend-down" /> Sell
         </button>
@@ -773,6 +884,8 @@ function LicSurrenderModal({ inv, allTransactions, onConfirm, onClose }) {
   );
   const [amount, setAmount] = useState("");
   const [addToBalance, setAddToBalance] = useState(true);
+  const { multiBankEnabled, accounts, accountId, setAccountId } =
+    useBalanceBankPicker();
   const value = parseFloat(amount) || 0;
   const paid = paidAmount > 0 ? paidAmount : parseFloat(inv.investedAmount) || 0;
   const returnAmt = value - paid;
@@ -823,6 +936,14 @@ function LicSurrenderModal({ inv, allTransactions, onConfirm, onClose }) {
           </span>
         </span>
       </label>
+      {addToBalance && multiBankEnabled && accounts.length > 0 && (
+        <BankChipSelector
+          accounts={accounts}
+          value={accountId}
+          onChange={setAccountId}
+          label="Received into"
+        />
+      )}
       <div className="form-actions inv-sell-actions">
         <button type="button" className="cancel-button" onClick={onClose}>
           Cancel
@@ -831,7 +952,7 @@ function LicSurrenderModal({ inv, allTransactions, onConfirm, onClose }) {
           type="button"
           className="inv-sell-confirm-btn"
           disabled={!isValid}
-          onClick={() => onConfirm({ amount: value, addToBalance })}
+          onClick={() => onConfirm({ amount: value, addToBalance, accountId })}
         >
           <i className="fa-solid fa-arrow-right-from-bracket" /> Surrender
         </button>
@@ -849,6 +970,8 @@ function LicMatureModal({ inv, allTransactions, onConfirm, onClose }) {
     inv.maturityAmount ? String(inv.maturityAmount) : "",
   );
   const [addToBalance, setAddToBalance] = useState(true);
+  const { multiBankEnabled, accounts, accountId, setAccountId } =
+    useBalanceBankPicker();
   const value = parseFloat(amount) || 0;
   const paid = paidAmount > 0 ? paidAmount : parseFloat(inv.investedAmount) || 0;
   const returnAmt = value - paid;
@@ -899,6 +1022,14 @@ function LicMatureModal({ inv, allTransactions, onConfirm, onClose }) {
           </span>
         </span>
       </label>
+      {addToBalance && multiBankEnabled && accounts.length > 0 && (
+        <BankChipSelector
+          accounts={accounts}
+          value={accountId}
+          onChange={setAccountId}
+          label="Received into"
+        />
+      )}
       <div className="form-actions inv-sell-actions">
         <button type="button" className="cancel-button" onClick={onClose}>
           Cancel
@@ -907,7 +1038,7 @@ function LicMatureModal({ inv, allTransactions, onConfirm, onClose }) {
           type="button"
           className="inv-sell-confirm-btn"
           disabled={!isValid}
-          onClick={() => onConfirm({ amount: value, addToBalance })}
+          onClick={() => onConfirm({ amount: value, addToBalance, accountId })}
         >
           <i className="fa-solid fa-flag-checkered" /> Mark Matured
         </button>
@@ -1034,16 +1165,12 @@ function ResumeForm({ inv, onConfirm, onClose }) {
         <strong>{INR.format(monthly)}</strong> will continue every month from
         the chosen day.
       </p>
-      <div className="field">
-        <input
-          type="date"
-          value={startDate}
-          onChange={(e) => setStartDate(e.target.value)}
-          required
-          placeholder=" "
-        />
-        <label>New start date</label>
-      </div>
+      <DateField
+        value={startDate}
+        onChange={(e) => setStartDate(e.target.value)}
+        label="New start date"
+        required
+      />
       <label className="card-combine-toggle">
         <input
           type="checkbox"
@@ -1089,6 +1216,7 @@ function getDeletePayload(e) {
   if (e.id.startsWith("sip-legacy-")) return null;
   if (e.id.startsWith("auto-enrol-")) return { kind: "investment", id: e.id.slice(11) };
   if (e.id.startsWith("auto-legacy-")) return null;
+  if (e.id.startsWith("lic-legacy-")) return null;
   if (e.id.startsWith("lic-surrender-")) return null;
   if (e.id.startsWith("lic-mature-")) return null;
   return { kind: "transaction", id: e.id };
@@ -1212,17 +1340,19 @@ function LedgerModal({ inv, rawLots, allTransactions, highlightTxId, onSell, onD
   // real ledger entry with today's date + the configured per-period
   // amount; the user can edit later via the standard transaction-edit
   // flow if the amount differs (e.g., a one-off bank fee).
-  async function handleLogPending(entry) {
+  async function handleLogPending(entry, amountOverride) {
     const pending = entry._pending;
     if (!pending) return;
     const lot = rawLots.find((l) => l.id === pending.investmentId);
     if (!lot) return;
+    const amount = amountOverride != null ? amountOverride : pending.amount;
+    if (!(amount > 0)) return;
     setLogging(entry.id);
     try {
       await dispatch(
         persistLogAutoDeductPayment(lot, {
           occurredAt: new Date().toISOString(),
-          amount: pending.amount,
+          amount,
         }),
       );
     } finally {
@@ -1356,6 +1486,29 @@ function LedgerModal({ inv, rawLots, allTransactions, highlightTxId, onSell, onD
           sign: null,
           color: "#e07b3a",
         });
+
+        // Single consolidated legacy row for premiums assumed paid before the
+        // policy was added to the app — mirrors the SIP "Legacy Investment".
+        const assumed = licAssumedPaid(lot);
+        if (assumed.count > 0 && premium > 0) {
+          const fmtMo = (d) =>
+            d.toLocaleDateString("en-IN", { month: "short", year: "numeric" });
+          const rangeLabel =
+            assumed.first?.getTime() === assumed.last?.getTime()
+              ? fmtMo(assumed.first)
+              : `${fmtMo(assumed.first)} – ${fmtMo(assumed.last)}`;
+          list.push({
+            id: `lic-legacy-${lot.id}`,
+            type: "legacy",
+            date: assumed.first.toISOString(),
+            label: "Legacy Investment",
+            sub: `${assumed.count} premium${assumed.count !== 1 ? "s" : ""} · ${rangeLabel}`,
+            amount: +(assumed.count * premium).toFixed(2),
+            affectsBalance: false,
+            sign: null,
+            color: "var(--text-secondary)",
+          });
+        }
         if (lot.surrendered) {
           list.push({
             id: `lic-surrender-${lot.id}`,
@@ -1479,6 +1632,7 @@ function LedgerModal({ inv, rawLots, allTransactions, highlightTxId, onSell, onD
               _pending: {
                 investmentId: lot.id,
                 amount: periodAmt,
+                variable: !!lot.autoDeduct.variableAmount,
               },
             });
           }
@@ -1652,7 +1806,7 @@ function LedgerModal({ inv, rawLots, allTransactions, highlightTxId, onSell, onD
             highlight={highlightTxId === e.id}
             onSell={onSell && (e.type === "buy" || e.type === "legacy") ? onSell : null}
             onDelete={onDelete && deletePayload ? () => onDelete(deletePayload) : null}
-            onLogPending={e.type === "pending" ? () => handleLogPending(e) : null}
+            onLogPending={e.type === "pending" ? (amt) => handleLogPending(e, amt) : null}
             logPendingBusy={logging === e.id}
           />
         );
@@ -1665,6 +1819,11 @@ function LedgerEntry({ e, fmt, highlight, onSell, onDelete, onLogPending, logPen
   const ref = useRef(null);
   const scrolledRef = useRef(false);
   const [confirming, setConfirming] = useState(false);
+  const [amtDraft, setAmtDraft] = useState(
+    e.amount != null ? String(e.amount) : "",
+  );
+  const variablePending = !!(onLogPending && e._pending?.variable);
+  const draftAmount = parseFloat(amtDraft) || 0;
   // Drive the highlight class from a local timer so it lifts ~1.8s after the
   // blink ends — independent of the URL-clear timer (3.5s). This lets the
   // entry's action buttons fade back in promptly.
@@ -1704,16 +1863,34 @@ function LedgerEntry({ e, fmt, highlight, onSell, onDelete, onLogPending, logPen
             {e.tag && <span className="inv-ledger-tag">{e.tag}</span>}
           </span>
           <div className="inv-ledger-row-right">
-            {e.amount !== null && !confirming && (
-              <span className="inv-ledger-amount" style={{ color: e.color }}>
-                {e.sign}{INR.format(e.amount)}
+            {variablePending && !confirming ? (
+              <span className="inv-ledger-amount-edit" style={{ color: e.color }}>
+                ₹
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  className="inv-ledger-amount-input"
+                  value={amtDraft}
+                  onClick={(ev) => ev.stopPropagation()}
+                  onChange={(ev) => setAmtDraft(ev.target.value)}
+                  aria-label="Contribution amount"
+                />
               </span>
+            ) : (
+              e.amount !== null && !confirming && (
+                <span className="inv-ledger-amount" style={{ color: e.color }}>
+                  {e.sign}{INR.format(e.amount)}
+                </span>
+              )
             )}
             {onLogPending && !confirming && (
               <button
                 className="inv-ledger-log-btn"
-                onClick={(ev) => { ev.stopPropagation(); onLogPending(); }}
-                disabled={logPendingBusy}
+                onClick={(ev) => {
+                  ev.stopPropagation();
+                  onLogPending(variablePending ? draftAmount : undefined);
+                }}
+                disabled={logPendingBusy || (variablePending && !(draftAmount > 0))}
                 title="Post a ledger entry with today's date"
               >
                 {logPendingBusy ? (
@@ -1794,7 +1971,7 @@ function LedgerEntry({ e, fmt, highlight, onSell, onDelete, onLogPending, logPen
   );
 }
 
-function HoldingCard({ inv, onEdit, onDelete, onSell, onLedger, onPause, onResume, onHardDelete, onSurrender, onMature, allTransactions = [], highlightId, mode = "holdings" }) {
+function HoldingCard({ inv, onEdit, onDelete, onSell, onLedger, onPause, onResume, onHardDelete, onSurrender, onMature, onPayArrears, allTransactions = [], highlightId, mode = "holdings" }) {
   const isHighlighted =
     highlightId && (inv.id === highlightId || inv._ids?.includes(highlightId));
   const cardRef = useRef(null);
@@ -2037,6 +2214,7 @@ function HoldingCard({ inv, onEdit, onDelete, onSell, onLedger, onPause, onResum
       )}
       {inv.type === "lic" && (() => {
         const { paidCount } = licPremiumStats(inv, allTransactions);
+        const totalPaid = paidCount + licAssumedPaid(inv).count;
         const totalDue = inv.premiumMonths?.length
           ? Math.max(1, Math.round(((parseInt(inv.tenureMonths) || 0) / 12) * inv.premiumMonths.length))
           : null;
@@ -2044,7 +2222,7 @@ function HoldingCard({ inv, onEdit, onDelete, onSell, onLedger, onPause, onResum
         return (
           <>
             <p className="inv-holding-meta">
-              {paidCount} premium{paidCount !== 1 ? "s" : ""} paid
+              {totalPaid} premium{totalPaid !== 1 ? "s" : ""} paid
               {totalDue ? ` · ${totalDue} total` : ""}
               {inv.policyNumber ? ` · #${inv.policyNumber}` : ""}
             </p>
@@ -2056,17 +2234,33 @@ function HoldingCard({ inv, onEdit, onDelete, onSell, onLedger, onPause, onResum
                   : `Premium due in ${status.daysLeft} day${status.daysLeft !== 1 ? "s" : ""}`}
               </p>
             )}
-            {status && status.status === "grace" && (
-              <span className="inv-lic-chip inv-lic-chip--grace">
-                <i className="fa-solid fa-hourglass-half" />
-                In grace · {Math.abs(status.daysLeft)}d overdue
-              </span>
-            )}
-            {status && status.status === "lapsed" && (
-              <span className="inv-lic-chip inv-lic-chip--lapsed">
-                <i className="fa-solid fa-triangle-exclamation" />
-                Policy lapsed · {Math.abs(status.daysLeft)}d overdue
-              </span>
+            {status && (status.status === "grace" || status.status === "lapsed") && (
+              <div className="inv-lic-overdue">
+                <span
+                  className={`inv-lic-chip ${status.status === "lapsed" ? "inv-lic-chip--lapsed" : "inv-lic-chip--grace"}`}
+                >
+                  <i
+                    className={`fa-solid ${status.status === "lapsed" ? "fa-triangle-exclamation" : "fa-hourglass-half"}`}
+                  />
+                  {status.status === "lapsed" ? "Lapsed" : "In grace"} ·{" "}
+                  {Math.abs(status.daysLeft)}d overdue
+                </span>
+                <span className="inv-lic-arrears">
+                  {status.overdueCount} unpaid · {INR.format(status.arrears)}
+                  {status.totalPenalty > 0
+                    ? ` + ${INR.format(status.totalPenalty)} penalty`
+                    : ""}
+                </span>
+                {onPayArrears && mode === "holdings" && (
+                  <button
+                    type="button"
+                    className="inv-lic-pay-overdue"
+                    onClick={() => onPayArrears(inv, status)}
+                  >
+                    <i className="fa-solid fa-money-bill-wave" /> Pay overdue
+                  </button>
+                )}
+              </div>
             )}
           </>
         );
@@ -2256,6 +2450,11 @@ const InvestmentPage = () => {
   const [matureTarget, setMatureTarget] = useState(null); // LIC policy being matured
   const [tab, setTab] = useState("holdings"); // "holdings" | "history" (inner: Portfolio tab)
   const [pageTab, setPageTab] = useState("overview"); // "overview" | "portfolio"
+  const [typeSel, setTypeSel] = useState("all"); // "all" | type key — Portfolio rail
+  const savingInvestmentRef = useRef(false);
+  const userTypes = useSelector(
+    (state) => state.transactions.transactionData?.investmentTypes ?? [],
+  );
 
   // When navigated in via a deep-link to a specific holding/ledger, jump to
   // the Portfolio tab so the user actually lands on what they clicked. This
@@ -2384,25 +2583,22 @@ const InvestmentPage = () => {
 
   const handleSaveInvestment = useCallback(
     async (inv) => {
-      if (invModal && typeof invModal === "object") {
-        await dispatch(persistUpdateInvestment(inv));
-      } else {
-        await dispatch(persistAddInvestment(inv));
-        // SIP keeps its own auto-post path — fund-house NACH dates are
-        // tight enough that the configured sipDay is a fine proxy for
-        // most users.
-        if (inv.type === "sip") {
-          dispatch(persistSIPInstalment(inv));
-        }
-        // Auto-deduct types intentionally do NOT auto-post on add.
-        // Real NACH debits drift by several days (weekend / holiday /
-        // bank cut-off) and writing the configured day fabricates a
-        // wrong date that pollutes the ledger. Users log each period
-        // when it actually clears — via the "Log this payment" CTA in
-        // the per-holding activity view, or via statement import +
-        // reconciliation. Either path captures the real date.
-      }
+      if (savingInvestmentRef.current) return;
+      savingInvestmentRef.current = true;
+      const isEdit = invModal && typeof invModal === "object";
       setInvModal(null);
+      try {
+        if (isEdit) {
+          await dispatch(persistUpdateInvestment(inv));
+        } else {
+          await dispatch(persistAddInvestment(inv));
+          if (inv.type === "sip") {
+            dispatch(persistSIPInstalment(inv));
+          }
+        }
+      } finally {
+        savingInvestmentRef.current = false;
+      }
     },
     [dispatch, invModal],
   );
@@ -2437,6 +2633,20 @@ const InvestmentPage = () => {
   const handlePauseOpen = useCallback((inv) => {
     setPauseTarget(inv);
   }, []);
+
+  const handlePayArrears = useCallback(
+    (inv, status) => {
+      if (!status?.overduePeriods?.length) return;
+      dispatch(
+        persistPayLicArrears({
+          investmentId: inv.id,
+          periods: status.overduePeriods.map((d) => d.toISOString()),
+          withPenalty: status.status === "lapsed",
+        }),
+      );
+    },
+    [dispatch],
+  );
 
   const handleConfirmPause = useCallback(() => {
     if (!pauseTarget) return;
@@ -2502,7 +2712,7 @@ const InvestmentPage = () => {
   );
 
   const handleConfirmSell = useCallback(
-    ({ qty: qtyToSell, sellPrice, addToBalance }) => {
+    ({ qty: qtyToSell, sellPrice, addToBalance, accountId }) => {
       const inv = sellTarget;
       const lots = (
         inv._ids
@@ -2512,7 +2722,7 @@ const InvestmentPage = () => {
           : [inv]
       ).sort((a, b) => (b.createdAt ?? "").localeCompare(a.createdAt ?? "")); // newest first (LIFO)
 
-      dispatch(persistSellInvestment({ lots, qtyToSell, sellPrice, addToBalance, invName: inv.name }));
+      dispatch(persistSellInvestment({ lots, qtyToSell, sellPrice, addToBalance, accountId, invName: inv.name }));
 
       const symbol = inv.ticker || inv.name;
       const proceedsNote = addToBalance && sellPrice > 0
@@ -2525,20 +2735,20 @@ const InvestmentPage = () => {
   );
 
   const handleConfirmSurrender = useCallback(
-    ({ amount, addToBalance }) => {
+    ({ amount, addToBalance, accountId }) => {
       if (!surrenderTarget) return;
       const id = surrenderTarget._ids?.[0] ?? surrenderTarget.id;
-      dispatch(persistSurrenderLicPolicy({ id, amount, addToBalance }));
+      dispatch(persistSurrenderLicPolicy({ id, amount, addToBalance, accountId }));
       setSurrenderTarget(null);
     },
     [surrenderTarget, dispatch],
   );
 
   const handleConfirmMature = useCallback(
-    ({ amount, addToBalance }) => {
+    ({ amount, addToBalance, accountId }) => {
       if (!matureTarget) return;
       const id = matureTarget._ids?.[0] ?? matureTarget.id;
-      dispatch(persistMatureLicPolicy({ id, amount, addToBalance }));
+      dispatch(persistMatureLicPolicy({ id, amount, addToBalance, accountId }));
       setMatureTarget(null);
     },
     [matureTarget, dispatch],
@@ -2607,21 +2817,32 @@ const InvestmentPage = () => {
     <>
       <FilterBar scope="investments" />
       <div className="dashboard">
-        {/* ── Hero (pinned, visible across both tabs) ── */}
       <PortfolioHero investments={filteredInvestments} />
-
-      {/* ── Page-level tabs: Overview vs Portfolio ── */}
       <div className="inv-page-tabs">
         <button
           className={`inv-page-tab${pageTab === "overview" ? " inv-page-tab--active" : ""}`}
           onClick={() => setPageTab("overview")}
         >
+          {pageTab === "overview" && (
+            <motion.span
+              layoutId="invPageTabPill"
+              className="inv-page-tab-pill"
+              transition={{ type: "spring", stiffness: 480, damping: 38 }}
+            />
+          )}
           <i className="fa-solid fa-chart-pie" /> Overview
         </button>
         <button
           className={`inv-page-tab${pageTab === "portfolio" ? " inv-page-tab--active" : ""}`}
           onClick={() => setPageTab("portfolio")}
         >
+          {pageTab === "portfolio" && (
+            <motion.span
+              layoutId="invPageTabPill"
+              className="inv-page-tab-pill"
+              transition={{ type: "spring", stiffness: 480, damping: 38 }}
+            />
+          )}
           <i className="fa-solid fa-layer-group" /> Portfolio
         </button>
       </div>
@@ -2661,13 +2882,19 @@ const InvestmentPage = () => {
           <div className="inv-tabs">
             <button
               className={`inv-tab${tab === "holdings" ? " inv-tab--active" : ""}`}
-              onClick={() => setTab("holdings")}
+              onClick={() => {
+                setTab("holdings");
+                setTypeSel("all");
+              }}
             >
               Holdings{holdings.length > 0 && ` (${holdings.length})`}
             </button>
             <button
               className={`inv-tab${tab === "history" ? " inv-tab--active" : ""}`}
-              onClick={() => setTab("history")}
+              onClick={() => {
+                setTab("history");
+                setTypeSel("all");
+              }}
             >
               History{historyItems.length > 0 && ` (${historyItems.length})`}
             </button>
@@ -2758,27 +2985,158 @@ const InvestmentPage = () => {
                 </div>
               );
             }
+            // ── Per-type rail: one tab per investment type actually held,
+            //    with live counts. Lets a mixed portfolio be read one type at
+            //    a time instead of a single undifferentiated wall of cards.
+            const typeCounts = new Map();
+            for (const inv of visible) {
+              typeCounts.set(inv.type, (typeCounts.get(inv.type) ?? 0) + 1);
+            }
+            // Built-in INVESTMENT_TYPES order first, then any custom / Discover
+            // types in the order they were encountered.
+            const builtinOrder = INVESTMENT_TYPES.map((t) => t.key);
+            const typesPresent = [...typeCounts.keys()].sort((a, b) => {
+              const ia = builtinOrder.indexOf(a);
+              const ib = builtinOrder.indexOf(b);
+              return (ia === -1 ? 999 : ia) - (ib === -1 ? 999 : ib);
+            });
+            const typeMeta = (typeKey) => {
+              const info = getTypeInfo(typeKey);
+              const schema = getInvestmentTypeSchema(typeKey, userTypes);
+              return {
+                typeKey,
+                label: schema?.label || info.label,
+                color: info.color,
+                icon: info.icon,
+              };
+            };
+
+            // If the selected type vanished (tab switch, date filter), the
+            // setTypeSel reset usually handles it; this guard covers the render
+            // before that lands so we never show an empty, dead filter.
+            const activeType =
+              typeSel !== "all" && typeCounts.has(typeSel) ? typeSel : "all";
+
+            const filtered =
+              activeType === "all"
+                ? visible
+                : visible.filter((inv) => inv.type === activeType);
+
+            // In "All" the cards are grouped under per-type sub-headers; with a
+            // single type selected the chip already names it, so the redundant
+            // sub-header is dropped.
+            const showHeads = activeType === "all";
+            const groupOrder = [];
+            const groupMap = new Map();
+            for (const inv of filtered) {
+              if (!groupMap.has(inv.type)) {
+                groupMap.set(inv.type, []);
+                groupOrder.push(inv.type);
+              }
+              groupMap.get(inv.type).push(inv);
+            }
+            const groups = groupOrder.map((typeKey) => ({
+              ...typeMeta(typeKey),
+              items: groupMap.get(typeKey),
+            }));
+
+            const renderCard = (inv) => (
+              <HoldingCard
+                key={inv.id}
+                inv={inv}
+                mode={tab}
+                onEdit={handleEditClick}
+                onDelete={handleDeleteInvestment}
+                onSell={(i) => setSellTarget(i)}
+                onLedger={(i) => setLedgerTarget(i)}
+                onPause={handlePauseOpen}
+                onResume={handleResumeOpen}
+                onHardDelete={handleHardDelete}
+                onSurrender={(i) => setSurrenderTarget(i)}
+                onMature={(i) => setMatureTarget(i)}
+                onPayArrears={handlePayArrears}
+                allTransactions={allTransactions}
+                highlightId={highlightId}
+              />
+            );
+
             return (
-              <div className="inv-holdings-list">
-                {visible.map((inv) => (
-                  <HoldingCard
-                    key={inv.id}
-                    inv={inv}
-                    mode={tab}
-                    onEdit={handleEditClick}
-                    onDelete={handleDeleteInvestment}
-                    onSell={(i) => setSellTarget(i)}
-                    onLedger={(i) => setLedgerTarget(i)}
-                    onPause={handlePauseOpen}
-                    onResume={handleResumeOpen}
-                    onHardDelete={handleHardDelete}
-                    onSurrender={(i) => setSurrenderTarget(i)}
-                    onMature={(i) => setMatureTarget(i)}
-                    allTransactions={allTransactions}
-                    highlightId={highlightId}
-                  />
-                ))}
-              </div>
+              <>
+                {typesPresent.length > 1 && (
+                  <div className="inv-page-tabs inv-type-tabs" role="tablist">
+                    <button
+                      type="button"
+                      role="tab"
+                      aria-selected={activeType === "all"}
+                      className={`inv-page-tab${activeType === "all" ? " inv-page-tab--active" : ""}`}
+                      onClick={() => setTypeSel("all")}
+                    >
+                      {activeType === "all" && (
+                        <motion.span
+                          layoutId="invTypeTabPill"
+                          className="inv-page-tab-pill"
+                          transition={{ type: "spring", stiffness: 480, damping: 38 }}
+                        />
+                      )}
+                      All
+                      <span className="inv-family-count">{visible.length}</span>
+                    </button>
+                    {typesPresent.map((tk) => {
+                      const m = typeMeta(tk);
+                      return (
+                        <button
+                          key={tk}
+                          type="button"
+                          role="tab"
+                          aria-selected={activeType === tk}
+                          className={`inv-page-tab${activeType === tk ? " inv-page-tab--active" : ""}`}
+                          onClick={() => setTypeSel(tk)}
+                        >
+                          {activeType === tk && (
+                            <motion.span
+                              layoutId="invTypeTabPill"
+                              className="inv-page-tab-pill"
+                              transition={{ type: "spring", stiffness: 480, damping: 38 }}
+                            />
+                          )}
+                          <i
+                            className={`fa-solid ${m.icon}`}
+                            style={{ color: m.color }}
+                          />
+                          {m.label}
+                          <span className="inv-family-count">
+                            {typeCounts.get(tk)}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+                <div className="inv-holdings-list" key={activeType}>
+                  {groups.map((g) => (
+                    <div className="inv-type-group" key={g.typeKey}>
+                      {showHeads && (
+                        <div className="inv-type-group-head">
+                          <span
+                            className="inv-type-group-icon"
+                            style={{
+                              background: g.color + "22",
+                              color: g.color,
+                            }}
+                          >
+                            <i className={`fa-solid ${g.icon}`} />
+                          </span>
+                          <span className="inv-type-group-label">{g.label}</span>
+                          <span className="inv-type-group-count">
+                            {g.items.length}
+                          </span>
+                        </div>
+                      )}
+                      {g.items.map(renderCard)}
+                    </div>
+                  ))}
+                </div>
+              </>
             );
           })()}
         </div>

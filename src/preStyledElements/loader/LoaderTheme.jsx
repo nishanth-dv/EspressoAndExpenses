@@ -1,8 +1,8 @@
 import { useEffect, useState } from "react";
 import PropTypes from "prop-types";
 
-const BLADES = 12;
-const MIN_OPACITY = 0.15;
+const TICKS = 12;
+const CYCLE_MS = 1200;
 
 const Spinner = ({ label = "Brewing" }) => {
   const [paused, setPaused] = useState(false);
@@ -20,32 +20,43 @@ const Spinner = ({ label = "Brewing" }) => {
       role="status"
       aria-live="polite"
     >
-      <svg viewBox="0 0 44 44" width="52" height="52" aria-hidden="true">
-        <g className="spnr-blades">
-          {Array.from({ length: BLADES }).map((_, i) => {
-            const opacity = Math.max(
-              MIN_OPACITY,
-              1 - i * ((1 - MIN_OPACITY) / (BLADES - 1)),
-            );
-            return (
-              <rect
-                key={i}
-                x="20.5"
-                y="4"
-                width="3"
-                height="8"
-                rx="1.5"
-                fill="white"
-                opacity={Math.round(opacity * 100) / 100}
-                transform={`rotate(${i * 30} 22 22)`}
-              />
-            );
-          })}
-        </g>
+      <svg
+        className="tick-ring"
+        viewBox="0 0 44 44"
+        width="46"
+        height="46"
+        aria-hidden="true"
+      >
+        {Array.from({ length: TICKS }).map((_, i) => (
+          <rect
+            key={i}
+            className="tick"
+            x="20.9"
+            y="3.5"
+            width="2.2"
+            height="7"
+            rx="1.1"
+            transform={`rotate(${i * (360 / TICKS)} 22 22)`}
+            // Negative stagger phases each tick so the bright point glides
+            // smoothly around the ring with a trailing fade. Reversing the
+            // index ((TICKS - i)) makes the comet travel clockwise.
+            style={{
+              animationDelay: `${
+                -(((TICKS - i) % TICKS) * (CYCLE_MS / TICKS)) / 1000
+              }s`,
+            }}
+          />
+        ))}
       </svg>
       <p className="spnr-label">
-        {label}
-        <span className="ldr-dots" />
+        <span className="spnr-word">{label}</span>
+        {/* Dots live in fixed slots and only fade/scale, so the word never
+            shifts as they animate. */}
+        <span className="spnr-dots" aria-hidden="true">
+          <span className="spnr-dot" />
+          <span className="spnr-dot" />
+          <span className="spnr-dot" />
+        </span>
       </p>
     </div>
   );

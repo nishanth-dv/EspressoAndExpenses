@@ -1,10 +1,13 @@
 import {memo, useState, useMemo, useEffect, useCallback, useRef} from "react";
+import {useSearchParams} from "react-router-dom";
 import {useSelector, useDispatch} from "react-redux";
 import {motion, AnimatePresence} from "framer-motion";
 import Modal from "../preStyledElements/modal/Modal";
+import DateField from "../components/DateField";
 import CardForm from "../Forms/CardForm";
 import CommitmentForm from "../Forms/CommitmentForm";
 import LendingForm from "../Forms/LendingForm";
+import BankChipSelector from "../components/BankChipSelector";
 import {
   persistAddCard,
   persistUpdateCard,
@@ -30,6 +33,7 @@ import {
   getCommitmentTypeInfo,
   COMMITMENT_TYPES,
 } from "../utils/solvencyUtils";
+import { subscriptionTotals } from "../utils/subscriptionUtils";
 import "../styles/solvency.css";
 
 const INR = new Intl.NumberFormat("en-IN", {
@@ -66,6 +70,48 @@ function formatMonthLabel(iso) {
     month: "long",
     year: "numeric",
   });
+}
+
+// ── Statement-cycle grouping ──────────────────────────
+// A card's billing cycle closes on `statementDay` (inclusive — a charge made
+// ON the statement day lands on that bill) and runs from the day after the
+// previous close. So for a card whose statement day isn't the 1st, one cycle
+// straddles two calendar months. We name the cycle by its closing month (the
+// statement the bank generates) and show the covered date range beneath it.
+
+// Closing date of the statement cycle that a given charge falls into.
+function statementCloseDate(iso, statementDay) {
+  const d = new Date(iso);
+  const y = d.getFullYear();
+  const m = d.getMonth();
+  const closeThis = Math.min(statementDay, new Date(y, m + 1, 0).getDate());
+  if (d.getDate() <= closeThis) return new Date(y, m, closeThis);
+  // Past this month's close → belongs to next month's statement.
+  const nextLast = new Date(y, m + 2, 0).getDate();
+  return new Date(y, m + 1, Math.min(statementDay, nextLast));
+}
+
+// Stable per-cycle key. Falls back to calendar month when no statement day.
+function cycleKeyOf(iso, statementDay) {
+  if (!iso) return "unknown";
+  if (!statementDay) return monthKeyOf(iso);
+  const c = statementCloseDate(iso, statementDay);
+  return `${c.getFullYear()}-${c.getMonth()}-${c.getDate()}`;
+}
+
+// Separator content: { month: "May 2026", range: "19 Apr – 18 May" }.
+function formatCycleLabel(iso, statementDay) {
+  if (!iso) return {month: "—", range: ""};
+  if (!statementDay) return {month: formatMonthLabel(iso), range: ""};
+  const close = statementCloseDate(iso, statementDay);
+  const start = new Date(close);
+  start.setMonth(start.getMonth() - 1);
+  start.setDate(start.getDate() + 1);
+  const dayMon = {day: "numeric", month: "short"};
+  return {
+    month: close.toLocaleDateString("en-IN", {month: "long", year: "numeric"}),
+    range: `${start.toLocaleDateString("en-IN", dayMon)} – ${close.toLocaleDateString("en-IN", dayMon)}`,
+  };
 }
 
 function monthsSince(dateStr) {
@@ -371,65 +417,48 @@ function NextDueSource({ next, commitments, cards }) {
 // ── This Month Hero ───────────────────────────────────
 
 function ThisMonthCard({cards, commitments, lendings, allTransactions, dueWindows}) {
-  const activeCommitments = commitments.filter(commitmentIsActive);
-  const monthlyFixed = activeCommitments.reduce(
-    (s, c) => s + (parseFloat(c.emiAmount) || 0),
-    0
+  const subscriptions = useSelector(
+    (state) => state.transactions.transactionData?.subscriptions ?? [],
   );
+  const activeCommitments = commitments.filter(commitmentIsActive);
+  const monthlyFixed =
+    activeCommitments.reduce((s, c) => s + (parseFloat(c.emiAmount) || 0), 0) +
+    subscriptionTotals(subscriptions).monthly;
   const overdueDays = dueWindows?.overdueDays ?? 3;
   const soonDays = dueWindows?.soonDays ?? 7;
   const upcomingDays = dueWindows?.upcomingDays ?? 30;
 
   const overdueCount = useMemo(() => {
-    const now = new Date();
+    // Use the same statement-cycle- and payment-aware helpers that drive each
+    // card/commitment row, so the hero badge can't disagree with them. Both
+    // return a negative day count once a bill is past due and stay negative
+    // until a repayment is logged; the grace window is `overdueDays`.
     let n = 0;
     cards.forEach((c) => {
-      const d = parseInt(c.dueDay);
-      if (!d) return;
-      const due = new Date(now.getFullYear(), now.getMonth(), d);
-      if (due > now || (now - due) / 86_400_000 <= overdueDays) return;
-      // Only charges incurred before this month's dueDay can be on the
-      // unpaid bill. A transaction made after dueDay belongs to the next cycle.
-      const oldCharges = allTransactions
-        .filter(
-          (t) => t.cardId === c.id && new Date(t.occurredAt) < due,
-        )
-        .reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
-      const repayments = allTransactions
-        .filter((t) => t.repaymentFor === c.id)
-        .reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
-      if (oldCharges - repayments > 0) n++;
+      const days = daysUntilCardDue(c, allTransactions, commitments);
+      if (days != null && days < -overdueDays) n++;
     });
     commitments.filter(commitmentIsActive).forEach((c) => {
-      // Skip commitments paid via a credit card — they're settled when the
-      // card bill is paid, so the card's own row already accounts for them.
-      // Counting them here would double-flag the same obligation as overdue.
+      // EMIs paid via a credit card settle when the card bill is paid — the
+      // card's own row already accounts for them, so don't double-flag here.
       if (c.paymentMedium === "credit_card" && c.cardId) return;
-      const d = parseInt(c.dueDay);
-      if (!d) return;
-      const due = new Date(now.getFullYear(), now.getMonth(), d);
-      if (due > now || (now - due) / 86_400_000 <= overdueDays) return;
-      // Skip if this commitment (or the card it's billed to) has a repayment this month.
-      const paidThisMonth = allTransactions.some((t) => {
-        if (t.repaymentFor !== c.id && t.repaymentFor !== c.cardId) return false;
-        const d2 = new Date(t.occurredAt ?? t.createdAt);
-        return (
-          d2.getFullYear() === now.getFullYear() &&
-          d2.getMonth() === now.getMonth()
-        );
-      });
-      if (paidThisMonth) return;
-      n++;
+      const days = daysUntilCommitmentDue(c, allTransactions);
+      if (days != null && days < -overdueDays) n++;
     });
     return n;
   }, [cards, commitments, allTransactions, overdueDays]);
 
   const upcoming = useMemo(
     () =>
-      getUpcomingDues(cards, commitments, lendings, upcomingDays, allTransactions).filter(
-        (d) => d.diffDays >= 0
-      ),
-    [cards, commitments, lendings, allTransactions, upcomingDays]
+      getUpcomingDues(
+        cards,
+        commitments,
+        lendings,
+        upcomingDays,
+        allTransactions,
+        subscriptions,
+      ).filter((d) => d.diffDays >= 0),
+    [cards, commitments, lendings, allTransactions, upcomingDays, subscriptions]
   );
   const next = upcoming[0];
   const dueSoon = upcoming.filter((d) => d.diffDays <= soonDays).length;
@@ -486,6 +515,9 @@ function ThisMonthCard({cards, commitments, lendings, allTransactions, dueWindow
 // ── Cash Flow ──────────────────────────────────────────
 
 function CashFlowCard({commitments, allTransactions}) {
+  const subscriptions = useSelector(
+    (state) => state.transactions.transactionData?.subscriptions ?? [],
+  );
   const now = new Date();
   const income = useMemo(
     () => {
@@ -506,9 +538,11 @@ function CashFlowCard({commitments, allTransactions}) {
 
   if (income <= 0) return null;
 
-  const fixed = commitments
-    .filter(commitmentIsActive)
-    .reduce((s, c) => s + (parseFloat(c.emiAmount) || 0), 0);
+  const fixed =
+    commitments
+      .filter(commitmentIsActive)
+      .reduce((s, c) => s + (parseFloat(c.emiAmount) || 0), 0) +
+    subscriptionTotals(subscriptions).monthly;
   const free = income - fixed;
   const pct = Math.min(100, Math.round((fixed / income) * 100));
   const freeColor =
@@ -660,7 +694,30 @@ function LoanTimeline({commitments, cards, onCardTap}) {
               (now.getMonth() - start.getMonth())
           );
           const remaining = Math.max(0, tenure - monthsPaid);
-          const pct = Math.min(100, Math.round((monthsPaid / tenure) * 100));
+          // Progress = share of the ORIGINAL principal actually repaid, using
+          // the same amortisation math as card balances — not calendar time.
+          // A loan only reads 100% once its outstanding is genuinely zero, so
+          // an interest-heavy early stage shows the real (smaller) progress
+          // instead of tracking the clock.
+          const emi = parseFloat(c.emiAmount) || 0;
+          const principal = calcPrincipalFromEMI(emi, c.interestRate || 0, tenure);
+          const outstanding =
+            c.currentOutstanding != null
+              ? calcOutstandingFromSnapshot(
+                  c.currentOutstanding,
+                  c.interestRate || 0,
+                  emi,
+                  monthsSince(c.currentOutstandingDate || c.startDate)
+                )
+              : calcOutstanding(principal, c.interestRate || 0, tenure, monthsPaid);
+          const pct =
+            principal > 0
+              ? Math.min(
+                  100,
+                  Math.max(0, Math.round((1 - outstanding / principal) * 100))
+                )
+              : 0;
+          const paidOff = pct >= 100;
           const endDate = new Date(
             start.getFullYear(),
             start.getMonth() + tenure,
@@ -680,9 +737,11 @@ function LoanTimeline({commitments, cards, onCardTap}) {
               <div className="sol-loan-header">
                 <span className="sol-loan-name">{c.name}</span>
                 <span className="sol-loan-meta">
-                  {remaining > 0
-                    ? `${fmtDuration(remaining)} left`
-                    : "Paid off"}{" "}
+                  {paidOff
+                    ? "Paid off"
+                    : remaining > 0
+                      ? `${fmtDuration(remaining)} left`
+                      : "Term ended"}{" "}
                   · {endLabel}
                 </span>
               </div>
@@ -728,7 +787,7 @@ function LoanTimeline({commitments, cards, onCardTap}) {
                   <div
                     className="sol-progress-bar-fill"
                     style={{
-                      width: `${pct}`,
+                      width: `${pct}%`,
                       background: fundingCard?.color || "#5b8dee",
                     }}
                   />
@@ -796,9 +855,20 @@ function UpcomingDues({
 }) {
   const upcomingDays = dueWindows?.upcomingDays ?? 30;
   const soonDays = dueWindows?.soonDays ?? 7;
+  const subscriptions = useSelector(
+    (state) => state.transactions.transactionData?.subscriptions ?? [],
+  );
   const dues = useMemo(
-    () => getUpcomingDues(cards, commitments, lendings, upcomingDays, allTransactions),
-    [cards, commitments, lendings, allTransactions, upcomingDays]
+    () =>
+      getUpcomingDues(
+        cards,
+        commitments,
+        lendings,
+        upcomingDays,
+        allTransactions,
+        subscriptions,
+      ),
+    [cards, commitments, lendings, allTransactions, upcomingDays, subscriptions]
   );
 
   if (dues.length === 0)
@@ -812,6 +882,7 @@ function UpcomingDues({
     card: "fa-credit-card",
     commitment: "fa-building-columns",
     lending: "fa-handshake",
+    subscription: "fa-rotate",
   };
 
   // Look up canonical commitment records by id so commitment-type rows
@@ -880,7 +951,7 @@ function UpcomingDues({
               <span className={`sol-due-badge ${badgeClass}`}>{badgeText}</span>
             </div>
             {isTappable && (
-              <i className="fa-solid fa-chevron-right sol-due-nav-arrow" />
+              <i className="fa-solid fa-arrow-up-right-from-square sol-due-nav-arrow" />
             )}
           </div>
         );
@@ -954,16 +1025,21 @@ function CardItem({
   card,
   transactions,
   commitments = [],
-  allCards,
   onEdit,
   onDelete,
   autoExpand,
   onExpandDone,
   onEmiBadgeClick,
+  onJumpToCard,
 }) {
   const [open, setOpen] = useState(false);
   const itemRef = useRef(null);
   const isPooled = card.poolLimit != null;
+  // Pooled siblings that are actually consuming the shared limit — surfaced as
+  // a summary banner instead of listing their charges row-by-row in the ledger.
+  const poolSiblings = (card.poolMembers ?? []).filter(
+    (m) => (parseFloat(m.ownOutstanding) || 0) > 0
+  );
   const displayLimit = isPooled ? card.poolLimit : parseFloat(card.limit) || 0;
   const displayOutstanding = isPooled
     ? card.poolOutstanding
@@ -1001,37 +1077,21 @@ function CardItem({
     ? daysUntilCardDue(card, transactions, commitments)
     : null;
 
-  // Pool member ids include this card; partner ids exclude it.
-  const groupCardIds = useMemo(() => {
-    if (!card.creditGroupId) return [card.id];
-    const ids = (allCards ?? [])
-      .filter((c) => c.creditGroupId === card.creditGroupId)
-      .map((c) => c.id);
-    return ids.length ? ids : [card.id];
-  }, [allCards, card.creditGroupId, card.id]);
-
-  const cardNameById = useMemo(() => {
-    const m = {};
-    (allCards ?? []).forEach((c) => {
-      m[c.id] = c.name;
-    });
-    return m;
-  }, [allCards]);
-
   const linkedTx = useMemo(() => {
-    // Two kinds of "real" rows live on a card: outgoing charges (cardId
-    // tagged) and repayments paid TO this card (repaymentFor tagged). The
-    // user expects both to appear on the card's ledger.
-    const charges = transactions.filter((t) => groupCardIds.includes(t.cardId));
+    // The ledger lists only THIS card's own activity: outgoing charges (cardId
+    // tagged) and repayments paid TO this card (repaymentFor tagged). A pooled
+    // sibling's charges are summarised in the pool banner instead of listed
+    // row-by-row, so they no longer clutter this card's ledger.
+    const charges = transactions.filter((t) => t.cardId === card.id);
     const repayments = transactions
-      .filter((t) => groupCardIds.includes(t.repaymentFor))
+      .filter((t) => t.repaymentFor === card.id)
       .map((t) => ({ ...t, _isRepayment: true }));
     const real = [...charges, ...repayments];
     const synthetic = [];
     const now = new Date();
     for (const c of commitments) {
       if (c?.paymentMedium !== "credit_card") continue;
-      if (!groupCardIds.includes(c?.cardId)) continue;
+      if (c?.cardId !== card.id) continue;
       if (!commitmentIsActive(c)) continue;
       const amt = parseFloat(c.emiAmount) || 0;
       if (amt <= 0 || !c.startDate) continue;
@@ -1068,20 +1128,7 @@ function CardItem({
     return [...real, ...synthetic]
       .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
       .slice(0, 10);
-  }, [transactions, commitments, groupCardIds]);
-
-  // Most-recent past statement-day for this card. Any transaction after this
-  // date is still in the open cycle and hence "Unbilled". Cheap enough to
-  // recompute each render — React Compiler memoises it automatically.
-  const lastStatementDate = (() => {
-    const day = parseInt(card?.statementDay);
-    if (!day) return null;
-    const now = new Date();
-    const thisMonth = new Date(now.getFullYear(), now.getMonth(), day);
-    return thisMonth <= now
-      ? thisMonth
-      : new Date(now.getFullYear(), now.getMonth() - 1, day);
-  })();
+  }, [transactions, commitments, card.id]);
 
   return (
     <div
@@ -1211,35 +1258,80 @@ function CardItem({
                 )}
               </div>
 
+              {isPooled && poolSiblings.length > 0 && (
+                <div className="sol-pool-banner">
+                  <div className="sol-pool-banner-head">
+                    <i className="fa-solid fa-link" />
+                    <span>
+                      Shared limit also used by{" "}
+                      {poolSiblings.length === 1
+                        ? "this pooled card"
+                        : "these pooled cards"}
+                    </span>
+                  </div>
+                  <div className="sol-pool-banner-rows">
+                    {poolSiblings.map((m) => (
+                      <button
+                        type="button"
+                        key={m.id}
+                        className="sol-pool-banner-row"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          onJumpToCard?.(m.id);
+                        }}
+                        title={`View ${m.name}`}
+                      >
+                        <span className="sol-pool-banner-name">{m.name}</span>
+                        <span className="sol-pool-banner-amt">
+                          {INR.format(parseFloat(m.ownOutstanding) || 0)}
+                          <i className="fa-solid fa-arrow-up-right-from-square sol-pool-banner-jump" />
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                  <p className="sol-pool-banner-note">
+                    Their charges draw down the shared limit, reducing this
+                    card&apos;s available headroom.
+                  </p>
+                </div>
+              )}
+
               <p className="sol-tx-sub-title">
-                {isPooled
-                  ? "Recent transactions on this pool"
-                  : "Recent transactions on this card"}
+                Recent transactions on this card
               </p>
               {linkedTx.length === 0 ? (
                 <p className="sol-no-tx">No linked transactions yet.</p>
               ) : (
                 <div className="sol-linked-tx-list">
                   {linkedTx.map((tx, i) => {
-                    const fromOther = tx.cardId !== card.id;
-                    const sourceName = fromOther ? cardNameById[tx.cardId] : null;
-                    const monthKey = monthKeyOf(tx.occurredAt);
-                    const prevMonthKey =
-                      i > 0 ? monthKeyOf(linkedTx[i - 1].occurredAt) : null;
-                    const showMonthSeparator = monthKey !== prevMonthKey;
-                    // "Unbilled" applies only to real outgoing charges that
-                    // happened after the most-recent past statement-day for
-                    // this card. EMI synthetic entries get their own EMI tag.
+                    const stmtDay = parseInt(card?.statementDay) || 0;
+                    const cycleKey = cycleKeyOf(tx.occurredAt, stmtDay);
+                    const prevCycleKey =
+                      i > 0 ? cycleKeyOf(linkedTx[i - 1].occurredAt, stmtDay) : null;
+                    const showMonthSeparator = cycleKey !== prevCycleKey;
+                    const cycleLabel = formatCycleLabel(tx.occurredAt, stmtDay);
+                    // "Unbilled" = a real outgoing charge whose statement
+                    // hasn't been generated yet. Derive it from the SAME cycle
+                    // source of truth as the separators (statementCloseDate)
+                    // so the pill can't disagree with the cycle a row sits in.
+                    // EMI rows get the EMI tag instead.
                     const isUnbilled =
                       !tx._isEmi &&
                       !tx._isRepayment &&
-                      lastStatementDate &&
-                      new Date(tx.occurredAt) > lastStatementDate;
+                      stmtDay > 0 &&
+                      statementCloseDate(tx.occurredAt, stmtDay) > new Date();
                     return (
                       <div key={tx.id}>
                         {showMonthSeparator && (
                           <div className="tx-date-separator sol-linked-tx-month">
-                            {formatMonthLabel(tx.occurredAt)}
+                            <span className="sol-linked-tx-cycle">
+                              {cycleLabel.month}
+                              {cycleLabel.range && (
+                                <span className="sol-linked-tx-cycle-range">
+                                  {cycleLabel.range}
+                                </span>
+                              )}
+                            </span>
                           </div>
                         )}
                         <div
@@ -1248,11 +1340,6 @@ function CardItem({
                           <div className="sol-linked-tx-left">
                             <div className="sol-linked-tx-name">
                               {tx.name || tx.source || (tx._isRepayment ? "Repayment" : "")}
-                              {fromOther && sourceName && (
-                                <span className="sol-linked-tx-source">
-                                  via {sourceName}
-                                </span>
-                              )}
                             </div>
                             <div className="sol-linked-tx-date">
                               {fmtDate(tx.occurredAt)}
@@ -1319,6 +1406,7 @@ function CardsTab({
   highlightCardId,
   onHighlightClear,
   onEmiBadgeClick,
+  onJumpToCard,
 }) {
   if (cards.length === 0)
     return (
@@ -1346,12 +1434,12 @@ function CardsTab({
           card={c}
           transactions={transactions}
           commitments={commitments}
-          allCards={cards}
           onEdit={onEdit}
           onDelete={onDelete}
           autoExpand={highlightCardId === c.id}
           onExpandDone={onHighlightClear}
           onEmiBadgeClick={onEmiBadgeClick}
+          onJumpToCard={onJumpToCard}
         />
       ))}
     </div>
@@ -1669,43 +1757,11 @@ function LendingItem({lending, onEdit, onDelete, onMarkReturned}) {
   const outstanding = parseFloat(lending.outstanding) || 0;
   const total = parseFloat(lending.amount) || 0;
   const pct = total > 0 ? Math.round(((total - outstanding) / total) * 100) : 0;
-  const dueDate = lending.expectedReturn
-    ? new Date(lending.expectedReturn)
-    : null;
-  const daysLeft = dueDate
-    ? Math.round((dueDate - new Date()) / 86_400_000)
-    : null;
 
   return (
     <div className="sol-lending-item">
       <div className="sol-lending-info">
         <div className="sol-lending-name">{lending.name}</div>
-        {dueDate && outstanding > 0 && (
-          <div className="sol-lending-due">
-            {isLent ? "Expected by" : "Return by"}:{" "}
-            {fmtDate(lending.expectedReturn)}
-            {daysLeft !== null && (
-              <span
-                style={{
-                  marginLeft: 6,
-                  fontWeight: 700,
-                  color:
-                    daysLeft < 0
-                      ? "var(--amount-expense)"
-                      : daysLeft <= 7
-                      ? "#d4a35a"
-                      : "var(--text-label)",
-                }}
-              >
-                (
-                {daysLeft < 0
-                  ? `${Math.abs(daysLeft)}d overdue`
-                  : `${daysLeft}d left`}
-                )
-              </span>
-            )}
-          </div>
-        )}
         {outstanding === 0 && (
           <div
             className="sol-lending-due"
@@ -1890,6 +1946,16 @@ function LendingRepayForm({ lending, onConfirm, onClose }) {
   const [amount, setAmount] = useState(String(outstanding));
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [affectBalance, setAffectBalance] = useState(true);
+  const [accountId, setAccountId] = useState(lending.accountId ?? "");
+
+  const multiBankEnabled = useSelector(
+    (state) =>
+      state.transactions.transactionData?.preferences?.multiBankEnabled ??
+      false,
+  );
+  const accounts = useSelector(
+    (state) => state.transactions.transactionData?.accounts ?? [],
+  );
 
   const amt = parseFloat(amount) || 0;
   const isValid = amt > 0 && amt <= outstanding + 0.001;
@@ -1916,15 +1982,11 @@ function LendingRepayForm({ lending, onConfirm, onClose }) {
           />
           <label>{isLent ? "Amount received (₹)" : "Amount repaid (₹)"}</label>
         </div>
-        <div className="field">
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            placeholder=" "
-          />
-          <label>Date</label>
-        </div>
+        <DateField
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+          label="Date"
+        />
       </div>
       {isValid && (
         <p className="lending-repay-status">
@@ -1950,6 +2012,14 @@ function LendingRepayForm({ lending, onConfirm, onClose }) {
           </span>
         </span>
       </label>
+      {affectBalance && multiBankEnabled && accounts.length > 0 && (
+        <BankChipSelector
+          accounts={accounts}
+          value={accountId}
+          onChange={setAccountId}
+          label={isLent ? "Received into" : "Paid from"}
+        />
+      )}
       <div className="form-actions">
         <button type="button" className="cancel-button" onClick={onClose}>
           Cancel
@@ -1963,6 +2033,7 @@ function LendingRepayForm({ lending, onConfirm, onClose }) {
               amount: amt,
               occurredAt: new Date(date).toISOString(),
               affectBalance,
+              accountId,
             })
           }
         >
@@ -2065,14 +2136,21 @@ const SolvencyPage = () => {
   );
 
   const enrichedCards = useMemo(() => {
-    // Per-card outstanding (transactions and EMI) — same as before.
+    // Bucket charges + repayments by card in ONE pass over the ledger, instead
+    // of two full filters per card (was O(cards × transactions) with a fresh
+    // array allocated each time — a big chunk of the first-render cost).
+    const chargeByCard = new Map();
+    const repayByCard = new Map();
+    for (const t of allTransactions) {
+      const amt = parseFloat(t.amount) || 0;
+      if (t.cardId) chargeByCard.set(t.cardId, (chargeByCard.get(t.cardId) || 0) + amt);
+      if (t.repaymentFor)
+        repayByCard.set(t.repaymentFor, (repayByCard.get(t.repaymentFor) || 0) + amt);
+    }
+    // Per-card outstanding (transactions and EMI) — same result as before.
     const perCard = cards.map((card) => {
-      const txOutstanding = allTransactions
-        .filter((t) => t.cardId === card.id)
-        .reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
-      const repayments = allTransactions
-        .filter((t) => t.repaymentFor === card.id)
-        .reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
+      const txOutstanding = chargeByCard.get(card.id) || 0;
+      const repayments = repayByCard.get(card.id) || 0;
       const emiOutstanding = commitments
         .filter(
           (c) =>
@@ -2138,7 +2216,7 @@ const SolvencyPage = () => {
       // instead of double-counting it across siblings.
       g.limit = Math.max(g.limit, parseFloat(c.limit) || 0);
       g.outstanding += c.ownOutstanding;
-      g.members.push({ id: c.id, name: c.name });
+      g.members.push({ id: c.id, name: c.name, ownOutstanding: c.ownOutstanding });
       groupTotals.set(c.creditGroupId, g);
     });
 
@@ -2180,6 +2258,25 @@ const SolvencyPage = () => {
   const [highlightCardId, setHighlightCardId] = useState(null);
   const [highlightCommitmentId, setHighlightCommitmentId] = useState(null);
 
+  // Deep-link from the notifications modal: ?highlight=<id>&focus=card|commitment
+  // switches to the relevant tab and flashes the item (same convention the
+  // Investments/Subscriptions pages already use). The param is consumed once.
+  const [searchParams, setSearchParams] = useSearchParams();
+  useEffect(() => {
+    const id = searchParams.get("highlight");
+    const focus = searchParams.get("focus");
+    if (!id) return;
+    if (focus === "commitment") {
+      setActiveTab("Commitments");
+      setHighlightCommitmentId(id);
+    } else {
+      setActiveTab("Cards");
+      setHighlightCardId(id);
+    }
+    const t = setTimeout(() => setSearchParams({}, { replace: true }), 3500);
+    return () => clearTimeout(t);
+  }, [searchParams, setSearchParams]);
+
   const handleEmiBadgeClick = (commitmentId) => {
     setHighlightCommitmentId(commitmentId);
     setActiveTab("Commitments");
@@ -2200,7 +2297,10 @@ const SolvencyPage = () => {
     const todayDay = now.getDate();
     return commitments.filter((c) => {
       if (!commitmentIsActive(c) || c.type !== "emi") return false;
-      const triggerDay = parseInt(c.billingDay ?? c.dueDay);
+      // Trigger on the payment DUE day, not the billing/statement day — the
+      // EMI is payable on its due date, so a "Due Today" prompt on the earlier
+      // billing date is misleading.
+      const triggerDay = parseInt(c.dueDay ?? c.billingDay);
       if (triggerDay !== todayDay) return false;
       // Suppress if a repayment was already logged this month for this commitment or its card
       const paidThisMonth = allTransactions.some((t) => {
@@ -2266,7 +2366,7 @@ const SolvencyPage = () => {
   }, []);
 
   const handleConfirmRepay = useCallback(
-    ({ amount, occurredAt, affectBalance }) => {
+    ({ amount, occurredAt, affectBalance, accountId }) => {
       if (!repayTarget) return;
       dispatch(
         persistRepayLending({
@@ -2274,6 +2374,7 @@ const SolvencyPage = () => {
           amount,
           occurredAt,
           affectBalance,
+          accountId,
         }),
       );
       setRepayTarget(null);
@@ -2368,6 +2469,7 @@ const SolvencyPage = () => {
           highlightCardId={highlightCardId}
           onHighlightClear={() => setHighlightCardId(null)}
           onEmiBadgeClick={handleEmiBadgeClick}
+          onJumpToCard={handleCardTap}
         />
       )}
       {activeTab === "Commitments" && (

@@ -1,12 +1,18 @@
 import { memo, useState, useMemo } from "react";
 import PropTypes from "prop-types";
 import { useDispatch, useSelector } from "react-redux";
-import { CATEGORIES, PAYMENT_MODES } from "../utils/constants";
+import { CATEGORIES, PAYMENT_MODES, INVESTMENT_TYPES } from "../utils/constants";
 import { matchAutoCategory } from "../utils/autoCategory";
 import { parseVoiceTranscript } from "../utils/voiceParser";
 import { useVoiceCapture } from "../hooks/useVoiceCapture";
 import { showToast } from "../redux/slices/toastSlice";
 import BankChipSelector from "../components/BankChipSelector";
+import OptionField from "../components/OptionField";
+import DateField from "../components/DateField";
+import FormError from "../components/FormError";
+import SmartFillBar from "../components/SmartFillBar";
+import { predictEntry, normalizeName } from "../utils/smartFill";
+import { NoteBulletHint } from "../components/NoteText";
 import { computeCardOutstanding } from "../utils/solvencyUtils";
 
 const EMPTY = {
@@ -35,8 +41,33 @@ function fromExisting(existing) {
   };
 }
 
-const ExpenseForm = ({ onSubmit, onCancel, existing, onInvestmentSelect }) => {
-  const [form, setForm] = useState(existing ? fromExisting(existing) : EMPTY);
+function fromInvestmentTarget(inv) {
+  return {
+    ...EMPTY,
+    name: inv.name ?? "",
+    amount: inv.premiumAmount != null ? String(inv.premiumAmount) : "",
+    category: "Investment",
+    occurredAt: new Date().toISOString().slice(0, 16),
+    accountId: inv.accountId ?? "",
+  };
+}
+
+const ExpenseForm = ({
+  onSubmit,
+  onCancel,
+  existing,
+  onInvestmentSelect,
+  investmentTarget,
+  onChangeInvestmentTarget,
+  onSubscriptionSelect,
+}) => {
+  const [form, setForm] = useState(() =>
+    existing
+      ? fromExisting(existing)
+      : investmentTarget
+        ? fromInvestmentTarget(investmentTarget)
+        : EMPTY,
+  );
   const dispatch = useDispatch();
 
   const cards = useSelector((state) => state.transactions.transactionData?.cards ?? []);
@@ -68,11 +99,46 @@ const ExpenseForm = ({ onSubmit, onCancel, existing, onInvestmentSelect }) => {
       state.transactions.transactionData?.preferences?.multiBankEnabled ??
       false,
   );
+  const entryTabsEnabled = useSelector(
+    (state) =>
+      state.transactions.transactionData?.preferences?.entryTabsEnabled ??
+      false,
+  );
   const accounts = useSelector(
     (state) => state.transactions.transactionData?.accounts ?? [],
   );
+  const investments = useSelector(
+    (state) => state.transactions.transactionData?.investments ?? [],
+  );
+  const userInvestmentTypes = useSelector(
+    (state) => state.transactions.transactionData?.investmentTypes ?? [],
+  );
 
   const [parserText, setParserText] = useState("");
+  const [investPicker, setInvestPicker] = useState({ type: "", id: "" });
+  const [formError, setFormError] = useState(null);
+  const [smartHide, setSmartHide] = useState("");
+
+  const prediction = useMemo(
+    () => predictEntry(form.name, allTransactions, { type: "expense" }),
+    [form.name, allTransactions],
+  );
+  const showSmartFill =
+    !!prediction &&
+    !form.amount &&
+    !investmentTarget &&
+    smartHide !== normalizeName(form.name);
+
+  function applySmartFill() {
+    setForm((f) => ({
+      ...f,
+      amount: prediction.amount || f.amount,
+      category: prediction.category || f.category,
+      paymentMode: prediction.paymentMode || f.paymentMode,
+      accountId: prediction.accountId || f.accountId,
+    }));
+    setSmartHide(normalizeName(form.name));
+  }
 
   function applyParsed(parsed) {
     setForm((f) => {
@@ -126,14 +192,63 @@ const ExpenseForm = ({ onSubmit, onCancel, existing, onInvestmentSelect }) => {
 
   const isRepayment = form.category === "Repayment";
   const paidByCard = form.paymentMode === "Credit Card";
+  const isInvestmentPick =
+    form.category === "Investment" && !!onInvestmentSelect && !investmentTarget;
+  const invalidKeys = new Set((formError ?? []).map((m) => m.key));
+
+  const categoryOptions = useMemo(
+    () =>
+      entryTabsEnabled
+        ? categories.filter(
+            (c) => c !== "Investment" && c !== "Subscription",
+          )
+        : categories,
+    [categories, entryTabsEnabled],
+  );
+
+  const investTargetLabel = useMemo(() => {
+    if (!investmentTarget) return "";
+    const match =
+      INVESTMENT_TYPES.find((b) => b.key === investmentTarget.type) ??
+      userInvestmentTypes.find((t) => t.key === investmentTarget.type);
+    return match?.label ?? investmentTarget.type ?? "";
+  }, [investmentTarget, userInvestmentTypes]);
+
+  const allInvestTypes = useMemo(
+    () =>
+      userInvestmentTypes.filter(
+        (t) => !t.archived && !INVESTMENT_TYPES.some((b) => b.key === t.key),
+      ),
+    [userInvestmentTypes],
+  );
+  const investsOfType = useMemo(
+    () => investments.filter((i) => i.type === investPicker.type && !i.inHistory),
+    [investments, investPicker.type],
+  );
 
   function handleChange(e) {
-    if (
-      e.target.name === "category" &&
-      e.target.value === "Investment" &&
-      onInvestmentSelect
-    ) {
-      onInvestmentSelect(form.amount);
+    setFormError(null);
+    if (e.target.name === "category") {
+      if (
+        !entryTabsEnabled &&
+        e.target.value === "Investment" &&
+        onInvestmentSelect &&
+        !investmentTarget
+      ) {
+        onInvestmentSelect({ amount: form.amount, existing: null, type: "" });
+        return;
+      }
+      if (
+        !entryTabsEnabled &&
+        e.target.value === "Subscription" &&
+        onSubscriptionSelect &&
+        !investmentTarget
+      ) {
+        onSubscriptionSelect({ name: form.name, amount: form.amount });
+        return;
+      }
+      setInvestPicker({ type: "", id: "" });
+      setForm((f) => ({ ...f, category: e.target.value }));
       return;
     }
     if (e.target.name === "name") {
@@ -141,9 +256,6 @@ const ExpenseForm = ({ onSubmit, onCancel, existing, onInvestmentSelect }) => {
       return;
     }
     if (e.target.name === "repaymentFor") {
-      // Picking a repayment target auto-fills the amount with the
-      // outstanding bill (card) or the EMI amount (commitment). The
-      // user can override afterwards — useful for partial payments.
       const id = e.target.value;
       const target = repaymentTargets.find((t) => t.id === id);
       setForm((f) => ({
@@ -161,6 +273,22 @@ const ExpenseForm = ({ onSubmit, onCancel, existing, onInvestmentSelect }) => {
 
   function handleSubmit(e) {
     e.preventDefault();
+    if (isInvestmentPick) return;
+
+    const missing = [];
+    if (!form.name.trim()) missing.push({ key: "name", label: "Expense name" });
+    if (!form.amount) missing.push({ key: "amount", label: "Amount" });
+    if (!form.category) missing.push({ key: "category", label: "Category" });
+    if (!form.paymentMode)
+      missing.push({ key: "paymentMode", label: "Payment mode" });
+    if (!form.occurredAt)
+      missing.push({ key: "occurredAt", label: "Date & time" });
+    if (missing.length > 0) {
+      setFormError(missing);
+      return;
+    }
+    setFormError(null);
+
     const extra = {};
     if (paidByCard && form.cardId) extra.cardId = form.cardId;
     if (isRepayment && form.repaymentFor) extra.repaymentFor = form.repaymentFor;
@@ -182,6 +310,14 @@ const ExpenseForm = ({ onSubmit, onCancel, existing, onInvestmentSelect }) => {
     // only moves when the card bill is repaid. Drop accountId so the
     // per-bank balance math stays correct.
     if (transaction.cardId || !transaction.accountId) delete transaction.accountId;
+
+    if (investmentTarget) {
+      if (investmentTarget.type === "lic") {
+        transaction.licPolicyId = investmentTarget.id;
+      } else {
+        transaction.investmentId = investmentTarget.id;
+      }
+    }
 
     onSubmit(transaction);
   }
@@ -216,7 +352,46 @@ const ExpenseForm = ({ onSubmit, onCancel, existing, onInvestmentSelect }) => {
   }, [cards, commitments, allTransactions]);
 
   return (
-    <form className="expense-form" onSubmit={handleSubmit}>
+    <form className="expense-form" onSubmit={handleSubmit} noValidate>
+      {entryTabsEnabled &&
+        !existing &&
+        !investmentTarget &&
+        (onInvestmentSelect || onSubscriptionSelect) && (
+          <div className="expense-kind" role="tablist" aria-label="Entry type">
+            <span className="expense-kind-pill expense-kind-pill--active">
+              <i className="fa-solid fa-cart-arrow-down" />
+              Expense
+            </span>
+            {onInvestmentSelect && (
+              <button
+                type="button"
+                className="expense-kind-pill"
+                onClick={() =>
+                  onInvestmentSelect({
+                    amount: form.amount,
+                    existing: null,
+                    type: "",
+                  })
+                }
+              >
+                <i className="fa-solid fa-seedling" />
+                Investment
+              </button>
+            )}
+            {onSubscriptionSelect && (
+              <button
+                type="button"
+                className="expense-kind-pill"
+                onClick={() =>
+                  onSubscriptionSelect({ name: form.name, amount: form.amount })
+                }
+              >
+                <i className="fa-solid fa-rotate" />
+                Subscription
+              </button>
+            )}
+          </div>
+        )}
       {voiceEnabled && (
         <div
           className={`voice-bar${voice.listening ? " voice-bar--on" : ""}`}
@@ -283,6 +458,15 @@ const ExpenseForm = ({ onSubmit, onCancel, existing, onInvestmentSelect }) => {
         <label>Expense name</label>
       </div>
 
+      {showSmartFill && (
+        <SmartFillBar
+          prediction={prediction}
+          accounts={accounts}
+          onApply={applySmartFill}
+          onDismiss={() => setSmartHide(normalizeName(form.name))}
+        />
+      )}
+
       <div className="field">
         <input
           name="amount"
@@ -295,116 +479,208 @@ const ExpenseForm = ({ onSubmit, onCancel, existing, onInvestmentSelect }) => {
         <label>Amount</label>
       </div>
 
-      <div className="field">
-        <select
-          name="category"
-          value={form.category}
-          onChange={handleChange}
-          required
-        >
-          <option value="" disabled hidden />
-          {categories.map((c) => (
-            <option key={c} value={c}>
-              {c}
-            </option>
-          ))}
-        </select>
-        <label>Category</label>
-      </div>
+      <OptionField
+        name="category"
+        value={form.category}
+        onChange={handleChange}
+        label="Category"
+        required
+        disabled={!!investmentTarget}
+        placeholder=""
+        options={categoryOptions}
+        invalid={invalidKeys.has("category")}
+      />
 
-      {isRepayment && repaymentTargets.length > 0 && (
-        <div className="field">
-          <select
-            name="repaymentFor"
-            value={form.repaymentFor}
-            onChange={handleChange}
-          >
-            <option value="">— Select obligation (optional) —</option>
-            {repaymentTargets.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.label}
-              </option>
-            ))}
-          </select>
-          <label>Repayment for</label>
+      {investmentTarget && (
+        <div className="expense-invest-target">
+          <i className="fa-solid fa-shield-halved" />
+          <span className="expense-invest-target-text">
+            {investTargetLabel} premium · {investmentTarget.name}
+          </span>
+          {onChangeInvestmentTarget && (
+            <button
+              type="button"
+              className="expense-invest-target-change"
+              onClick={onChangeInvestmentTarget}
+            >
+              Change
+            </button>
+          )}
         </div>
       )}
 
-      <div className="field">
-        <select
-          name="paymentMode"
-          value={form.paymentMode}
-          onChange={handleChange}
-          required
-        >
-          <option value="" disabled hidden />
-          {paymentModes.map((p) => (
-            <option key={p} value={p}>
-              {p}
-            </option>
-          ))}
-        </select>
-        <label>Payment mode</label>
-      </div>
+      {isInvestmentPick ? (
+        <>
+          {allInvestTypes.length === 0 ? (
+            <p className="dyn-form-hint dyn-form-hint--soft">
+              <i className="fa-solid fa-circle-info" />
+              No investment types configured yet. Add one under Preferences →
+              Investment types to record investment payments here.
+            </p>
+          ) : (
+            <div className="field">
+              <select
+                value={investPicker.type}
+                onChange={(e) => {
+                  const type = e.target.value;
+                  setInvestPicker({ type, id: "" });
+                  const matches = investments.filter(
+                    (i) => i.type === type && !i.inHistory,
+                  );
+                  if (type && matches.length === 0) {
+                    onInvestmentSelect({
+                      amount: form.amount,
+                      existing: null,
+                      type,
+                    });
+                  }
+                }}
+                required
+              >
+                <option value="" disabled hidden />
+                {allInvestTypes.map((t) => (
+                  <option key={t.key} value={t.key}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+              <label>Investment type</label>
+            </div>
+          )}
 
-      {paidByCard && cards.length > 0 && (
-        <div className="field">
-          <select
-            name="cardId"
-            value={form.cardId}
+          {investPicker.type && investsOfType.length > 0 && (
+            <div className="field">
+              <select
+                value={investPicker.id}
+                onChange={(e) =>
+                  setInvestPicker((p) => ({ ...p, id: e.target.value }))
+                }
+              >
+                <option value="">— Create new —</option>
+                {investsOfType.map((i) => (
+                  <option key={i.id} value={i.id}>
+                    {i.name}
+                  </option>
+                ))}
+              </select>
+              <label>Select existing</label>
+            </div>
+          )}
+
+          <div className="form-actions">
+            <button type="button" className="cancel-button" onClick={onCancel}>
+              Cancel
+            </button>
+            {investPicker.type && investsOfType.length > 0 && (
+              <button
+                type="button"
+                className="generic-button"
+                onClick={() => {
+                  const selectedInv = investPicker.id
+                    ? investments.find((i) => i.id === investPicker.id) ?? null
+                    : null;
+                  onInvestmentSelect({
+                    amount: form.amount,
+                    existing: selectedInv,
+                    type: investPicker.type,
+                  });
+                }}
+              >
+                {investPicker.id ? "Pay into this" : "Create new"}&nbsp;
+                <i className="fa-solid fa-arrow-right" />
+              </button>
+            )}
+          </div>
+        </>
+      ) : (
+        <>
+          {isRepayment && repaymentTargets.length > 0 && (
+            <OptionField
+              name="repaymentFor"
+              value={form.repaymentFor}
+              onChange={handleChange}
+              label="Repayment for"
+              options={[
+                { value: "", label: "None" },
+                ...repaymentTargets.map((t) => ({
+                  value: t.id,
+                  label: t.label,
+                })),
+              ]}
+            />
+          )}
+
+          <OptionField
+            name="paymentMode"
+            value={form.paymentMode}
             onChange={handleChange}
-          >
-            <option value="">— Select card (optional) —</option>
-            {cards.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name} ({c.bank})
-              </option>
-            ))}
-          </select>
-          <label>Credit card used</label>
-        </div>
+            label="Payment mode"
+            required
+            placeholder=""
+            options={paymentModes}
+            invalid={invalidKeys.has("paymentMode")}
+          />
+
+          {paidByCard && cards.length > 0 && (
+            <OptionField
+              name="cardId"
+              value={form.cardId}
+              onChange={handleChange}
+              label="Credit card used"
+              options={[
+                { value: "", label: "None" },
+                ...cards.map((c) => ({
+                  value: c.id,
+                  label: `${c.name} (${c.bank})`,
+                })),
+              ]}
+            />
+          )}
+
+          {multiBankEnabled && !paidByCard && accounts.length > 0 && (
+            <BankChipSelector
+              accounts={accounts}
+              value={form.accountId}
+              onChange={(id) => setForm((f) => ({ ...f, accountId: id }))}
+              label={isRepayment ? "Paid from" : "Spent from"}
+            />
+          )}
+
+          <DateField
+            name="occurredAt"
+            value={form.occurredAt}
+            onChange={handleChange}
+            label="Date & time"
+            withTime
+            required
+            invalid={invalidKeys.has("occurredAt")}
+          />
+
+          <div className="field">
+            <textarea
+              name="description"
+              value={form.description}
+              onChange={handleChange}
+              rows="3"
+              autoCorrect="off"
+              spellCheck={false}
+            />
+            <label>Description / Notes</label>
+            <NoteBulletHint text={form.description} />
+          </div>
+
+          <FormError fields={formError?.map((m) => m.label)} />
+
+          <div className="form-actions">
+            <button type="button" className="cancel-button" onClick={onCancel}>
+              Cancel
+            </button>
+            <button type="submit" className="generic-button">
+              {existing ? "Update Expense" : "Save Expense"}
+            </button>
+          </div>
+        </>
       )}
-
-      {multiBankEnabled && !paidByCard && accounts.length > 0 && (
-        <BankChipSelector
-          accounts={accounts}
-          value={form.accountId}
-          onChange={(id) => setForm((f) => ({ ...f, accountId: id }))}
-          label={isRepayment ? "Paid from" : "Spent from"}
-        />
-      )}
-
-      <div className="field">
-        <input
-          name="occurredAt"
-          type="datetime-local"
-          value={form.occurredAt}
-          onChange={handleChange}
-          required
-        />
-        <label>Date & time</label>
-      </div>
-
-      <div className="field">
-        <textarea
-          name="description"
-          value={form.description}
-          onChange={handleChange}
-          rows="3"
-          autoCorrect="off"
-          spellCheck={false}
-        />
-        <label>Description / Notes</label>
-      </div>
-
-      <div className="form-actions">
-        <button type="button" className="cancel-button" onClick={onCancel}>
-          Cancel
-        </button>
-        <button type="submit" className="generic-button">
-          {existing ? "Update Expense" : "Save Expense"}
-        </button>
-      </div>
     </form>
   );
 };
@@ -414,6 +690,9 @@ ExpenseForm.propTypes = {
   onCancel: PropTypes.func.isRequired,
   existing: PropTypes.object,
   onInvestmentSelect: PropTypes.func,
+  investmentTarget: PropTypes.object,
+  onChangeInvestmentTarget: PropTypes.func,
+  onSubscriptionSelect: PropTypes.func,
 };
 
 export default memo(ExpenseForm);

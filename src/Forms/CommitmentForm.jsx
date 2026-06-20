@@ -2,6 +2,8 @@ import { memo, useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import { useSelector } from "react-redux";
 import { COMMITMENT_TYPES } from "../utils/solvencyUtils";
+import OptionField from "../components/OptionField";
+import DateField from "../components/DateField";
 import DayPicker from "./DayPicker";
 
 const EMPTY = {
@@ -130,16 +132,17 @@ const CommitmentForm = ({ onSubmit, onCancel, existing }) => {
         <label>Name</label>
       </div>
 
-      <div className="field">
-        <select name="type" value={form.type} onChange={handleChange} required>
-          {COMMITMENT_TYPES.map((t) => (
-            <option key={t.key} value={t.key}>
-              {t.label}
-            </option>
-          ))}
-        </select>
-        <label>Type</label>
-      </div>
+      <OptionField
+        name="type"
+        value={form.type}
+        onChange={handleChange}
+        label="Type"
+        required
+        options={COMMITMENT_TYPES.map((t) => ({
+          value: t.key,
+          label: t.label,
+        }))}
+      />
 
       {isLoan && (
         <div className="sol-form-row">
@@ -184,26 +187,26 @@ const CommitmentForm = ({ onSubmit, onCancel, existing }) => {
       {isLoan && <p className="form-field-hint">Full EMI — principal + interest combined</p>}
 
       <div className="sol-form-row">
-        <div className="field">
-          <select name="paymentMedium" value={form.paymentMedium} onChange={handleChange}>
-            <option value="" disabled hidden />
-            <option value="bank">Bank / Auto Debit</option>
-            <option value="credit_card">Credit Card</option>
-          </select>
-          <label>Payment via</label>
-        </div>
+        <OptionField
+          name="paymentMedium"
+          value={form.paymentMedium}
+          onChange={handleChange}
+          label="Payment via"
+          placeholder=""
+          options={[
+            { value: "bank", label: "Bank / Auto Debit" },
+            { value: "credit_card", label: "Credit Card" },
+          ]}
+        />
         {paidByCard && cards.length > 0 && (
-          <div className="field">
-            <select name="cardId" value={form.cardId} onChange={handleChange}>
-              <option value="" disabled hidden />
-              {cards.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-            <label>Card</label>
-          </div>
+          <OptionField
+            name="cardId"
+            value={form.cardId}
+            onChange={handleChange}
+            label="Card"
+            placeholder=""
+            options={cards.map((c) => ({ value: c.id, label: c.name }))}
+          />
         )}
       </div>
 
@@ -233,16 +236,12 @@ const CommitmentForm = ({ onSubmit, onCancel, existing }) => {
       {isLoan && (
         <>
           <div className="sol-form-row">
-            <div className="field">
-              <input
-                name="startDate"
-                type="date"
-                value={form.startDate}
-                onChange={handleChange}
-                placeholder=" "
-              />
-              <label>Start date (disbursed on)</label>
-            </div>
+            <DateField
+              name="startDate"
+              value={form.startDate}
+              onChange={handleChange}
+              label="Start date (disbursed on)"
+            />
             <div className="field">
               <input
                 name="firstPaymentMonth"

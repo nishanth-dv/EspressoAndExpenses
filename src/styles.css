@@ -19,6 +19,9 @@
   --amount-expense: #ef4444;
   --amount-income: #16a34a;
   --amount-investment: #5b8dee;
+  /* Repayment is a debt-settling outflow, not a loss — tinted violet in the
+     ledger so it reads distinct from the red of ordinary spend. */
+  --amount-repayment: #8b5cf6;
   --category-bg: #2a160c;
   --category-text: #e0d6d5;
   --delete-color: #ef4444;
@@ -313,6 +316,236 @@ textarea {
   display: flex;
   flex-direction: column;
   gap: 18px;
+}
+
+/* Safety net: any text-entry field on the Preferences page is floored at 16px
+   so iOS Safari never zooms the viewport on focus. Modals are portaled to
+   <body> (outside .pref-page) and keep their own sizing. */
+.pref-page input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+.pref-page textarea,
+.pref-page select {
+  font-size: 16px;
+}
+
+/* ── Preferences: search + zone tabs ─────────────────── */
+.pref-controls {
+  position: sticky;
+  top: var(--nav-h, 0px);
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 0;
+  background: var(--bg);
+}
+
+.pref-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.pref-search > i {
+  position: absolute;
+  left: 14px;
+  color: var(--text-label);
+  font-size: 14px;
+  pointer-events: none;
+}
+
+.pref-search input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 11px 38px 11px 38px;
+  border-radius: 12px;
+  border: 1px solid var(--field-border);
+  background: var(--field-bg);
+  color: var(--field-text);
+  font-family: inherit;
+  /* >= 16px so iOS Safari doesn't zoom the page when the field is focused. */
+  font-size: 16px;
+}
+
+.pref-search input:focus {
+  outline: none;
+  border-color: var(--surface-border-open, var(--bar-bg));
+}
+
+.pref-search-clear {
+  position: absolute;
+  right: 8px;
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: none;
+  color: var(--text-label);
+  cursor: pointer;
+  border-radius: 50%;
+}
+
+.pref-zone-tabs {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding-bottom: 2px;
+  /* Let the row start at the left and scroll; centering clips the first/last
+     tab on narrow screens because flex centering ignores overflow. */
+  justify-content: flex-start;
+  -webkit-overflow-scrolling: touch;
+}
+
+.pref-zone-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.pref-zone-tab {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--surface-border);
+  background: var(--surface-bg);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.pref-zone-tab:hover {
+  border-color: var(--surface-border-open);
+}
+
+.pref-zone-tab--active {
+  background: var(--bar-bg);
+  color: var(--bar-text);
+  border-color: transparent;
+}
+
+.pref-zone-heading {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 6px 2px -4px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-label);
+}
+
+.pref-zone-heading > i {
+  font-size: 12px;
+  opacity: 0.8;
+}
+
+.pref-no-results {
+  text-align: center;
+  color: var(--text-label);
+  font-size: 14px;
+  padding: 24px 0;
+}
+
+/* Title row + page chip in a section header */
+.pref-section-title-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.pref-page-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  background: color-mix(in srgb, var(--bar-bg) 14%, transparent);
+  color: var(--bar-bg);
+}
+
+/* ── Preferences: Pages panel ────────────────────────── */
+.pref-pages-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pref-page-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--surface-border);
+  border-radius: 10px;
+}
+
+.pref-page-icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  font-size: 15px;
+  background: color-mix(in srgb, var(--bar-bg) 14%, transparent);
+  color: var(--bar-bg);
+}
+
+.pref-page-meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.pref-page-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.pref-page-lock {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--surface-active);
+  color: var(--text-label);
+}
+
+.pref-page-blurb {
+  font-size: 12px;
+  color: var(--text-label);
+}
+
+.pref-page-always {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-label);
+  flex-shrink: 0;
 }
 
 .pref-title {
@@ -660,6 +893,141 @@ textarea {
   opacity: 0.7;
 }
 
+.pref-multibank-manage-banks {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 4px;
+  padding: 8px 4px;
+  background: none;
+  border: none;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--accent, var(--text-secondary));
+  cursor: pointer;
+  text-align: left;
+}
+
+.pref-multibank-manage-banks:hover {
+  text-decoration: underline;
+}
+
+.pref-multibank-manage-banks i {
+  opacity: 0.8;
+}
+
+.pref-multibank-balance-live {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.pref-multibank-drift {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 999px;
+}
+
+.pref-multibank-drift--ok {
+  color: var(--positive, #2e9e6b);
+  background: color-mix(in srgb, var(--positive, #2e9e6b) 12%, transparent);
+}
+
+.pref-multibank-drift--up,
+.pref-multibank-drift--down {
+  color: #c2843a;
+  background: color-mix(in srgb, #c2843a 14%, transparent);
+}
+
+.pref-multibank-drift--unset {
+  color: var(--text-label);
+  background: var(--surface-bg);
+  font-weight: 500;
+}
+
+.bank-account-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 6px;
+}
+
+.bank-account-modal-bank {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.bank-account-color-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  width: 100%;
+}
+
+.bank-account-color-label {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--field-label);
+}
+
+.bank-account-color-random {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.bank-account-color-preview {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 2px solid rgba(128, 128, 128, 0.2);
+  box-sizing: border-box;
+}
+
+.bank-account-color-regenerate {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  border: 1px solid var(--field-border);
+  background: var(--field-bg);
+  color: var(--field-text);
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.bank-account-color-regenerate:hover {
+  background: var(--surface-active);
+}
+
+@keyframes pref-section-blink {
+  0%, 100% { box-shadow: inset 0 0 0 9999px rgba(0, 0, 0, 0); }
+  20%, 70% { box-shadow: inset 0 0 0 9999px rgba(0, 0, 0, 0.22); }
+}
+
+.pref-section--highlight {
+  animation: pref-section-blink 1.8s ease-in-out forwards;
+}
+
 .pref-multibank-migrate {
   display: flex;
   align-items: center;
@@ -706,11 +1074,74 @@ textarea {
 .multibank-migration-row {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 12px;
   padding: 10px 12px;
   background: var(--surface-bg);
   border: 1px solid var(--surface-border);
   border-radius: 10px;
+}
+
+.multibank-migration-name-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 0;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.multibank-migration-chevron {
+  font-size: 11px;
+  color: var(--text-label);
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+}
+
+.multibank-migration-chevron--open {
+  transform: rotate(90deg);
+}
+
+.multibank-migration-txs {
+  list-style: none;
+  margin: 0;
+  padding: 6px 0 2px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-top: 1px dashed var(--surface-border);
+}
+
+.multibank-migration-tx {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: 12px;
+  padding: 2px 4px 2px 19px;
+}
+
+.multibank-migration-tx-name {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.multibank-migration-tx-date {
+  flex-shrink: 0;
+  color: var(--text-label);
+}
+
+.multibank-migration-tx-amt {
+  flex-shrink: 0;
+  font-weight: 600;
+  color: var(--text-primary);
 }
 
 .multibank-migration-meta {
@@ -1704,6 +2135,8 @@ body.privacy-on .transaction-card:active * {
   display: inline-flex;
   align-items: flex-start;
   gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
 }
 
 .balance-verify-preview--ok {
@@ -1742,6 +2175,13 @@ body.privacy-on .transaction-card:active * {
 
 .outlet {
   flex: 1;
+  /* Flex items default to min-height:auto, which refuses to shrink below their
+     content. On long pages that makes .outlet grow to full content height, so
+     #root outgrows the viewport and this overflow-y:auto never engages —
+     leaving the tail of the page below the fold with no way to scroll to it.
+     min-height:0 lets the item shrink to its 100dvh flex share so it becomes a
+     real internal scroller. */
+  min-height: 0;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   /* Compensate for the now-fixed navbar (taken out of flex flow). Navbar
@@ -2307,7 +2747,9 @@ body.privacy-on .transaction-card:active * {
   gap: 6px;
   overflow-x: auto;
   scrollbar-width: none;
-  min-height: 32px;
+  /* Fixed (not min-) height so swapping the chip/button row for the taller
+     search field doesn't grow the bar on open and shrink it on close. */
+  height: 32px;
 }
 
 .fbar::-webkit-scrollbar {
@@ -2343,6 +2785,108 @@ body.privacy-on .transaction-card:active * {
 .fbar-spacer {
   flex: 1;
   min-width: 4px;
+}
+
+/* Expand-on-tap search. Collapsed it's an icon button (.fbar-icon-btn); open
+   it grows to fill the row's free space (taking the spacer's place), so the
+   bar's layout and feel are unchanged. */
+.fbar-icon-btn {
+  padding: 4px 10px;
+}
+
+.fbar-search {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 8px 0 14px;
+  background: var(--field-bg);
+  border: 1.5px solid var(--surface-border-open);
+  border-radius: 20px;
+  box-sizing: border-box;
+  outline: none;
+  /* Grow from the search icon's footprint out to the full bar width as the
+     other controls are hidden. */
+  animation: fbar-search-expand 0.24s ease;
+  overflow: hidden;
+}
+
+/* Reverse the open animation so dismissing the search collapses smoothly
+   back toward the icon instead of vanishing. */
+.fbar-search--closing {
+  animation: fbar-search-collapse 0.24s ease forwards;
+}
+
+.fbar-search:focus-within {
+  outline: none;
+  border-color: var(--surface-border-open);
+}
+
+@keyframes fbar-search-expand {
+  from {
+    width: 44px;
+    opacity: 0.35;
+  }
+  to {
+    width: 100%;
+    opacity: 1;
+  }
+}
+
+@keyframes fbar-search-collapse {
+  from {
+    width: 100%;
+    opacity: 1;
+  }
+  to {
+    width: 44px;
+    opacity: 0.35;
+  }
+}
+
+.fbar-search-icon {
+  font-size: 13px;
+  color: var(--text-label);
+  flex-shrink: 0;
+}
+
+.fbar-search-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  outline: none;
+  color: var(--field-text);
+  font-family: "Smooch Sans", sans-serif;
+  font-size: 17px;
+}
+
+.fbar-search-input:focus,
+.fbar-search-input:focus-visible {
+  outline: none;
+  box-shadow: none;
+}
+
+.fbar-search-input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.fbar-search-clear {
+  flex-shrink: 0;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: none;
+  background: none;
+  color: var(--text-label);
+  cursor: pointer;
+  border-radius: 50%;
+}
+
+.fbar-search-clear:hover {
+  color: var(--text-secondary);
 }
 
 .fbar-btn {
@@ -2599,14 +3143,9 @@ body.privacy-on .transaction-card:active * {
   flex-shrink: 0;
 }
 
-.tx-recurring-tag--sip {
-  background: rgba(212, 163, 90, 0.16);
-  color: #d4a35a;
-}
-
-.tx-recurring-tag--lic {
-  background: rgba(224, 123, 58, 0.16);
-  color: #e07b3a;
+.tx-recurring-tag--sub {
+  background: rgba(91, 141, 238, 0.16);
+  color: #5b8dee;
 }
 
 /* ── Ledger row tints ──────────────────────────────────
@@ -2631,6 +3170,10 @@ body.privacy-on .transaction-card:active * {
 
 .ledger-tint-expense {
   background: color-mix(in srgb, var(--amount-expense) 8%, var(--surface-active));
+}
+
+.ledger-tint-repay {
+  background: color-mix(in srgb, var(--amount-repayment) 8%, var(--surface-active));
 }
 
 .transaction-summary-right {
@@ -2740,6 +3283,40 @@ body.privacy-on .transaction-card:active * {
   line-height: 1.45;
 }
 
+/* Multi-line notes render as a bullet list (both in the read view and in the
+   editor's live preview). Left-align even inside the right-aligned detail
+   value so the bullets line up cleanly. */
+.note-list {
+  margin: 0;
+  padding-left: 18px;
+  text-align: left;
+  list-style: disc;
+}
+
+.note-list li {
+  margin: 1px 0;
+  line-height: 1.4;
+}
+
+.note-field-hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 6px 2px 0;
+  font-size: 12px;
+  color: var(--text-label);
+}
+
+.note-field-preview {
+  margin-top: 6px;
+  padding: 8px 10px 8px 26px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--text-label) 8%, var(--bg));
+  border: 1px solid var(--surface-border);
+  border-radius: 10px;
+}
+
 .transaction-category {
   font-size: 11px;
   font-weight: 700;
@@ -2792,6 +3369,74 @@ body.privacy-on .transaction-card:active * {
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+/* Investment edit chooser — stacked option cards. The user picks between
+   editing the ledger entry vs the full, prefilled investment form. */
+.invest-edit-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 4px 0 16px;
+}
+
+.invest-edit-option {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  width: 100%;
+  padding: 14px 16px;
+  text-align: left;
+  background: var(--surface-bg);
+  border: 1px solid var(--surface-border-open);
+  border-radius: 14px;
+  cursor: pointer;
+  transition: border-color 0.15s ease, transform 0.15s ease, background 0.15s ease;
+}
+
+.invest-edit-option:hover {
+  background: var(--surface-active);
+  border-color: var(--amount-investment);
+  transform: translateY(-1px);
+}
+
+.invest-edit-option-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: rgba(91, 141, 238, 0.16);
+  color: var(--amount-investment);
+  font-size: 16px;
+}
+
+.invest-edit-option-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.invest-edit-option-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.invest-edit-option-sub {
+  font-size: 12.5px;
+  line-height: 1.35;
+  color: var(--text-secondary, var(--text-label));
+}
+
+.invest-edit-option-arrow {
+  flex-shrink: 0;
+  font-size: 13px;
+  color: var(--text-label);
 }
 
 .delete-confirm-name {
@@ -2953,6 +3598,40 @@ body.privacy-on .transaction-card:active * {
   gap: 6px;
 }
 
+.bank-chip-untagged-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 0;
+  max-height: 0;
+  padding: 0 10px;
+  font-size: 12.5px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--text-label) 8%, var(--bg));
+  border: 1px solid transparent;
+  border-radius: 10px;
+  opacity: 0;
+  overflow: hidden;
+  /* Collapse/expand smoothly on both enable and disable. */
+  transition: max-height 0.28s ease, opacity 0.2s ease, padding 0.28s ease,
+    margin 0.28s ease, border-color 0.28s ease;
+}
+
+.bank-chip-untagged-note--show {
+  margin-top: 2px;
+  max-height: 120px;
+  padding: 8px 10px;
+  border-color: var(--surface-border);
+  opacity: 1;
+}
+
+.bank-chip-untagged-note i {
+  margin-top: 2px;
+  color: var(--text-label);
+  flex-shrink: 0;
+}
+
 .bank-chip {
   display: inline-flex;
   align-items: center;
@@ -2993,6 +3672,606 @@ body.privacy-on .transaction-card:active * {
 .bank-chip--untagged {
   border-style: dashed;
   opacity: 0.85;
+}
+
+.tx-pending {
+  position: relative;
+  margin: 8px 0;
+  padding: 12px 14px;
+  border: 1.5px dashed color-mix(in srgb, var(--amount-investment) 45%, var(--surface-border));
+  border-radius: 14px;
+  background: color-mix(in srgb, var(--amount-investment) 6%, transparent);
+}
+
+.tx-pending-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--amount-investment);
+  margin-bottom: 6px;
+}
+
+.tx-pending-body {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.tx-pending-meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.tx-pending-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tx-pending-sub {
+  font-size: 12px;
+  color: var(--text-label);
+}
+
+.tx-pending-amt {
+  flex-shrink: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--amount-expense);
+}
+
+.tx-pending-amt--in {
+  color: var(--amount-income);
+}
+
+.tx-pending-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.tx-pending-accept {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--amount-income) 40%, transparent);
+  background: color-mix(in srgb, var(--amount-income) 12%, transparent);
+  color: var(--amount-income);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.tx-pending-accept:hover {
+  background: color-mix(in srgb, var(--amount-income) 20%, transparent);
+}
+
+.tx-pending-btn {
+  width: 34px;
+  height: 32px;
+  border-radius: 9px;
+  border: 1px solid var(--surface-border);
+  background: transparent;
+  color: var(--text-label);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.tx-pending-btn:hover {
+  background: var(--surface-active);
+  color: var(--text-primary);
+}
+
+.autocapture {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.autocapture-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  background: var(--field-bg);
+  border: 1px solid var(--field-border);
+  border-radius: 10px;
+  font-family: inherit;
+  /* >= 16px so iOS Safari doesn't zoom the page on focus. */
+  font-size: 16px;
+  color: var(--field-text);
+  resize: vertical;
+}
+
+.autocapture-parse {
+  align-self: flex-start;
+}
+
+.autocapture-status {
+  margin: -2px 0 0;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.autocapture-or {
+  margin: 6px 0 0 !important;
+  text-align: center;
+  opacity: 0.8;
+}
+
+.autocapture-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--amount-investment) 9%, transparent);
+  border: 1px solid color-mix(in srgb, var(--amount-investment) 30%, transparent);
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.autocapture-note i {
+  color: var(--amount-investment);
+  flex-shrink: 0;
+}
+
+.autocapture-inbox-head {
+  margin-top: 8px;
+}
+
+.autocapture-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.autocapture-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--surface-bg);
+  border: 1px solid var(--surface-border);
+  border-radius: 10px;
+}
+
+.autocapture-meta {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.autocapture-row1 {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.autocapture-amt {
+  font-weight: 700;
+  color: var(--amount-expense);
+  flex-shrink: 0;
+}
+
+.autocapture-amt--in {
+  color: var(--amount-income);
+}
+
+.autocapture-name {
+  min-width: 0;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.autocapture-sub {
+  font-size: 12px;
+  color: var(--text-label);
+}
+
+.autocapture-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.autocapture-accept {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--amount-income) 40%, transparent);
+  background: color-mix(in srgb, var(--amount-income) 12%, transparent);
+  color: var(--amount-income);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.autocapture-accept:hover {
+  background: color-mix(in srgb, var(--amount-income) 20%, transparent);
+}
+
+.autocapture-reject {
+  width: 32px;
+  height: 32px;
+  border-radius: 999px;
+  border: 1px solid var(--surface-border);
+  background: transparent;
+  color: var(--text-label);
+  cursor: pointer;
+}
+
+.autocapture-reject:hover {
+  background: var(--surface-active);
+  color: var(--text-primary);
+}
+
+.smartfill-bar {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+  margin-top: -4px;
+}
+
+.smartfill-apply {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--amount-investment) 35%, transparent);
+  background: color-mix(in srgb, var(--amount-investment) 9%, transparent);
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.smartfill-apply:hover {
+  background: color-mix(in srgb, var(--amount-investment) 15%, transparent);
+  border-color: var(--amount-investment);
+}
+
+.smartfill-apply > i {
+  color: var(--amount-investment);
+  flex-shrink: 0;
+}
+
+.smartfill-text {
+  flex: 1;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.smartfill-cta {
+  flex-shrink: 0;
+  font-weight: 700;
+  color: var(--amount-investment);
+}
+
+.smartfill-dismiss {
+  flex-shrink: 0;
+  width: 34px;
+  border: 1px solid var(--surface-border);
+  background: transparent;
+  border-radius: 10px;
+  color: var(--text-label);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+
+.smartfill-dismiss:hover {
+  background: var(--surface-active);
+  color: var(--text-primary);
+}
+
+.form-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--amount-expense) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--amount-expense) 35%, transparent);
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1.4;
+  color: var(--amount-expense);
+}
+
+.form-error i {
+  flex-shrink: 0;
+}
+
+/* ── One-tap fields (OptionField chip mode) ───────── */
+
+.opt-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  position: relative;
+}
+
+.opt-field-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-label);
+  padding-left: 2px;
+}
+
+.opt-chip-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.opt-chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 14px;
+  background: transparent;
+  border: 1px solid var(--surface-border);
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s, border-color 0.12s;
+}
+
+.opt-chip:not(.opt-chip--active):hover {
+  color: var(--text-primary);
+  background: var(--surface-active);
+}
+
+.opt-chip--active,
+.opt-chip--active:hover {
+  color: var(--amount-investment);
+  background: color-mix(in srgb, var(--amount-investment) 12%, transparent);
+  border-color: var(--amount-investment);
+}
+
+.opt-chip:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.opt-required-mirror {
+  position: absolute;
+  bottom: 0;
+  left: 12px;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Invalid state — applies in both pill and dropdown rendering. */
+.opt-field--invalid .opt-field-label {
+  color: var(--amount-expense);
+}
+
+.opt-field--invalid .opt-chip-strip {
+  padding: 6px;
+  margin: -6px;
+  border-radius: 12px;
+  box-shadow: 0 0 0 1.5px var(--amount-expense);
+}
+
+.field--invalid select,
+.field--invalid input {
+  border-color: var(--amount-expense);
+  box-shadow: 0 0 0 1px var(--amount-expense);
+}
+
+/* ── DateField — the field name and "Now" float together as one unit on
+   the top border (same treatment as the standard floating label). ── */
+
+.date-field-float {
+  position: absolute;
+  top: -10px;
+  left: 16px;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 5px;
+  max-width: calc(100% - 24px);
+  background: var(--modal-bg);
+  pointer-events: none;
+}
+
+.date-field-float-label {
+  min-width: 0;
+  font-size: 17px;
+  color: var(--field-label);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.date-field-now {
+  pointer-events: auto;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border: 1px solid var(--surface-border-open);
+  border-radius: 999px;
+  background: var(--modal-bg);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--amount-investment);
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s;
+}
+
+.date-field-now:hover {
+  border-color: var(--amount-investment);
+  background: color-mix(in srgb, var(--amount-investment) 12%, var(--modal-bg));
+}
+
+.date-field-now i {
+  font-size: 9px;
+}
+
+/* ── Field-style picker (Appearance → Field style) ── */
+
+.field-style-picker {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 4px;
+}
+
+.field-style-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 2px solid var(--surface-border-open);
+  border-radius: 12px;
+  background: var(--surface-bg);
+  cursor: pointer;
+  text-align: center;
+  transition: border-color 0.18s ease, transform 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.field-style-tile:hover {
+  border-color: var(--text-label);
+  transform: translateY(-1px);
+}
+
+.field-style-tile--active {
+  border-color: var(--text-primary);
+  box-shadow: 0 0 0 3px var(--surface-active);
+}
+
+.field-style-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border-radius: 10px;
+  background: #ffffff;
+  border: 1px solid rgba(26, 18, 32, 0.1);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.12);
+  text-align: left;
+}
+
+.field-style-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2px;
+}
+
+.field-style-modal-title {
+  width: 38px;
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(26, 18, 32, 0.18);
+}
+
+.field-style-modal-x {
+  font-size: 10px;
+  color: rgba(26, 18, 32, 0.3);
+}
+
+.field-style-mini-label {
+  font-size: 9px;
+  font-weight: 600;
+  color: rgba(26, 18, 32, 0.42);
+}
+
+.field-style-mini-select {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 8px;
+  border: 1px solid rgba(26, 18, 32, 0.18);
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #1a1220;
+}
+
+.field-style-mini-select i {
+  font-size: 8px;
+  color: rgba(26, 18, 32, 0.4);
+}
+
+.field-style-mini-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.field-style-mini-chip {
+  padding: 4px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(26, 18, 32, 0.16);
+  font-size: 10px;
+  font-weight: 500;
+  color: rgba(26, 18, 32, 0.6);
+}
+
+.field-style-mini-chip--active {
+  background: color-mix(in srgb, var(--amount-investment) 14%, #fff);
+  border-color: var(--amount-investment);
+  color: var(--amount-investment);
+}
+
+.field-style-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.field-style-desc {
+  font-size: 11px;
+  color: var(--text-secondary);
 }
 
 /* ── Self Transfer form ───────────────────────────── */
@@ -3058,6 +4337,89 @@ body.privacy-on .transaction-card:active * {
   padding-top: 12px;
 }
 
+.expense-kind {
+  display: flex;
+  gap: 4px;
+  padding: 4px;
+  background: var(--surface-bg);
+  border: 1px solid var(--surface-border);
+  border-radius: 12px;
+}
+
+.expense-kind-pill {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 9px 6px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: "Smooch Sans", sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.expense-kind-pill > i {
+  font-size: 12px;
+}
+
+.expense-kind-pill:hover:not(.expense-kind-pill--active) {
+  background: var(--surface-active);
+  color: var(--text-primary);
+}
+
+.expense-kind-pill--active {
+  background: var(--bar-bg);
+  color: var(--bar-text);
+  cursor: default;
+}
+
+.expense-invest-target {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: -2px;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--amount-investment) 8%, var(--surface-bg));
+  border: 1px solid color-mix(in srgb, var(--amount-investment) 30%, var(--surface-border));
+  border-radius: 10px;
+}
+
+.expense-invest-target i {
+  color: var(--amount-investment);
+  flex-shrink: 0;
+}
+
+.expense-invest-target-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.expense-invest-target-change {
+  margin-left: auto;
+  flex-shrink: 0;
+  padding: 4px 12px;
+  background: transparent;
+  border: 1px solid color-mix(in srgb, var(--amount-investment) 45%, var(--surface-border));
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--amount-investment);
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+
+.expense-invest-target-change:hover {
+  background: color-mix(in srgb, var(--amount-investment) 10%, transparent);
+  border-color: var(--amount-investment);
+}
+
 .field {
   position: relative;
   min-width: 0;
@@ -3108,6 +4470,7 @@ body.privacy-on .transaction-card:active * {
 
 input[type="date"],
 input[type="time"],
+input[type="month"],
 input[type="datetime-local"] {
   -webkit-appearance: none;
   appearance: none;
@@ -3119,6 +4482,7 @@ input[type="datetime-local"] {
 
 [data-theme="light"] input[type="date"],
 [data-theme="light"] input[type="time"],
+[data-theme="light"] input[type="month"],
 [data-theme="light"] input[type="datetime-local"] {
   color-scheme: light;
 }
@@ -3462,6 +4826,22 @@ textarea {
 /* ── Dynamic Investment Form (schema-driven) ──────────
    .dyn-investment-form inherits its base from .expense-form; only the row
    grid + new field-type rules live here. */
+
+/* Shared two-up form-row primitive. Originally lived only in solvency.css,
+   but InvestmentForm (and its hosts — Actions, TransactionCard, the
+   Investment page) renders it without importing that lazy page chunk, so the
+   grid + gap silently vanished unless the Solvency page had been visited
+   first. Defined here in the global stylesheet so it's always present. */
+.sol-form-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 12px;
+  min-width: 0;
+}
+
+.sol-form-row > * {
+  min-width: 0;
+}
 
 .dyn-form-row {
   display: grid;
@@ -3900,10 +5280,11 @@ textarea {
   color: var(--text-label);
 }
 
-.itd-profile-section {
+.itd-profile-section,
+.itd-balance-section {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
 }
 
 .itd-profile-pills {
@@ -5195,4 +6576,364 @@ textarea {
 
 .stmt-recon-dismissed {
   color: var(--text-label);
+}
+
+/* ── Notifications ─────────────────────────────────────────
+   Bell + badge live in the navbar; the list + per-type toggles render in the
+   shared Modal and the Preferences panel. All colours come from the existing
+   theme tokens so light/dark + skins are covered for free. */
+
+.notif-bell {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 50%;
+  color: var(--text-secondary);
+  font-size: 18px;
+  cursor: pointer;
+  transition: background 0.18s ease, color 0.18s ease;
+}
+
+.notif-bell:hover,
+.notif-bell:focus-visible {
+  background: var(--surface-active);
+  color: var(--text-primary);
+}
+
+.notif-bell--active {
+  color: var(--text-primary);
+}
+
+.notif-badge {
+  position: absolute;
+  top: 2px;
+  right: 0;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #d97757;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  border-radius: 9px;
+  box-shadow: 0 0 0 2px var(--modal-bg);
+}
+
+/* ── Modal list ── */
+.notif-panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+  color: var(--text-label);
+  font-size: 13px;
+}
+
+.notif-clear-all {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: 6px;
+}
+
+.notif-clear-all:hover {
+  color: var(--text-primary);
+  background: var(--surface-active);
+}
+
+.notif-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.notif-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: var(--surface-bg);
+  border: 1px solid var(--surface-border);
+  border-left: 3px solid var(--text-label);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: border-color 0.18s ease, background 0.18s ease;
+}
+
+.notif-item:hover,
+.notif-item:focus-visible {
+  background: var(--surface-active);
+  border-color: var(--surface-border-open);
+}
+
+.notif-item--warn {
+  border-left-color: #d9a441;
+}
+
+.notif-item--urgent {
+  border-left-color: #e05a4d;
+}
+
+.notif-item-icon {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: var(--surface-active);
+  color: var(--text-secondary);
+  font-size: 15px;
+}
+
+.notif-item--urgent .notif-item-icon {
+  color: #e05a4d;
+}
+
+.notif-item-body {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.notif-item-title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.notif-item-sub {
+  margin: 2px 0 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.notif-item-amt {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+.notif-item-dismiss {
+  flex: 0 0 auto;
+  background: transparent;
+  border: none;
+  color: var(--text-label);
+  font-size: 15px;
+  cursor: pointer;
+  padding: 6px;
+  border-radius: 6px;
+  line-height: 1;
+}
+
+.notif-item-dismiss:hover {
+  color: var(--text-primary);
+  background: var(--surface-active);
+}
+
+.notif-item-log {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 10px;
+  border: 1px solid var(--surface-border);
+  border-radius: 8px;
+  background: var(--surface-bg);
+  color: var(--amount-investment);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.notif-item-log:hover:not(:disabled) {
+  background: var(--surface-active);
+}
+
+.notif-item-log:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.notif-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 6px;
+  padding: 28px 12px;
+  color: var(--text-secondary);
+}
+
+.notif-empty i {
+  font-size: 30px;
+  color: var(--text-label);
+  margin-bottom: 4px;
+}
+
+.notif-empty p {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 16px;
+  font-weight: 600;
+}
+
+.notif-empty span {
+  font-size: 13px;
+  color: var(--text-label);
+}
+
+/* ── Preferences: per-type toggles ──
+   Card-style rows with a colored icon box, matching the Investment Types
+   panel. Each group (.notif-types-group) carries its own accent via the
+   inline --notif-accent custom property set on each row. */
+.notif-types {
+  margin-top: 6px;
+}
+
+.notif-types--disabled {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.notif-types-summary {
+  margin: 8px 0 4px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.notif-types-group {
+  margin-top: 16px;
+}
+
+.notif-types-group-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 8px;
+}
+
+.notif-types-group-label {
+  font-size: 12px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.notif-types-group-hint {
+  color: var(--text-label);
+  font-size: 12px;
+}
+
+.notif-types-flat {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.notif-type-flat {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--surface-border);
+  border-radius: 10px;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.notif-type-flat--on {
+  border-color: color-mix(in srgb, var(--notif-accent) 35%, transparent);
+  background: color-mix(in srgb, var(--notif-accent) 6%, var(--bg));
+}
+
+.notif-type-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  font-size: 14px;
+  flex-shrink: 0;
+}
+
+.notif-type-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  flex: 1;
+  min-width: 0;
+}
+
+.notif-type-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.notif-type-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.notif-type-desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+/* Insight tuning — thresholds for the proactive nudges. Sits under the
+   Insights group, accented to match it. */
+.notif-tuning {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, #a855f7 22%, transparent);
+  background: color-mix(in srgb, #a855f7 5%, var(--bg));
+  border-radius: 10px;
+}
+
+.notif-tuning-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 2px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #a855f7;
+}
+
+.notif-tuning-sub {
+  margin: 0 0 12px;
+  font-size: 12px;
+  color: var(--text-label);
+  line-height: 1.4;
 }

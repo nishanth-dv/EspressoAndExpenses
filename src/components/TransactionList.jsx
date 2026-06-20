@@ -1,6 +1,8 @@
 import { memo, useMemo } from "react";
 import PropTypes from "prop-types";
+import { useSelector } from "react-redux";
 import TransactionCard from "./TransactionCard";
+import PendingCaptures from "./PendingCaptures";
 
 function dateKey(iso) {
   const d = new Date(iso);
@@ -24,7 +26,11 @@ const TransactionList = ({ transactions, emptyMessage }) => {
     [transactions],
   );
 
-  if (!sorted.length) {
+  const pendingCount = useSelector(
+    (s) => (s.transactions.transactionData?.autoReadInbox ?? []).length,
+  );
+
+  if (!sorted.length && pendingCount === 0) {
     return (
       <div className="transaction-empty">
         <p>{emptyMessage ?? "No transactions yet."}</p>
@@ -34,6 +40,7 @@ const TransactionList = ({ transactions, emptyMessage }) => {
 
   return (
     <div className="transaction-list">
+      <PendingCaptures />
       {sorted.map((t, i) => {
         const showSeparator =
           i === 0 ||

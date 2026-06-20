@@ -1,5 +1,6 @@
 import { memo, useState } from "react";
 import PropTypes from "prop-types";
+import "../styles/daypicker.css";
 
 function ordinal(n) {
   const v = n % 100;

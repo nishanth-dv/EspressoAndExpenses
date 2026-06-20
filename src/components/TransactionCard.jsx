@@ -13,6 +13,11 @@ import ExpenseForm from "../Forms/ExpenseForm";
 import IncomeForm from "../Forms/IncomeForm";
 import InvestmentForm from "../Forms/InvestmentForm";
 import SelfTransferForm from "../Forms/SelfTransferForm";
+import BankChipSelector from "./BankChipSelector";
+import DateField from "./DateField";
+import { NoteContent, NoteBulletHint } from "./NoteText";
+import { getInvestmentTypeSchema } from "../utils/investmentTypeSchemas";
+import { getTypeInfo } from "../utils/investmentUtils";
 
 const formatter = new Intl.NumberFormat("en-IN", {
   style: "currency",
@@ -40,6 +45,11 @@ const TransactionCard = ({transaction}) => {
   const [open, setOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [editing, setEditing] = useState(false);
+  // 'choose' | 'entry' | 'investment' | null — investment edit flow. The
+  // user picks between editing the raw ledger entry or the prefilled,
+  // type-specific investment form.
+  const [investEditMode, setInvestEditMode] = useState(null);
+  const [entryDraft, setEntryDraft] = useState(null);
 
   const {
     id,
@@ -54,6 +64,8 @@ const TransactionCard = ({transaction}) => {
     repaymentFor,
     sipInvestmentId,
     licPolicyId,
+    autoDeductInvestmentId,
+    subscriptionId,
     accountId,
     fromAccountId,
     toAccountId,
@@ -71,6 +83,10 @@ const TransactionCard = ({transaction}) => {
 
   const accounts = useSelector(
     (state) => state.transactions.transactionData?.accounts ?? [],
+  );
+  const multiBankEnabled = useSelector(
+    (state) =>
+      state.transactions.transactionData?.preferences?.multiBankEnabled ?? false,
   );
   const accountById = (aid) => accounts.find((a) => a.id === aid);
   const taggedAccount = accountId ? accountById(accountId) : null;
@@ -92,17 +108,46 @@ const TransactionCard = ({transaction}) => {
       )
     : null;
 
-  // Match by direct id (linked transaction), sipInvestmentId (SIP instalment)
-  // or licPolicyId (LIC premium payment)
+  // Match by direct id (linked transaction), sipInvestmentId (SIP instalment),
+  // licPolicyId (LIC premium payment) or autoDeductInvestmentId (recurring
+  // cash-flow contribution — APY / VPF / chit, etc.)
   const investment = useSelector((state) => {
-    if (!isInvestment) return null;
+    if (
+      !isInvestment &&
+      !sipInvestmentId &&
+      !licPolicyId &&
+      !autoDeductInvestmentId
+    )
+      return null;
     const investments = state.transactions.transactionData?.investments ?? [];
     return (
       investments.find(
-        (i) => i.id === id || i.id === sipInvestmentId || i.id === licPolicyId,
+        (i) =>
+          i.id === id ||
+          i.id === sipInvestmentId ||
+          i.id === licPolicyId ||
+          i.id === autoDeductInvestmentId,
       ) ?? null
     );
   });
+
+  const userTypes = useSelector(
+    (state) => state.transactions.transactionData?.investmentTypes ?? [],
+  );
+  const investSchema = investment
+    ? getInvestmentTypeSchema(investment.type, userTypes)
+    : null;
+  const investInfo = investment ? getTypeInfo(investment.type) : null;
+  const investType = investment
+    ? {
+        label:
+          investment.type === "lic"
+            ? "Premium"
+            : investSchema?.label ?? investInfo?.label,
+        color: investSchema?.color ?? investInfo?.color,
+        icon: investSchema?.icon ?? investInfo?.icon,
+      }
+    : null;
 
   const displayName = transaction.name || (isInvestment ? "Investment" : source);
 
@@ -112,7 +157,11 @@ const TransactionCard = ({transaction}) => {
   }
   function handleEditClick(e) {
     e.stopPropagation();
-    setEditing(true);
+    if (isInvestment) {
+      setInvestEditMode("choose");
+    } else {
+      setEditing(true);
+    }
   }
 
   function handleConfirmDelete() {
@@ -145,7 +194,10 @@ const TransactionCard = ({transaction}) => {
     } else if (transactionType === "investment") {
       tintClass = " ledger-tint-invest";
     } else if (transactionType === "expense") {
-      tintClass = " ledger-tint-expense";
+      tintClass =
+        category === "Repayment"
+          ? " ledger-tint-repay"
+          : " ledger-tint-expense";
     } else if (
       transactionType === "self_transfer" &&
       transactionFilterAccountId &&
@@ -167,14 +219,20 @@ const TransactionCard = ({transaction}) => {
         <div className="transaction-summary">
           <span className="transaction-name">{displayName}</span>
           <div className="transaction-summary-right">
-            {sipInvestmentId && (
-              <span className="tx-recurring-tag tx-recurring-tag--sip">
-                <i className="fa-solid fa-rotate" /> SIP
+            {investType && (
+              <span
+                className="tx-recurring-tag tx-investment-tag"
+                style={{
+                  background: investType.color + "22",
+                  color: investType.color,
+                }}
+              >
+                <i className={`fa-solid ${investType.icon}`} /> {investType.label}
               </span>
             )}
-            {licPolicyId && (
-              <span className="tx-recurring-tag tx-recurring-tag--lic">
-                <i className="fa-solid fa-shield-halved" /> Premium
+            {subscriptionId && (
+              <span className="tx-recurring-tag tx-recurring-tag--sub">
+                <i className="fa-solid fa-rotate" /> Subscription
               </span>
             )}
             {isSelfTransfer && (
@@ -290,11 +348,22 @@ const TransactionCard = ({transaction}) => {
                   <div className="detail-row detail-row--wrap">
                     <span className="detail-label">Note</span>
                     <span className="detail-value detail-value--note">
-                      {description}
+                      <NoteContent text={description} />
                     </span>
                   </div>
                 )}
                 <div className="tx-actions">
+                  {subscriptionId && (
+                    <button
+                      className="tx-action-btn tx-action-btn--invest"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigate(`/Subscriptions?highlight=${subscriptionId}`);
+                      }}
+                    >
+                      <i className="fa-solid fa-rotate" /> View
+                    </button>
+                  )}
                   {isInvestment && investment && (
                     <button
                       className="tx-action-btn tx-action-btn--invest"
@@ -304,6 +373,8 @@ const TransactionCard = ({transaction}) => {
                           navigate(`/Invest?ledger=${sipInvestmentId}&highlightTx=${id}`);
                         } else if (licPolicyId) {
                           navigate(`/Invest?ledger=${licPolicyId}&highlightTx=${id}`);
+                        } else if (autoDeductInvestmentId) {
+                          navigate(`/Invest?ledger=${autoDeductInvestmentId}&highlightTx=${id}`);
                         } else {
                           navigate(`/Invest?highlight=${investment.id}`);
                         }
@@ -376,6 +447,206 @@ const TransactionCard = ({transaction}) => {
               onCancel={() => setEditing(false)}
               existing={transaction}
             />
+          )}
+        </Modal>
+      )}
+
+      {investEditMode === "choose" && (
+        <Modal
+          open
+          onClose={() => setInvestEditMode(null)}
+          title="Edit investment"
+        >
+          <div className="invest-edit-choices">
+            <button
+              type="button"
+              className="invest-edit-option"
+              onClick={() => {
+                setEntryDraft({
+                  amount: String(transaction.amount ?? ""),
+                  occurredAt: (transaction.occurredAt ?? "").slice(0, 16),
+                  description: transaction.description ?? "",
+                  accountId: transaction.accountId ?? "",
+                });
+                setInvestEditMode("entry");
+              }}
+            >
+              <span className="invest-edit-option-icon">
+                <i className="fa-solid fa-receipt" />
+              </span>
+              <span className="invest-edit-option-text">
+                <span className="invest-edit-option-title">
+                  Edit{" "}
+                  {licPolicyId
+                    ? "this premium"
+                    : sipInvestmentId
+                      ? "this installment"
+                      : "this entry"}
+                </span>
+                <span className="invest-edit-option-sub">
+                  Change the amount, date or notes on this ledger record.
+                </span>
+              </span>
+              <i className="fa-solid fa-chevron-right invest-edit-option-arrow" />
+            </button>
+
+            <button
+              type="button"
+              className="invest-edit-option"
+              onClick={() => setInvestEditMode("investment")}
+            >
+              <span className="invest-edit-option-icon">
+                <i className="fa-solid fa-sliders" />
+              </span>
+              <span className="invest-edit-option-text">
+                <span className="invest-edit-option-title">
+                  Edit{" "}
+                  {licPolicyId ? "policy" : sipInvestmentId ? "SIP" : "investment"}
+                </span>
+                <span className="invest-edit-option-sub">
+                  Open the full investment form, prefilled, to update its details.
+                </span>
+              </span>
+              <i className="fa-solid fa-chevron-right invest-edit-option-arrow" />
+            </button>
+          </div>
+          <div className="form-actions">
+            <button
+              type="button"
+              className="cancel-button"
+              onClick={() => setInvestEditMode(null)}
+            >
+              Cancel
+            </button>
+          </div>
+        </Modal>
+      )}
+
+      {investEditMode === "entry" && entryDraft && (
+        <Modal
+          open
+          onClose={() => setInvestEditMode(null)}
+          title={
+            licPolicyId
+              ? "Edit premium entry"
+              : sipInvestmentId
+                ? "Edit installment entry"
+                : "Edit ledger entry"
+          }
+        >
+          <form
+            className="expense-form"
+            onSubmit={(e) => {
+              e.preventDefault();
+              dispatch(
+                persistUpdateTransaction(transaction, {
+                  ...transaction,
+                  amount: entryDraft.amount,
+                  occurredAt: entryDraft.occurredAt
+                    ? new Date(entryDraft.occurredAt).toISOString()
+                    : transaction.occurredAt,
+                  description: entryDraft.description,
+                  ...(multiBankEnabled
+                    ? { accountId: entryDraft.accountId || undefined }
+                    : {}),
+                }),
+              );
+              setInvestEditMode(null);
+            }}
+          >
+            <div className="field">
+              <input
+                type="number"
+                inputMode="decimal"
+                value={entryDraft.amount}
+                onChange={(e) =>
+                  setEntryDraft((d) => ({ ...d, amount: e.target.value }))
+                }
+                required
+              />
+              <label>Amount</label>
+            </div>
+            <DateField
+              value={entryDraft.occurredAt}
+              onChange={(e) =>
+                setEntryDraft((d) => ({ ...d, occurredAt: e.target.value }))
+              }
+              label="Date & time"
+              withTime
+              required
+            />
+            {multiBankEnabled && accounts.length > 0 && (
+              <BankChipSelector
+                accounts={accounts}
+                value={entryDraft.accountId}
+                onChange={(aid) =>
+                  setEntryDraft((d) => ({ ...d, accountId: aid }))
+                }
+                label="Account"
+              />
+            )}
+            <div className="field">
+              <textarea
+                value={entryDraft.description}
+                onChange={(e) =>
+                  setEntryDraft((d) => ({ ...d, description: e.target.value }))
+                }
+                rows="3"
+              />
+              <label>Description / Notes</label>
+              <NoteBulletHint text={entryDraft.description} />
+            </div>
+            <div className="form-actions">
+              <button
+                type="button"
+                className="cancel-button"
+                onClick={() => setInvestEditMode(null)}
+              >
+                Cancel
+              </button>
+              <button type="submit" className="generic-button">
+                Save
+              </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {investEditMode === "investment" && (
+        <Modal
+          open
+          onClose={() => setInvestEditMode(null)}
+          title={
+            licPolicyId
+              ? "Edit policy"
+              : sipInvestmentId
+                ? "Edit SIP"
+                : "Edit investment"
+          }
+        >
+          {investment ? (
+            <InvestmentForm
+              onSubmit={(updated) => {
+                dispatch(persistUpdateInvestment(updated));
+                setInvestEditMode(null);
+              }}
+              onCancel={() => setInvestEditMode(null)}
+              existing={investment}
+            />
+          ) : (
+            <div className="delete-confirm-body">
+              <p className="delete-confirm-hint">
+                No linked investment record was found for this transaction.
+              </p>
+              <div className="form-actions">
+                <button
+                  className="cancel-button"
+                  onClick={() => setInvestEditMode(null)}
+                >
+                  Close
+                </button>
+              </div>
+            </div>
           )}
         </Modal>
       )}

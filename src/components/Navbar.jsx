@@ -1,12 +1,19 @@
 import { memo, useState, useEffect, useRef } from "react";
+import { useSelector } from "react-redux";
 import NavigationLink from "../components/NavItem";
 import UserMenu from "../components/UserMenu";
+import NotificationBell from "../components/NotificationBell";
 import HamBurgerButton from "../preStyledElements/hamburger/HamBurger";
 import MobileNavDrawer from "../preStyledElements/mobileNavDrawer/mobileNavDrawer";
+import { getEnabledPages } from "../utils/pages";
 
 const Navbar = () => {
   const [isOpen, setIsOpen] = useState(false);
   const navRef = useRef(null);
+  const preferences = useSelector(
+    (state) => state.transactions.transactionData?.preferences,
+  );
+  const pages = getEnabledPages(preferences);
 
   // Same Visual Viewport pattern as the footer — keeps the navbar pinned to
   // the top of the *visible* area when the mobile URL bar collapses/expands.
@@ -48,15 +55,17 @@ const Navbar = () => {
         <UserMenu />
         <div className="nav-controls">
           <div className="flex nav-desktop">
-            <NavigationLink to="/Dashboard">Dashboard</NavigationLink>
-            <NavigationLink to="/Transactions">Transactions</NavigationLink>
-            <NavigationLink to="/Invest">Investments</NavigationLink>
-            <NavigationLink to="/Solvency">Solvency</NavigationLink>
+            {pages.map((p) => (
+              <NavigationLink key={p.key} to={p.route}>
+                {p.label}
+              </NavigationLink>
+            ))}
           </div>
+          <NotificationBell />
           <HamBurgerButton isOpen={isOpen} setIsOpen={setIsOpen} />
         </div>
       </div>
-      <MobileNavDrawer open={isOpen} setIsOpen={setIsOpen} />
+      <MobileNavDrawer open={isOpen} setIsOpen={setIsOpen} pages={pages} />
     </nav>
   );
 };

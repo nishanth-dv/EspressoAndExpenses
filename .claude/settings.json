@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git show *)",
+      "Bash(xargs wc -l)",
+      "Bash(npx vite *)",
+      "Bash(echo \"exit: $?\")"
+    ],
+    "additionalDirectories": [
+      "\\tmp"
+    ]
+  }
+}

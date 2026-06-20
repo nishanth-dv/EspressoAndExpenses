@@ -1,6 +1,6 @@
 import { memo, useState, useRef, useCallback, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
-import { useSelector, useDispatch } from "react-redux";
+import { useSelector } from "react-redux";
 import { useNavigate } from "react-router-dom";
 import PropTypes from "prop-types";
 
@@ -28,16 +28,23 @@ function DropdownPortal({ anchorRef, children }) {
 }
 import DayPicker from "./DayPicker";
 import DynamicInvestmentForm from "./DynamicInvestmentForm";
-import InvestmentTypeDesigner from "../components/InvestmentTypeDesigner";
+import "../styles/investment.css";
+import BankChipSelector from "../components/BankChipSelector";
+import OptionField from "../components/OptionField";
+import DateField from "../components/DateField";
 import { INVESTMENT_TYPES, EQUITY_SECTORS, MF_CATEGORIES } from "../utils/constants";
-import { getTypeInfo } from "../utils/investmentUtils";
+import {
+  getTypeInfo,
+  getGraceDefault,
+  typeHasGrace,
+  graceLabel,
+} from "../utils/investmentUtils";
 import {
   BUILTIN_INVESTMENT_TYPES,
   getAllInvestmentTypes,
   getInvestmentTypeSchema,
 } from "../utils/investmentTypeSchemas";
 import { DISCOVER_INVESTMENT_TYPES } from "../data/investmentTypesDiscover";
-import { persistSetPreference } from "../redux/slices/transactionSlice";
 import {
   fetchCurrentPrice,
   fetchSIPData,
@@ -58,6 +65,7 @@ const EMPTY_FORM = {
   tenureMonths: "",
   maturityAmount: "",
   maturityDate: "",
+  lastPremiumDate: "",
   currentValue: "",
   monthlyAmount: "",
   sipDay: "",
@@ -65,12 +73,19 @@ const EMPTY_FORM = {
   category: "",
   notes: "",
   affectsBalance: true,
+  // Which bank the invested amount is deducted from (multi-bank only).
+  accountId: "",
   // LIC-specific
   policyNumber: "",
   premiumAmount: "",
   frequency: 1,
   premiumMonths: [],
   currentInstallmentPaid: false,
+  graceValue: "",
+  graceUnit: "days",
+  penaltyEnabled: false,
+  penaltyMode: "flat",
+  penaltyAmount: "",
 };
 
 function formFromInvestment(inv) {
@@ -100,6 +115,7 @@ function formFromInvestment(inv) {
             return d.toISOString().slice(0, 10);
           })()
         : ""),
+    lastPremiumDate: inv.lastPremiumDate ?? "",
     currentValue: inv.currentValue ?? "",
     category: inv.category ?? "",
     monthlyAmount: inv.monthlyAmount ?? "",
@@ -107,6 +123,7 @@ function formFromInvestment(inv) {
     startDate: inv.startDate ?? "",
     notes: inv.notes ?? "",
     affectsBalance: inv.affectsBalance !== false,
+    accountId: inv.accountId ?? "",
     // LIC fields
     policyNumber: inv.policyNumber ?? "",
     premiumAmount: inv.premiumAmount != null ? String(inv.premiumAmount) : "",
@@ -122,6 +139,17 @@ function formFromInvestment(inv) {
       const ym = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
       return mark.yearMonth === ym && mark.paid === true;
     })(),
+    ...(() => {
+      const g = inv.gracePeriod ?? getGraceDefault(inv.type);
+      return {
+        graceValue: g?.value != null ? String(g.value) : "",
+        graceUnit: g?.unit ?? "days",
+      };
+    })(),
+    penaltyEnabled: !!inv.latePenalty?.enabled,
+    penaltyMode: inv.latePenalty?.mode ?? "flat",
+    penaltyAmount:
+      inv.latePenalty?.amount != null ? String(inv.latePenalty.amount) : "",
   };
 }
 
@@ -144,7 +172,7 @@ function countPaidInstallments(startDate, premiumMonths) {
   return count;
 }
 
-const InvestmentForm = ({ onSubmit, onCancel, existing, prefillAmount }) => {
+const InvestmentForm = ({ onSubmit, onCancel, existing, prefillAmount, prefillType, onPayExisting }) => {
   // User-extended types live alongside the built-ins. Built-in keys are
   // identified by membership in INVESTMENT_TYPES — anything else is a
   // user-added / Discover-imported type that goes through the schema-driven
@@ -169,11 +197,18 @@ const InvestmentForm = ({ onSubmit, onCancel, existing, prefillAmount }) => {
       state.transactions.transactionData?.preferences
         ?.investmentTypeOrder ?? [],
   );
+  const multiBankEnabled = useSelector(
+    (state) =>
+      state.transactions.transactionData?.preferences?.multiBankEnabled ??
+      false,
+  );
+  const accounts = useSelector(
+    (state) => state.transactions.transactionData?.accounts ?? [],
+  );
   const isBuiltInKey = (key) =>
     INVESTMENT_TYPES.some((t) => t.key === key);
   const userOnlyTypes = userTypes.filter((t) => !isBuiltInKey(t.key));
   const navigate = useNavigate();
-  const dispatch = useDispatch();
   // Universe of types the user could potentially enable: built-ins + the
   // Discover catalog + anything already in their user-types catalog.
   const enabledSet = new Set(enabledTypeKeys);
@@ -210,9 +245,18 @@ const InvestmentForm = ({ onSubmit, onCancel, existing, prefillAmount }) => {
     ).length;
   const canAddMore = enabledTypeKeys.length < universeSize;
 
-  const [form, setForm] = useState(
-    existing ? formFromInvestment(existing) : EMPTY_FORM,
-  );
+  const [form, setForm] = useState(() => {
+    if (existing) return formFromInvestment(existing);
+    if (prefillType) {
+      const info = getTypeInfo(prefillType);
+      const seeded =
+        prefillAmount && info?.subtype !== "unit"
+          ? { investedAmount: String(prefillAmount) }
+          : {};
+      return { ...EMPTY_FORM, type: prefillType, ...seeded };
+    }
+    return EMPTY_FORM;
+  });
   const [fetching, setFetching] = useState(false);
   const [fetchMsg, setFetchMsg] = useState(null); // { ok: bool, text: string }
   const [mfResults, setMfResults] = useState([]);
@@ -220,21 +264,30 @@ const InvestmentForm = ({ onSubmit, onCancel, existing, prefillAmount }) => {
   const [stockResults, setStockResults] = useState([]);
   const [stockSearching, setStockSearching] = useState(false);
   const [stockSearchErr, setStockSearchErr] = useState(null);
-  // Designer launcher state — the user can build a brand-new investment
-  // type from inside the Add Investment flow without bouncing to
-  // Preferences. On save the form auto-selects the new type's key.
-  const [designerOpen, setDesignerOpen] = useState(false);
   // Singleton-block state — populated when the user taps a type that's
   // marked singleton: true and they already have an active record of
   // that type. Holds the type label + existing record's name so the
   // notice can name them. Cleared on next tile selection.
   const [singletonBlock, setSingletonBlock] = useState(null);
+  const [editTarget, setEditTarget] = useState(existing ?? null);
+  const [forceCreate, setForceCreate] = useState(false);
   const debounceRef = useRef(null);
   const stockDebounceRef = useRef(null);
   const mfAnchorRef = useRef(null);
   const stockAnchorRef = useRef(null);
 
   const typeInfo = form.type ? getTypeInfo(form.type) : null;
+  const activeOfSelectedType =
+    form.type && !editTarget
+      ? existingInvestments.filter(
+          (i) => i.type === form.type && !i.inHistory,
+        )
+      : [];
+  const showExistingChooser =
+    !editTarget &&
+    !forceCreate &&
+    !!form.type &&
+    activeOfSelectedType.length > 0;
   const subtype = typeInfo?.subtype;
   const isMF = form.type === "mf" || form.type === "sip";
   const isStockSearch = form.type === "stock" || form.type === "etf";
@@ -342,14 +395,14 @@ const InvestmentForm = ({ onSubmit, onCancel, existing, prefillAmount }) => {
   // ── Submit ──────────────────────────────────────────
   function handleSubmit(e) {
     e.preventDefault();
-    const createdAt = existing?.createdAt ?? new Date().toISOString();
+    const createdAt = editTarget?.createdAt ?? new Date().toISOString();
     // MF has no Start date field — fall back to createdAt so date filters
     // and the ledger's "since" line still have something to anchor on.
     const startDate =
       form.startDate ||
       (form.type === "mf" ? createdAt : "");
     const payload = {
-      id: existing?.id ?? crypto.randomUUID(),
+      id: editTarget?.id ?? crypto.randomUUID(),
       createdAt,
       name: form.name.trim(),
       type: form.type,
@@ -361,6 +414,8 @@ const InvestmentForm = ({ onSubmit, onCancel, existing, prefillAmount }) => {
 
     if (form.type !== "sip") {
       payload.affectsBalance = !!form.affectsBalance;
+      payload.accountId =
+        form.affectsBalance && form.accountId ? form.accountId : undefined;
     }
 
     if (subtype === "unit") {
@@ -374,7 +429,7 @@ const InvestmentForm = ({ onSubmit, onCancel, existing, prefillAmount }) => {
         payload.monthlyAmount = parseFloat(form.monthlyAmount) || 0;
         if (form.sipDay) payload.sipDay = parseInt(form.sipDay);
       }
-      if (form.ticker) payload.priceUpdatedAt = existing?.priceUpdatedAt;
+      if (form.ticker) payload.priceUpdatedAt = editTarget?.priceUpdatedAt;
     } else if (subtype === "fixed") {
       payload.investedAmount = parseFloat(form.investedAmount);
       if (form.type === "lic") {
@@ -400,6 +455,8 @@ const InvestmentForm = ({ onSubmit, onCancel, existing, prefillAmount }) => {
         }
         if (form.maturityAmount)
           payload.maturityAmount = parseFloat(form.maturityAmount);
+        if (form.lastPremiumDate)
+          payload.lastPremiumDate = form.lastPremiumDate;
         // Mark current-month payment status (only meaningful when the
         // current calendar month is one of the policy's premium months).
         const now = new Date();
@@ -428,6 +485,8 @@ const InvestmentForm = ({ onSubmit, onCancel, existing, prefillAmount }) => {
         payload.tenureMonths = parseInt(form.tenureMonths);
         if (form.maturityAmount)
           payload.maturityAmount = parseFloat(form.maturityAmount);
+        if (form.lastPremiumDate)
+          payload.lastPremiumDate = form.lastPremiumDate;
       } else {
         payload.tenureMonths = parseInt(form.tenureMonths);
         payload.interestRate = parseFloat(form.interestRate);
@@ -435,6 +494,19 @@ const InvestmentForm = ({ onSubmit, onCancel, existing, prefillAmount }) => {
     } else {
       payload.investedAmount = parseFloat(form.investedAmount);
       payload.currentValue = parseFloat(form.currentValue);
+    }
+
+    if (typeHasGrace(payload.type)) {
+      const def = getGraceDefault(payload.type);
+      payload.gracePeriod = {
+        value: parseFloat(form.graceValue) || def?.value || 0,
+        unit: form.graceUnit || def?.unit || "days",
+      };
+      payload.latePenalty = {
+        enabled: !!form.penaltyEnabled,
+        mode: form.penaltyMode || "flat",
+        amount: parseFloat(form.penaltyAmount) || 0,
+      };
     }
 
     onSubmit(payload);
@@ -472,11 +544,11 @@ const InvestmentForm = ({ onSubmit, onCancel, existing, prefillAmount }) => {
   const activeUserType = form.type && !isBuiltInKey(form.type)
     ? userTypes.find((t) => t.key === form.type)
     : null;
-  if (activeUserType) {
+  if (activeUserType && !showExistingChooser) {
     return (
       <DynamicInvestmentForm
         schema={activeUserType}
-        existing={existing}
+        existing={editTarget}
         prefillAmount={prefillAmount}
         onSubmit={onSubmit}
         onCancel={onCancel}
@@ -487,7 +559,7 @@ const InvestmentForm = ({ onSubmit, onCancel, existing, prefillAmount }) => {
   return (
     <form className="expense-form" onSubmit={handleSubmit}>
       {/* ── Type selector (Add only) ── */}
-      {!existing && (
+      {!editTarget && !prefillType && (
         <>
           <p className="inv-form-section-label">Investment type</p>
           <div className="inv-type-grid">
@@ -520,6 +592,8 @@ const InvestmentForm = ({ onSubmit, onCancel, existing, prefillAmount }) => {
                     }
                   }
                   setSingletonBlock(null);
+                  setEditTarget(null);
+                  setForceCreate(false);
                   // User-added types short-circuit the built-in form — just
                   // set the type and re-render; the activeUserType branch
                   // above will hand off to DynamicInvestmentForm.
@@ -532,7 +606,11 @@ const InvestmentForm = ({ onSubmit, onCancel, existing, prefillAmount }) => {
                     prefillAmount && info?.subtype !== "unit"
                       ? { investedAmount: String(prefillAmount) }
                       : {};
-                  setForm({ ...EMPTY_FORM, type: t.key, ...seeded });
+                  const gDef = getGraceDefault(t.key);
+                  const graceSeed = gDef
+                    ? { graceValue: String(gDef.value), graceUnit: gDef.unit }
+                    : {};
+                  setForm({ ...EMPTY_FORM, type: t.key, ...graceSeed, ...seeded });
                   setFetchMsg(null);
                   setMfResults([]);
                   setStockResults([]);
@@ -550,7 +628,13 @@ const InvestmentForm = ({ onSubmit, onCancel, existing, prefillAmount }) => {
               <button
                 type="button"
                 className="inv-type-btn inv-type-btn--add-more"
-                onClick={() => navigate("/Preferences#investmentTypes")}
+                onClick={() => {
+                  onCancel();
+                  setTimeout(
+                    () => navigate("/Preferences#investmentTypes"),
+                    200,
+                  );
+                }}
                 title="Enable more investment types in Preferences"
               >
                 <i className="fa-solid fa-plus" />
@@ -558,23 +642,6 @@ const InvestmentForm = ({ onSubmit, onCancel, existing, prefillAmount }) => {
               </button>
             )}
           </div>
-          {/* Dedicated "Build your own" action — sits below the type
-              grid so it doesn't compete with the actual type tiles for
-              attention. Styled as a clear secondary button rather than
-              a tile (avoids being confused for a real type) or a hint
-              link (which was too understated for what's a substantial
-              flow — it opens the schema designer). */}
-          <button
-            type="button"
-            className="inv-type-build-btn"
-            onClick={() => setDesignerOpen(true)}
-          >
-            <i className="fa-solid fa-wand-magic-sparkles" />
-            <span>Build your own type</span>
-            <span className="inv-type-build-btn-sub">
-              Don't see what you need? Design a custom schema.
-            </span>
-          </button>
           {singletonBlock && (
             <div className="inv-singleton-block" role="alert">
               <i className="fa-solid fa-circle-info" />
@@ -593,32 +660,8 @@ const InvestmentForm = ({ onSubmit, onCancel, existing, prefillAmount }) => {
         </>
       )}
 
-      {designerOpen && (
-        <InvestmentTypeDesigner
-          onClose={() => setDesignerOpen(false)}
-          onCreated={(schema) => {
-            // Auto-enable + auto-select the freshly-created type so the
-            // user lands in its DynamicInvestmentForm immediately rather
-            // than having to bounce to Preferences to flip the toggle.
-            if (!enabledSet.has(schema.key)) {
-              dispatch(
-                persistSetPreference("enabledInvestmentTypes", [
-                  ...enabledTypeKeys,
-                  schema.key,
-                ]),
-              );
-            }
-            setForm({ ...EMPTY_FORM, type: schema.key });
-            setFetchMsg(null);
-            setMfResults([]);
-            setStockResults([]);
-            setStockSearchErr(null);
-          }}
-        />
-      )}
-
       {/* ── Type locked (Edit only) ── */}
-      {existing && form.type && typeInfo && (
+      {editTarget && form.type && typeInfo && (
         <div className="inv-form-type-locked">
           <span
             className="inv-type-badge"
@@ -635,7 +678,46 @@ const InvestmentForm = ({ onSubmit, onCancel, existing, prefillAmount }) => {
         </div>
       )}
 
-      {form.type && (
+      {showExistingChooser && (
+        <div className="inv-existing-chooser">
+          <p className="inv-form-section-label">
+            Existing {typeInfo?.label ?? "investments"}
+          </p>
+          {activeOfSelectedType.map((inv) => (
+            <button
+              key={inv.id}
+              type="button"
+              className="inv-existing-row"
+              onClick={() => {
+                if (form.type === "lic" && onPayExisting) {
+                  onPayExisting(inv);
+                  return;
+                }
+                setEditTarget(inv);
+                setForm(formFromInvestment(inv));
+              }}
+            >
+              <span className="inv-existing-row-name">{inv.name}</span>
+              <span className="inv-existing-row-cta">
+                {form.type === "lic" && onPayExisting
+                  ? "Pay premium"
+                  : "Add / update"}
+                <i className="fa-solid fa-arrow-right" />
+              </span>
+            </button>
+          ))}
+          <button
+            type="button"
+            className="inv-existing-create"
+            onClick={() => setForceCreate(true)}
+          >
+            <i className="fa-solid fa-plus" />
+            <span>Create new {typeInfo?.label ?? "investment"}</span>
+          </button>
+        </div>
+      )}
+
+      {form.type && !showExistingChooser && (
         <>
           {/* ── MF fund search (name field doubles as search) ── */}
           {isMF && (
@@ -813,17 +895,13 @@ const InvestmentForm = ({ onSubmit, onCancel, existing, prefillAmount }) => {
                       label="SIP date (day)"
                     />
                   </div>
-                  <div className="field">
-                    <input
-                      name="startDate"
-                      type="date"
-                      value={form.startDate}
-                      onChange={(e) => { set("startDate", e.target.value); setFetchMsg(null); }}
-                      required
-                      placeholder=" "
-                    />
-                    <label>SIP start date</label>
-                  </div>
+                  <DateField
+                    name="startDate"
+                    value={form.startDate}
+                    onChange={(e) => { set("startDate", e.target.value); setFetchMsg(null); }}
+                    label="SIP start date"
+                    required
+                  />
                 </>
               ) : form.type === "mf" ? (
                 <>
@@ -995,17 +1073,29 @@ const InvestmentForm = ({ onSubmit, onCancel, existing, prefillAmount }) => {
                 <label>Tenure (months)</label>
               </div>
               {form.type === "plan" && (
-                <div className="field">
-                  <input
-                    name="maturityAmount"
-                    type="number"
-                    inputMode="decimal"
-                    value={form.maturityAmount}
-                    onChange={(e) => set("maturityAmount", e.target.value)}
-                    placeholder=" "
+                <>
+                  <div className="field">
+                    <input
+                      name="maturityAmount"
+                      type="number"
+                      inputMode="decimal"
+                      value={form.maturityAmount}
+                      onChange={(e) => set("maturityAmount", e.target.value)}
+                      placeholder=" "
+                    />
+                    <label>Maturity amount (₹) — optional</label>
+                  </div>
+                  <DateField
+                    name="lastPremiumDate"
+                    value={form.lastPremiumDate}
+                    onChange={(e) => set("lastPremiumDate", e.target.value)}
+                    label="Last contribution date"
                   />
-                  <label>Maturity amount (₹) — optional</label>
-                </div>
+                  <p className="inv-field-hint">
+                    For limited-pay plans, contributions stop before maturity.
+                    Leave blank if you contribute for the full tenure.
+                  </p>
+                </>
               )}
             </>
           )}
@@ -1060,29 +1150,32 @@ const InvestmentForm = ({ onSubmit, onCancel, existing, prefillAmount }) => {
                   <label>Policy number</label>
                 </div>
                 <div className="sol-form-row">
-                  <div className="field">
-                    <input
-                      name="startDate"
-                      type="date"
-                      value={form.startDate}
-                      onChange={(e) => set("startDate", e.target.value)}
-                      required
-                      placeholder=" "
-                    />
-                    <label>Start date</label>
-                  </div>
-                  <div className="field">
-                    <input
-                      name="maturityDate"
-                      type="date"
-                      value={form.maturityDate}
-                      onChange={(e) => set("maturityDate", e.target.value)}
-                      required
-                      placeholder=" "
-                    />
-                    <label>Maturity date</label>
-                  </div>
+                  <DateField
+                    name="startDate"
+                    value={form.startDate}
+                    onChange={(e) => set("startDate", e.target.value)}
+                    label="Start date"
+                    required
+                  />
+                  <DateField
+                    name="maturityDate"
+                    value={form.maturityDate}
+                    onChange={(e) => set("maturityDate", e.target.value)}
+                    label="Maturity date"
+                    required
+                  />
                 </div>
+                <DateField
+                  name="lastPremiumDate"
+                  value={form.lastPremiumDate}
+                  onChange={(e) => set("lastPremiumDate", e.target.value)}
+                  label="Last premium payable date"
+                  max={form.maturityDate || undefined}
+                />
+                <p className="inv-field-hint">
+                  For limited-premium policies, premiums stop before maturity.
+                  Leave blank if you pay until the maturity date.
+                </p>
                 <div className="sol-form-row">
                   <div className="field">
                     <input
@@ -1096,28 +1189,27 @@ const InvestmentForm = ({ onSubmit, onCancel, existing, prefillAmount }) => {
                     />
                     <label>Premium amount (₹)</label>
                   </div>
-                  <div className="field">
-                    <select
-                      name="frequency"
-                      value={form.frequency}
-                      onChange={(e) => {
-                        const next = parseInt(e.target.value);
-                        set("frequency", next);
-                        if (next === 12) {
-                          set("premiumMonths", [1,2,3,4,5,6,7,8,9,10,11,12]);
-                        } else if (form.premiumMonths.length > next) {
-                          set("premiumMonths", form.premiumMonths.slice(0, next));
-                        }
-                      }}
-                      required
-                    >
-                      <option value={1}>Yearly (1×/yr)</option>
-                      <option value={2}>Half-yearly (2×/yr)</option>
-                      <option value={4}>Quarterly (4×/yr)</option>
-                      <option value={12}>Monthly (12×/yr)</option>
-                    </select>
-                    <label>Premium frequency</label>
-                  </div>
+                  <OptionField
+                    name="frequency"
+                    value={form.frequency}
+                    onChange={(e) => {
+                      const next = parseInt(e.target.value);
+                      set("frequency", next);
+                      if (next === 12) {
+                        set("premiumMonths", [1,2,3,4,5,6,7,8,9,10,11,12]);
+                      } else if (form.premiumMonths.length > next) {
+                        set("premiumMonths", form.premiumMonths.slice(0, next));
+                      }
+                    }}
+                    label="Premium frequency"
+                    required
+                    options={[
+                      { value: 1, label: "Yearly (1×/yr)" },
+                      { value: 2, label: "Half-yearly (2×/yr)" },
+                      { value: 4, label: "Quarterly (4×/yr)" },
+                      { value: 12, label: "Monthly (12×/yr)" },
+                    ]}
+                  />
                 </div>
 
                 <div className="lic-months-wrap">
@@ -1227,32 +1319,24 @@ const InvestmentForm = ({ onSubmit, onCancel, existing, prefillAmount }) => {
           {form.type !== "sip" &&
             form.type !== "mf" &&
             form.type !== "lic" && (
-              <div className="field">
-                <input
-                  name="startDate"
-                  type="date"
-                  value={form.startDate}
-                  onChange={(e) => set("startDate", e.target.value)}
-                  required
-                  placeholder=" "
-                />
-                <label>Start date</label>
-              </div>
+              <DateField
+                name="startDate"
+                value={form.startDate}
+                onChange={(e) => set("startDate", e.target.value)}
+                label="Start date"
+                required
+              />
             )}
 
           {categoryOptions && (
-            <div className="field">
-              <select
-                value={form.category}
-                onChange={(e) => set("category", e.target.value)}
-              >
-                <option value=""></option>
-                {categoryOptions.map((opt) => (
-                  <option key={opt} value={opt}>{opt}</option>
-                ))}
-              </select>
-              <label>{categoryLabel}</label>
-            </div>
+            <OptionField
+              name="category"
+              value={form.category}
+              onChange={(e) => set("category", e.target.value)}
+              label={categoryLabel}
+              placeholder=""
+              options={categoryOptions}
+            />
           )}
 
           <div className="field">
@@ -1267,6 +1351,96 @@ const InvestmentForm = ({ onSubmit, onCancel, existing, prefillAmount }) => {
             />
             <label>Notes (optional)</label>
           </div>
+
+          {typeHasGrace(form.type) && (
+            <div className="inv-grace-section">
+              <p className="inv-grace-msg">
+                <i className="fa-solid fa-circle-info" />
+                <span>
+                  {typeInfo?.label} has a grace period of{" "}
+                  <strong>
+                    {graceLabel({
+                      value:
+                        form.graceValue ||
+                        getGraceDefault(form.type)?.value,
+                      unit: form.graceUnit,
+                    })}
+                  </strong>{" "}
+                  after each due date before a missed contribution is treated
+                  as lapsed. Change it below.
+                </span>
+              </p>
+              <div className="inv-grace-row">
+                <div className="field inv-grace-value">
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min="0"
+                    value={form.graceValue}
+                    onChange={(e) => set("graceValue", e.target.value)}
+                    placeholder=" "
+                  />
+                  <label>Grace period</label>
+                </div>
+                <OptionField
+                  name="graceUnit"
+                  className="inv-grace-unit"
+                  value={form.graceUnit}
+                  onChange={(e) => set("graceUnit", e.target.value)}
+                  label="Unit"
+                  options={[
+                    { value: "days", label: "days" },
+                    { value: "months", label: "months" },
+                    { value: "instalments", label: "missed instalments" },
+                  ]}
+                />
+              </div>
+              <label className="inv-balance-toggle">
+                <input
+                  type="checkbox"
+                  checked={!!form.penaltyEnabled}
+                  onChange={(e) => set("penaltyEnabled", e.target.checked)}
+                />
+                <span className="inv-balance-toggle-text">
+                  Charge a late penalty past grace
+                  <span className="inv-balance-toggle-sub">
+                    Added to a catch-up payment when you record an overdue
+                    instalment
+                  </span>
+                </span>
+              </label>
+              {form.penaltyEnabled && (
+                <div className="inv-grace-row">
+                  <OptionField
+                    name="penaltyMode"
+                    className="inv-grace-unit"
+                    value={form.penaltyMode}
+                    onChange={(e) => set("penaltyMode", e.target.value)}
+                    label="Penalty type"
+                    options={[
+                      { value: "flat", label: "Flat ₹" },
+                      { value: "percent", label: "% of instalment" },
+                    ]}
+                  />
+                  <div className="field inv-grace-value">
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      min="0"
+                      value={form.penaltyAmount}
+                      onChange={(e) => set("penaltyAmount", e.target.value)}
+                      placeholder=" "
+                    />
+                    <label>
+                      {form.penaltyMode === "percent"
+                        ? "Percent"
+                        : "Amount (₹)"}
+                    </label>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {form.type !== "sip" && (
             <label className="inv-balance-toggle">
@@ -1286,12 +1460,24 @@ const InvestmentForm = ({ onSubmit, onCancel, existing, prefillAmount }) => {
             </label>
           )}
 
+          {form.type !== "sip" &&
+            form.affectsBalance &&
+            multiBankEnabled &&
+            accounts.length > 0 && (
+              <BankChipSelector
+                accounts={accounts}
+                value={form.accountId}
+                onChange={(id) => set("accountId", id)}
+                label="Deducted from"
+              />
+            )}
+
           <div className="form-actions">
             <button type="button" className="cancel-button" onClick={onCancel}>
               Cancel
             </button>
             <button type="submit" className="generic-button">
-              {existing ? "Update" : "Add Investment"}
+              {editTarget ? "Update" : "Add Investment"}
             </button>
           </div>
         </>
@@ -1305,6 +1491,8 @@ InvestmentForm.propTypes = {
   onCancel: PropTypes.func.isRequired,
   existing: PropTypes.object,
   prefillAmount: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+  prefillType: PropTypes.string,
+  onPayExisting: PropTypes.func,
 };
 
 export default memo(InvestmentForm);

@@ -1,5 +1,6 @@
 import { useMemo, useState, useEffect } from "react";
 import { useSelector, useDispatch } from "react-redux";
+import { Link } from "react-router-dom";
 import FilterBar from "../components/FilterBar";
 import BalanceCarousel from "../components/BalanceCarousel";
 import MoneyFlowSankey from "../components/MoneyFlowSankey";
@@ -34,6 +35,7 @@ import {
   getThisMonthCategorySpend,
 } from "../utils/dashboardUtils";
 import { getPortfolioSummary } from "../utils/investmentUtils";
+import { subscriptionTotals } from "../utils/subscriptionUtils";
 import "../styles/dashboard.css";
 
 // Observe data-theme changes so charts re-colour on toggle
@@ -164,6 +166,13 @@ function InsightGrid({ transactions, allTransactions }) {
     () => getTransactionFrequency(transactions),
     [transactions],
   );
+  const subscriptions = useSelector(
+    (state) => state.transactions.transactionData?.subscriptions ?? [],
+  );
+  const subTotals = useMemo(
+    () => subscriptionTotals(subscriptions),
+    [subscriptions],
+  );
 
   return (
     <div className="insight-grid">
@@ -210,6 +219,16 @@ function InsightGrid({ transactions, allTransactions }) {
           {freq.total} expenses over {freq.days} days
         </p>
       </div>
+
+      {subTotals.count > 0 && (
+        <Link to="/Subscriptions" className="insight-card insight-card--link">
+          <p className="insight-label">Subscriptions</p>
+          <p className="insight-value">{INR.format(subTotals.yearly)}/yr</p>
+          <p className="insight-sub">
+            {INR.format(subTotals.monthly)}/mo across {subTotals.count} active
+          </p>
+        </Link>
+      )}
     </div>
   );
 }

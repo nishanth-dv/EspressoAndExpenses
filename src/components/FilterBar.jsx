@@ -28,11 +28,32 @@ function flattenOptions(options) {
   return options.flatMap((o) => (o.group ? o.options : [o]));
 }
 
-const FilterBar = ({ extraFilters = [], scope = "transactions" }) => {
+const FilterBar = ({
+  extraFilters = [],
+  scope = "transactions",
+  searchValue = "",
+  onSearchChange,
+  searchPlaceholder = "Search transactions",
+}) => {
   const dispatch = useDispatch();
+  const [searchOpen, setSearchOpen] = useState(false);
+  // Keep the field mounted briefly while it animates shut so closing mirrors
+  // the open transition instead of snapping away.
+  const [searchClosing, setSearchClosing] = useState(false);
+  const closeSearch = () => {
+    setSearchClosing(true);
+    window.setTimeout(() => {
+      setSearchOpen(false);
+      setSearchClosing(false);
+    }, 240);
+  };
+  const searchable = typeof onSearchChange === "function";
   const filter = useSelector((state) => state.filter[scope]);
   const accounts = useSelector(
     (state) => state.transactions.transactionData?.accounts ?? [],
+  );
+  const cards = useSelector(
+    (state) => state.transactions.transactionData?.cards ?? [],
   );
   const multiBankEnabled = useSelector(
     (state) =>
@@ -44,6 +65,13 @@ const FilterBar = ({ extraFilters = [], scope = "transactions" }) => {
   const selectedAccount =
     bankFilterAvailable && filter.accountId
       ? accounts.find((a) => a.id === filter.accountId)
+      : null;
+  // Credit-card filtering is independent of multi-bank — it's available
+  // whenever the user has cards, since card spends exist either way.
+  const cardFilterAvailable = scope === "transactions" && cards.length > 0;
+  const selectedCard =
+    cardFilterAvailable && filter.cardId
+      ? cards.find((c) => c.id === filter.cardId)
       : null;
   const [open, setOpen] = useState(false);
   const wrapRef = useRef(null);
@@ -81,6 +109,11 @@ const FilterBar = ({ extraFilters = [], scope = "transactions" }) => {
   });
 
   const chips = [
+    // Active search shows as a removable chip when the input is collapsed —
+    // same affordance as every other filter, so clearing it is consistent.
+    ...(searchable && searchValue && !searchOpen
+      ? [{ key: "search", label: `“${searchValue}”`, onRemove: () => onSearchChange("") }]
+      : []),
     ...(periodLabel
       ? [{ key: "period", label: periodLabel, onRemove: () => dispatch(setFilter({ scope, mode: "all", from: "", to: "" })) }]
       : []),
@@ -93,6 +126,15 @@ const FilterBar = ({ extraFilters = [], scope = "transactions" }) => {
           },
         ]
       : []),
+    ...(selectedCard
+      ? [
+          {
+            key: "card",
+            label: selectedCard.name,
+            onRemove: () => dispatch(setFilter({ scope, cardId: "" })),
+          },
+        ]
+      : []),
     ...extraChips,
   ];
 
@@ -101,24 +143,75 @@ const FilterBar = ({ extraFilters = [], scope = "transactions" }) => {
   return (
     <div className="fbar-wrap" ref={wrapRef}>
       <div className="fbar">
-        {chips.map((chip) => (
-          <button key={chip.key} className="fbar-chip" onClick={chip.onRemove}>
-            {chip.label}
-            <i className="fa-solid fa-xmark fbar-chip-x" />
-          </button>
-        ))}
+        {searchable && searchOpen ? (
+          // Search takes over the whole bar: chips + Filters + Export are
+          // hidden and the field animates out to full width.
+          <div className={`fbar-search${searchClosing ? " fbar-search--closing" : ""}`}>
+            <i className="fa-solid fa-magnifying-glass fbar-search-icon" />
+            <input
+              className="fbar-search-input"
+              type="text"
+              inputMode="search"
+              enterKeyHint="search"
+              autoFocus
+              value={searchValue}
+              placeholder={searchPlaceholder}
+              onChange={(e) => onSearchChange(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Escape") closeSearch();
+              }}
+              onBlur={() => {
+                if (!searchValue) closeSearch();
+              }}
+            />
+            <button
+              type="button"
+              className="fbar-search-clear"
+              onClick={() => {
+                onSearchChange("");
+                closeSearch();
+              }}
+              aria-label="Clear search"
+            >
+              <i className="fa-solid fa-xmark" />
+            </button>
+          </div>
+        ) : (
+          <>
+            {chips.map((chip) => (
+              <button
+                key={chip.key}
+                className="fbar-chip"
+                onClick={chip.onRemove}
+              >
+                {chip.label}
+                <i className="fa-solid fa-xmark fbar-chip-x" />
+              </button>
+            ))}
 
-        <div className="fbar-spacer" />
+            <div className="fbar-spacer" />
 
-        <button
-          className={`fbar-btn${open ? " fbar-btn--open" : ""}${activeCount ? " fbar-btn--active" : ""}`}
-          onClick={() => setOpen((o) => !o)}
-        >
-          <i className="fa-solid fa-sliders" />
-          Filters{activeCount > 0 && ` (${activeCount})`}
-        </button>
+            {searchable && (
+              <button
+                className={`fbar-btn fbar-icon-btn${searchValue ? " fbar-btn--active" : ""}`}
+                onClick={() => setSearchOpen(true)}
+                aria-label="Search transactions"
+              >
+                <i className="fa-solid fa-magnifying-glass" />
+              </button>
+            )}
 
-        <ExportButton scope={scope} />
+            <button
+              className={`fbar-btn${open ? " fbar-btn--open" : ""}${activeCount ? " fbar-btn--active" : ""}`}
+              onClick={() => setOpen((o) => !o)}
+            >
+              <i className="fa-solid fa-sliders" />
+              Filters{activeCount > 0 && ` (${activeCount})`}
+            </button>
+
+            <ExportButton scope={scope} />
+          </>
+        )}
       </div>
 
       {open && (
@@ -174,7 +267,7 @@ const FilterBar = ({ extraFilters = [], scope = "transactions" }) => {
                     key={a.id}
                     className={`fbar-pill${filter.accountId === a.id ? " fbar-pill--active" : ""}`}
                     onClick={() =>
-                      dispatch(setFilter({ scope, accountId: a.id }))
+                      dispatch(setFilter({ scope, accountId: a.id, cardId: "" }))
                     }
                     style={
                       filter.accountId === a.id && a.color
@@ -183,6 +276,31 @@ const FilterBar = ({ extraFilters = [], scope = "transactions" }) => {
                     }
                   >
                     {a.bank}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+
+          {cardFilterAvailable && (
+            <>
+              <p className="fbar-section-label">Credit cards</p>
+              <div className="fbar-pill-row">
+                <button
+                  className={`fbar-pill${!filter.cardId ? " fbar-pill--active" : ""}`}
+                  onClick={() => dispatch(setFilter({ scope, cardId: "" }))}
+                >
+                  All
+                </button>
+                {cards.map((c) => (
+                  <button
+                    key={c.id}
+                    className={`fbar-pill${filter.cardId === c.id ? " fbar-pill--active" : ""}`}
+                    onClick={() =>
+                      dispatch(setFilter({ scope, cardId: c.id, accountId: "" }))
+                    }
+                  >
+                    {c.name}
                   </button>
                 ))}
               </div>
@@ -276,6 +394,9 @@ const FilterBar = ({ extraFilters = [], scope = "transactions" }) => {
 FilterBar.propTypes = {
   extraFilters: PropTypes.array,
   scope: PropTypes.oneOf(["transactions", "investments"]),
+  searchValue: PropTypes.string,
+  onSearchChange: PropTypes.func,
+  searchPlaceholder: PropTypes.string,
 };
 
 export default memo(FilterBar);

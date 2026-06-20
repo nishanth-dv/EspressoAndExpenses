@@ -28,6 +28,7 @@ const Expense = () => {
 
   const [typeFilter, setTypeFilter]         = useState("all");
   const [categoryFilter, setCategoryFilter] = useState([]);
+  const [search, setSearch]                 = useState("");
 
   const dateFiltered = useMemo(
     () => applyFilter(allTransactions, filter),
@@ -40,8 +41,15 @@ const Expense = () => {
       result = result.filter((t) => t.transactionType === typeFilter);
     if (categoryFilter.length > 0)
       result = result.filter((t) => categoryFilter.includes(t.category));
+    const q = search.trim().toLowerCase();
+    if (q)
+      result = result.filter((t) =>
+        `${t.name ?? ""} ${t.source ?? ""} ${t.description ?? ""} ${t.category ?? ""} ${t.paymentMode ?? ""} ${t.amount ?? ""}`
+          .toLowerCase()
+          .includes(q),
+      );
     return result;
-  }, [dateFiltered, typeFilter, categoryFilter]);
+  }, [dateFiltered, typeFilter, categoryFilter, search]);
 
   const categoryOptions = useMemo(() => {
     if (typeFilter === "expense")
@@ -93,13 +101,20 @@ const Expense = () => {
           <StatementImportButton />
         </div>
       )}
-      <FilterBar scope="transactions" extraFilters={extraFilters} />
+      <FilterBar
+        scope="transactions"
+        extraFilters={extraFilters}
+        searchValue={search}
+        onSearchChange={setSearch}
+      />
       <TransactionList
         transactions={transactions}
         emptyMessage={
-          label
-            ? `No transactions found for ${label}.`
-            : "No transactions yet. Tap Add Expense or Add Income to get started."
+          search.trim()
+            ? `No transactions match “${search.trim()}”.`
+            : label
+              ? `No transactions found for ${label}.`
+              : "No transactions yet. Tap Add Expense or Add Income to get started."
         }
       />
     </>

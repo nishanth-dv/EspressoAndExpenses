@@ -16,68 +16,105 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 18px;
+  gap: 20px;
 }
 
-/* ── Blades ── */
+/* ── Segmented tick ring ──
+   Thin rounded ticks around a circle; each fades continuously so a bright
+   point glides around with a trailing comet fade. Flat and monochrome-warm —
+   no shadow or glow — for a clean fintech read. */
 
-.spnr-blades {
-  transform-origin: 22px 22px;
-  animation: spnr-tick 1.2s steps(12, end) infinite;
+.tick-ring {
+  display: block;
 }
 
-.app-spinner.paused .spnr-blades {
+.tick {
+  fill: #d9a066;
+  opacity: 0.15;
+  animation: tick-fade 1.2s linear infinite;
+}
+
+.app-spinner.paused .tick {
   animation-play-state: paused;
 }
 
-/* ── Label ── */
+/* ── Label + smooth dots ── */
 
 .spnr-label {
   margin: 0;
+  display: inline-flex;
+  align-items: center;
   font-size: 1rem;
   font-family: "Smooch Sans", sans-serif;
   font-weight: 600;
-  letter-spacing: 0.15em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.5);
+  color: rgba(255, 255, 255, 0.62);
   user-select: none;
 }
 
-.ldr-dots::after {
-  content: "";
-  animation: ldr-dots 1.2s steps(3, end) infinite;
+.spnr-dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  /* Reserve space so the dots animate in place and never nudge the word. */
+  margin-left: 7px;
+}
+
+.spnr-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: currentColor;
+  opacity: 0.25;
+  animation: spnr-dot 1.4s ease-in-out infinite;
+}
+
+.spnr-dot:nth-child(2) {
+  animation-delay: 0.18s;
+}
+
+.spnr-dot:nth-child(3) {
+  animation-delay: 0.36s;
+}
+
+.app-spinner.paused .spnr-dot {
+  animation-play-state: paused;
 }
 
 /* ── Keyframes ── */
 
-@keyframes spnr-tick {
-  from {
-    transform: rotate(0deg);
+@keyframes tick-fade {
+  0% {
+    opacity: 1;
   }
-  to {
-    transform: rotate(360deg);
+  100% {
+    opacity: 0.15;
   }
 }
 
-@keyframes ldr-dots {
-  0% {
-    content: "";
-  }
-  33% {
-    content: ".";
-  }
-  66% {
-    content: "..";
-  }
+@keyframes spnr-dot {
+  0%,
+  60%,
   100% {
-    content: "...";
+    opacity: 0.25;
+    transform: scale(0.8);
+  }
+  30% {
+    opacity: 1;
+    transform: scale(1);
   }
 }
 
 /* ── Accessibility ── */
 
 @media (prefers-reduced-motion: reduce) {
-  .spnr-blades {
+  .tick {
     animation: none !important;
+    opacity: 0.5;
+  }
+  .spnr-dot {
+    animation: none !important;
+    opacity: 0.6;
   }
 }

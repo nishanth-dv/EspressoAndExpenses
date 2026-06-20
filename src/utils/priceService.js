@@ -130,11 +130,7 @@ async function fetchYahooPrice(ticker) {
   return price;
 }
 
-export async function searchStockTickers(query, indiaOnly = false) {
-  if (!query || query.trim().length < 2) return [];
-
-  if (indiaOnly) return searchNSE(query);
-
+async function searchYahooQuotes(query) {
   const path = `/v1/finance/search?q=${encodeURIComponent(query.trim())}&quotesCount=10&newsCount=0`;
   let res;
   try {
@@ -153,6 +149,18 @@ export async function searchStockTickers(query, indiaOnly = false) {
       name: q.shortname || q.longname || q.symbol,
       exchange: q.exchDisp || q.exchange,
     }));
+}
+
+export async function searchStockTickers(query, indiaOnly = false) {
+  if (!query || query.trim().length < 2) return [];
+
+  if (indiaOnly) {
+    const local = searchNSE(query);
+    if (local.length > 0) return local;
+    return searchYahooQuotes(query);
+  }
+
+  return searchYahooQuotes(query);
 }
 
 // ── SIP — historical NAV computation ─────────────────

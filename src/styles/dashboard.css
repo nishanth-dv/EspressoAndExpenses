@@ -1,6 +1,6 @@
 .dashboard {
   padding: 10px;
-  padding-bottom: 72px;
+  padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px));
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -101,6 +101,18 @@
   border: 1px solid var(--surface-border);
   border-radius: 12px;
   padding: 14px;
+}
+
+.insight-card--link {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.18s ease, transform 0.18s ease;
+}
+
+.insight-card--link:hover {
+  border-color: #5b8dee;
+  transform: translateY(-2px);
 }
 
 .insight-label {

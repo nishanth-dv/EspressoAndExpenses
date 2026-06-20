@@ -8,12 +8,22 @@
 //   • "compact"  — icon + short label, fits a filter-bar row
 //   • "card"     — wider tile with subtitle, for dashboard sections
 
-import { memo, useState } from "react";
+import { memo, lazy, Suspense, useState } from "react";
 import PropTypes from "prop-types";
-import StatementImportModal from "./StatementImportModal";
+
+// The import modal drags in the statement parsers (xlsx + pdfjs, ~2 MB of
+// worker code). Lazy-load it and only mount once the user opens it, so none
+// of that ships until a statement import is actually started.
+const StatementImportModal = lazy(() => import("./StatementImportModal"));
 
 const StatementImportButton = ({ variant = "compact", className }) => {
   const [open, setOpen] = useState(false);
+
+  const modal = open && (
+    <Suspense fallback={null}>
+      <StatementImportModal open={open} onClose={() => setOpen(false)} />
+    </Suspense>
+  );
 
   if (variant === "card") {
     return (
@@ -34,7 +44,7 @@ const StatementImportButton = ({ variant = "compact", className }) => {
           </span>
           <i className="fa-solid fa-chevron-right stmt-launch-card-chev" />
         </button>
-        <StatementImportModal open={open} onClose={() => setOpen(false)} />
+        {modal}
       </>
     );
   }
@@ -50,7 +60,7 @@ const StatementImportButton = ({ variant = "compact", className }) => {
         <i className="fa-solid fa-file-arrow-up" />
         <span>Import statement</span>
       </button>
-      <StatementImportModal open={open} onClose={() => setOpen(false)} />
+      {modal}
     </>
   );
 };

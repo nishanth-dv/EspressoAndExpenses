@@ -1,0 +1,84 @@
+/* Styles for the shared DayPicker component (Forms/DayPicker.jsx).
+   Lives here — and is imported by the component — so the picker is styled
+   wherever it's used (Solvency, Subscriptions, the global Add footer modal),
+   not only on pages that happen to load solvency.css. */
+
+.sol-day-picker {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.sol-day-trigger {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  padding: 8px 10px 8px 18px;
+  border: 1px solid var(--field-border);
+  background: var(--field-bg);
+  color: var(--field-text);
+  border-radius: 8px;
+  font-family: "Smooch Sans", sans-serif;
+  font-size: 17px;
+  font-weight: 500;
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+}
+
+.sol-day-trigger--open {
+  border-color: var(--surface-border-open, var(--bar-bg));
+}
+
+.sol-day-trigger-val {
+  flex: 1;
+  font-size: 17px;
+  font-weight: 500;
+  color: var(--field-text);
+}
+
+.sol-day-required {
+  color: var(--amount-expense);
+}
+
+.sol-day-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 5px;
+  width: 100%;
+  min-width: 0;
+  margin-top: 6px;
+}
+
+.sol-day-btn {
+  width: 100%;
+  aspect-ratio: 1;
+  box-sizing: border-box;
+  border: 1px solid var(--field-border);
+  background: var(--field-bg);
+  color: var(--field-text);
+  border-radius: 8px;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+  transition:
+    background 0.1s,
+    border-color 0.1s,
+    color 0.1s;
+}
+
+.sol-day-btn:hover {
+  background: var(--surface-active);
+  border-color: var(--surface-border-open);
+}
+
+.sol-day-btn--active {
+  background: var(--bar-bg);
+  color: var(--bar-text);
+  border-color: transparent;
+}

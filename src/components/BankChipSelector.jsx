@@ -1,4 +1,4 @@
-import { memo } from "react";
+import { memo, useState } from "react";
 import PropTypes from "prop-types";
 
 // Horizontal chip strip — one chip per tracked bank account, plus an
@@ -11,6 +11,9 @@ const BankChipSelector = ({
   label = "Bank account",
   allowUntagged = true,
 }) => {
+  // The note explains what "untagged" means — only show it once the user
+  // actively picks Untagged, not for the passive default empty state.
+  const [pickedUntagged, setPickedUntagged] = useState(false);
   if (!accounts || accounts.length === 0) return null;
   return (
     <div className="bank-chip-field">
@@ -32,7 +35,10 @@ const BankChipSelector = ({
                     }
                   : undefined
               }
-              onClick={() => onChange(a.id)}
+              onClick={() => {
+                setPickedUntagged(false);
+                onChange(a.id);
+              }}
             >
               <span
                 className="bank-chip-dot"
@@ -46,13 +52,27 @@ const BankChipSelector = ({
           <button
             type="button"
             className={`bank-chip bank-chip--untagged${value ? "" : " bank-chip--active"}`}
-            onClick={() => onChange("")}
+            onClick={() => {
+              setPickedUntagged(true);
+              onChange("");
+            }}
             title="Don't tag this transaction to a bank"
           >
             Untagged
           </button>
         )}
       </div>
+      {allowUntagged && (
+        <p
+          className={`bank-chip-untagged-note${
+            !value && pickedUntagged ? " bank-chip-untagged-note--show" : ""
+          }`}
+        >
+          <i className="fa-solid fa-circle-info" />
+          Untagged transactions are saved to your history but won&apos;t change
+          your total or any bank balance.
+        </p>
+      )}
     </div>
   );
 };

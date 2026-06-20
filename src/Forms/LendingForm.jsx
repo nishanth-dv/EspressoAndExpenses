@@ -1,5 +1,8 @@
 import { memo, useState } from "react";
 import PropTypes from "prop-types";
+import { useSelector } from "react-redux";
+import BankChipSelector from "../components/BankChipSelector";
+import DateField from "../components/DateField";
 
 const EMPTY = {
   name: "",
@@ -7,8 +10,9 @@ const EMPTY = {
   amount: "",
   outstanding: "",
   date: "",
-  expectedReturn: "",
   notes: "",
+  accountId: "",
+  affectBalance: true,
 };
 
 function fromExisting(e) {
@@ -18,13 +22,27 @@ function fromExisting(e) {
     amount: e.amount ?? "",
     outstanding: e.outstanding ?? "",
     date: e.date ?? "",
-    expectedReturn: e.expectedReturn ?? "",
     notes: e.notes ?? "",
+    accountId: e.accountId ?? "",
+    // Legacy entries (created before this feature) default to off so editing
+    // them doesn't silently create a balance transaction.
+    affectBalance: e.affectBalance ?? false,
   };
 }
 
 const LendingForm = ({ onSubmit, onCancel, existing }) => {
   const [form, setForm] = useState(existing ? fromExisting(existing) : EMPTY);
+
+  const multiBankEnabled = useSelector(
+    (state) =>
+      state.transactions.transactionData?.preferences?.multiBankEnabled ??
+      false,
+  );
+  const accounts = useSelector(
+    (state) => state.transactions.transactionData?.accounts ?? [],
+  );
+
+  const isLent = form.direction === "lent";
 
   function handleChange(e) {
     const val = e.target.value;
@@ -41,20 +59,15 @@ const LendingForm = ({ onSubmit, onCancel, existing }) => {
 
   function handleSubmit(e) {
     e.preventDefault();
+    const base = {
+      ...form,
+      amount: parseFloat(form.amount),
+      outstanding: parseFloat(form.outstanding),
+    };
+    if (!base.affectBalance || !base.accountId) delete base.accountId;
     const l = existing
-      ? {
-          ...existing,
-          ...form,
-          amount: parseFloat(form.amount),
-          outstanding: parseFloat(form.outstanding),
-        }
-      : {
-          ...form,
-          id: crypto.randomUUID(),
-          amount: parseFloat(form.amount),
-          outstanding: parseFloat(form.outstanding),
-          createdAt: new Date().toISOString(),
-        };
+      ? { ...existing, ...base }
+      : { ...base, id: crypto.randomUUID(), createdAt: new Date().toISOString() };
     onSubmit(l);
   }
 
@@ -86,7 +99,7 @@ const LendingForm = ({ onSubmit, onCancel, existing }) => {
           spellCheck={false}
           placeholder=" "
         />
-        <label>{form.direction === "lent" ? "Lent to (name)" : "Borrowed from (name)"}</label>
+        <label>{isLent ? "Lent to (name)" : "Borrowed from (name)"}</label>
       </div>
 
       <div className="sol-form-row">
@@ -116,29 +129,44 @@ const LendingForm = ({ onSubmit, onCancel, existing }) => {
         </div>
       </div>
 
-      <div className="sol-form-row">
-        <div className="field">
-          <input
-            name="date"
-            type="date"
-            value={form.date}
-            onChange={handleChange}
-            required
-            placeholder=" "
-          />
-          <label>Date</label>
-        </div>
-        <div className="field">
-          <input
-            name="expectedReturn"
-            type="date"
-            value={form.expectedReturn}
-            onChange={handleChange}
-            placeholder=" "
-          />
-          <label>Expected return</label>
-        </div>
-      </div>
+      <DateField
+        name="date"
+        value={form.date}
+        onChange={handleChange}
+        label="Date"
+        required
+      />
+
+      <label className="card-combine-toggle">
+        <input
+          type="checkbox"
+          checked={form.affectBalance}
+          onChange={(e) =>
+            setForm((f) => ({ ...f, affectBalance: e.target.checked }))
+          }
+        />
+        <span className="card-combine-toggle-text">
+          {isLent
+            ? "Deduct this from my balance"
+            : "Add this to my balance"}
+          <span className="card-combine-toggle-sub">
+            {form.affectBalance
+              ? isLent
+                ? "Logs an expense for the money you lent"
+                : "Logs an income for the money you borrowed"
+              : "Just records the entry — no balance change"}
+          </span>
+        </span>
+      </label>
+
+      {form.affectBalance && multiBankEnabled && accounts.length > 0 && (
+        <BankChipSelector
+          accounts={accounts}
+          value={form.accountId}
+          onChange={(id) => setForm((f) => ({ ...f, accountId: id }))}
+          label={isLent ? "Paid from" : "Received into"}
+        />
+      )}
 
       <div className="field">
         <textarea
@@ -158,7 +186,7 @@ const LendingForm = ({ onSubmit, onCancel, existing }) => {
           Cancel
         </button>
         <button type="submit" className="generic-button">
-          {existing ? "Update" : form.direction === "lent" ? "Add Lending" : "Add Borrowing"}
+          {existing ? "Update" : isLent ? "Add Lending" : "Add Borrowing"}
         </button>
       </div>
     </form>

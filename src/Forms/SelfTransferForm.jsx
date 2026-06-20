@@ -1,6 +1,9 @@
 import { memo, useMemo, useState } from "react";
 import PropTypes from "prop-types";
 import { useSelector } from "react-redux";
+import { NoteBulletHint } from "../components/NoteText";
+import OptionField from "../components/OptionField";
+import DateField from "../components/DateField";
 
 const SelfTransferForm = ({ onSubmit, onCancel, existing }) => {
   const accounts = useSelector(
@@ -69,39 +72,25 @@ const SelfTransferForm = ({ onSubmit, onCancel, existing }) => {
   return (
     <form className="expense-form" onSubmit={handleSubmit}>
       <div className="self-transfer-row">
-        <div className="field">
-          <select
-            name="fromAccountId"
-            value={form.fromAccountId}
-            onChange={(e) => set("fromAccountId", e.target.value)}
-            required
-          >
-            <option value="" disabled hidden />
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.bank}
-              </option>
-            ))}
-          </select>
-          <label>From</label>
-        </div>
+        <OptionField
+          name="fromAccountId"
+          value={form.fromAccountId}
+          onChange={(e) => set("fromAccountId", e.target.value)}
+          label="From"
+          required
+          placeholder=""
+          options={accounts.map((a) => ({ value: a.id, label: a.bank }))}
+        />
         <i className="fa-solid fa-arrow-right self-transfer-arrow" />
-        <div className="field">
-          <select
-            name="toAccountId"
-            value={form.toAccountId}
-            onChange={(e) => set("toAccountId", e.target.value)}
-            required
-          >
-            <option value="" disabled hidden />
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.bank}
-              </option>
-            ))}
-          </select>
-          <label>To</label>
-        </div>
+        <OptionField
+          name="toAccountId"
+          value={form.toAccountId}
+          onChange={(e) => set("toAccountId", e.target.value)}
+          label="To"
+          required
+          placeholder=""
+          options={accounts.map((a) => ({ value: a.id, label: a.bank }))}
+        />
       </div>
 
       {sameAccount && (
@@ -124,16 +113,14 @@ const SelfTransferForm = ({ onSubmit, onCancel, existing }) => {
         <label>Amount (₹)</label>
       </div>
 
-      <div className="field">
-        <input
-          name="occurredAt"
-          type="datetime-local"
-          value={form.occurredAt}
-          onChange={(e) => set("occurredAt", e.target.value)}
-          required
-        />
-        <label>Date &amp; time</label>
-      </div>
+      <DateField
+        name="occurredAt"
+        value={form.occurredAt}
+        onChange={(e) => set("occurredAt", e.target.value)}
+        label="Date & time"
+        withTime
+        required
+      />
 
       <div className="field">
         <textarea
@@ -145,6 +132,7 @@ const SelfTransferForm = ({ onSubmit, onCancel, existing }) => {
           spellCheck={false}
         />
         <label>Description / Notes</label>
+        <NoteBulletHint text={form.description} />
       </div>
 
       <p className="self-transfer-hint">

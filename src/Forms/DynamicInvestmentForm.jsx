@@ -22,6 +22,8 @@ import PropTypes from "prop-types";
 import { useSelector } from "react-redux";
 import DayPicker from "./DayPicker";
 import BankChipSelector from "../components/BankChipSelector";
+import OptionField from "../components/OptionField";
+import DateField from "../components/DateField";
 import {
   fetchCurrentPrice,
   searchStockTickers,
@@ -50,6 +52,7 @@ function buildFormFromSchema(schema, existing) {
                 enabled: !!f.locked,
                 frequency: f.config?.frequency ?? "monthly",
                 dayOfMonth: f.config?.dayOfMonth ?? 1,
+                variableAmount: !!f.config?.variableAmount,
                 accountId: "",
               };
       } else out[f.key] = "";
@@ -142,16 +145,12 @@ function FieldRenderer({ field, value, onChange, accounts, multiBankEnabled, for
 
     case "date":
       return (
-        <div className="field">
-          <input
-            type="date"
-            value={value ?? ""}
-            onChange={(e) => setVal(e.target.value)}
-            placeholder=" "
-            required={field.required}
-          />
-          <label>{field.label}</label>
-        </div>
+        <DateField
+          value={value ?? ""}
+          onChange={(e) => setVal(e.target.value)}
+          label={field.label}
+          required={field.required}
+        />
       );
 
     case "month":
@@ -180,32 +179,25 @@ function FieldRenderer({ field, value, onChange, accounts, multiBankEnabled, for
 
     case "dropdown":
       return (
-        <div className="field">
-          <select
-            value={value ?? ""}
-            onChange={(e) => {
-              // Preserve numeric option values (e.g., LIC frequency: 1/2/4/12)
-              // by parsing them back when all options are numeric strings.
-              const raw = e.target.value;
-              const numeric = Number(raw);
-              setVal(
-                field.options?.every((o) => typeof o.value === "number") &&
-                  !Number.isNaN(numeric)
-                  ? numeric
-                  : raw,
-              );
-            }}
-            required={field.required}
-          >
-            <option value="" disabled hidden />
-            {(field.options ?? []).map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-          <label>{field.label}</label>
-        </div>
+        <OptionField
+          value={value ?? ""}
+          onChange={(e) => {
+            // Preserve numeric option values (e.g., LIC frequency: 1/2/4/12)
+            // by parsing them back when all options are numeric strings.
+            const raw = e.target.value;
+            const numeric = Number(raw);
+            setVal(
+              field.options?.every((o) => typeof o.value === "number") &&
+                !Number.isNaN(numeric)
+                ? numeric
+                : raw,
+            );
+          }}
+          label={field.label}
+          required={field.required}
+          placeholder=""
+          options={field.options ?? []}
+        />
       );
 
     case "multi-select":
@@ -638,17 +630,12 @@ function AutoDeductField({ field, value, onChange, accounts, multiBankEnabled })
       {enabled && (
         <div className="dyn-auto-deduct-body">
           <div className="dyn-form-row dyn-form-row--cols-2">
-            <div className="field">
-              <select
-                value={v.frequency ?? "monthly"}
-                onChange={(e) => update({ frequency: e.target.value })}
-              >
-                {FREQUENCY_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>{o.label}</option>
-                ))}
-              </select>
-              <label>Frequency</label>
-            </div>
+            <OptionField
+              value={v.frequency ?? "monthly"}
+              onChange={(e) => update({ frequency: e.target.value })}
+              label="Frequency"
+              options={FREQUENCY_OPTIONS}
+            />
             <DayPicker
               label="Auto-debit day"
               value={v.dayOfMonth ? String(v.dayOfMonth) : ""}
@@ -667,6 +654,21 @@ function AutoDeductField({ field, value, onChange, accounts, multiBankEnabled })
                 : "month"} that you tap to confirm with the actual date
             (or just import your statement and we'll reconcile in bulk).
           </p>
+          <label className="dyn-form-checkbox">
+            <input
+              type="checkbox"
+              checked={!!v.variableAmount}
+              onChange={(e) => update({ variableAmount: e.target.checked })}
+            />
+            <span>Amount varies each period</span>
+          </label>
+          {v.variableAmount && (
+            <p className="dyn-form-hint dyn-form-hint--soft">
+              <i className="fa-solid fa-circle-info" /> Each pending row lets you
+              edit the amount before logging — handy for chit auctions or any
+              instalment that changes month to month.
+            </p>
+          )}
           {multiBankEnabled && accounts?.length > 0 && (
             <BankChipSelector
               accounts={accounts}

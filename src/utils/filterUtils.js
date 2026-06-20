@@ -23,7 +23,8 @@ function getDateRange(filter) {
 
 export function applyFilter(transactions, filter) {
   const accountId = filter?.accountId || null;
-  if (filter.mode === "all" && !accountId) return transactions;
+  const cardId = filter?.cardId || null;
+  if (filter.mode === "all" && !accountId && !cardId) return transactions;
   const { from, to } = getDateRange(filter);
   return transactions.filter((t) => {
     if (from || to) {
@@ -31,6 +32,7 @@ export function applyFilter(transactions, filter) {
       if (from && d < from) return false;
       if (to && d > to) return false;
     }
+    if (cardId && t.cardId !== cardId) return false;
     if (accountId) {
       // Self transfers touch the account if it's either side.
       if (t.transactionType === "self_transfer") {

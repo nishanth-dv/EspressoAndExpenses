@@ -1,3 +1,5 @@
+import { nextRenewal as subscriptionNextRenewal } from "./subscriptionUtils";
+
 export function calcPrincipalFromEMI(emi, annualRate, tenureMonths) {
   if (!emi || !tenureMonths) return 0;
   if (!annualRate) return emi * tenureMonths;
@@ -82,37 +84,117 @@ export function monthsRemaining(commitment) {
   return Math.ceil(outstanding / emi);
 }
 
-// True when the card's bill for `dueDate` still has unsettled charges.
-// Mirrors the dashboard's overdueCount model: cumulative pre-due charges
-// minus all repayments tagged for this card. We use the cumulative-repayment
-// view rather than "any repayment this month" so partial payments and
-// out-of-cycle payments (e.g., paid in late April for a May 1 due) are
-// correctly accounted for.
-//
-// Commitments paid via this card (EMIs, subscriptions billed to the card)
-// don't show up as `cardId` transactions, but they ARE part of the card's
-// bill — paying the card settles them too. Each active commitment routed
-// through this card contributes one `emiAmount` per cycle that has already
-// elapsed up to `dueDate`.
-function cardBillUnpaid(card, allTransactions, commitments, dueDate) {
-  const oldCharges = allTransactions
-    .filter((t) => t.cardId === card.id && new Date(t.occurredAt) < dueDate)
-    .reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
+// Most recent statement (billing) date on or before `ref`. Returns null when
+// the card has no statement day configured — callers then fall back to a
+// dueDay-only model. Day-of-month is clamped to the month length so a "31"
+// statement day still resolves in February.
+function lastStatementDate(statementDay, ref) {
+  const day = parseInt(statementDay);
+  if (!day) return null;
+  const clamp = (y, m) => Math.min(day, new Date(y, m + 1, 0).getDate());
+  const y = ref.getFullYear();
+  const m = ref.getMonth();
+  const thisCycle = new Date(y, m, clamp(y, m));
+  return thisCycle <= ref ? thisCycle : new Date(y, m - 1, clamp(y, m - 1));
+}
+
+// Payment due date for the statement generated on `stmt`: the first dueDay
+// strictly after the statement date. This correctly handles the common case
+// where dueDay < statementDay (statement on the 25th, payment due the 13th of
+// the *following* month) instead of treating the bill as due the same month.
+function dueDateForStatement(stmt, dueDay) {
+  const clamp = (y, m) => Math.min(dueDay, new Date(y, m + 1, 0).getDate());
+  const y = stmt.getFullYear();
+  const m = stmt.getMonth();
+  let due = new Date(y, m, clamp(y, m));
+  if (due <= stmt) due = new Date(y, m + 1, clamp(y, m + 1));
+  return due;
+}
+
+// Statement (billing) date for a specific year/month, clamped to month length.
+function statementOn(statementDay, y, m) {
+  const day = Math.min(parseInt(statementDay), new Date(y, m + 1, 0).getDate());
+  return new Date(y, m, day);
+}
+
+// The card's next payment: the amount due and the date it's payable.
+// Models real statement cycles. We enumerate statement dates from ~a year back
+// to two cycles ahead and report the EARLIEST cycle that carries a positive
+// balance (cumulative charges + EMIs billed by that statement − all repayments).
+// This single sweep uniformly covers:
+//   • overdue bills (a past statement still unpaid → negative diffDays),
+//   • the current statement's bill,
+//   • an UPCOMING bill that hasn't been statemented yet — e.g. a card whose
+//     statement is today with an EMI that just billed, or an EMI whose first
+//     instalment lands next cycle — so the user still sees what's coming.
+// A post-statement purchase made after the bill was paid naturally lands on the
+// next statement and is dated to its future due date, not shown as due now.
+// EMIs billed to the card are folded in via getBilledCardEmiTotal (they don't
+// appear as `cardId` transactions). Returns null when nothing is owed/upcoming.
+export function getCardDue(card, allTransactions = [], commitments = [], now = new Date()) {
+  const dueDay = parseInt(card?.dueDay);
+  if (!dueDay) return null;
+  const stmtDay = parseInt(card?.statementDay);
+
   const repayments = allTransactions
     .filter((t) => t.repaymentFor === card.id)
     .reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
-  let cardPaidEmis = 0;
-  for (const c of commitments ?? []) {
-    if (c?.paymentMedium !== "credit_card") continue;
-    if (c?.cardId !== card.id) continue;
-    if (!commitmentIsActive(c)) continue;
-    // Only count EMIs that have actually started billing by this cycle.
-    // A loan disbursed in March with first-payment April should not appear
-    // on March's card bill.
-    if (!isEmiBilledByMonth(c, dueDate.getFullYear(), dueDate.getMonth())) continue;
-    cardPaidEmis += parseFloat(c.emiAmount) || 0;
+  // Charges (txns + EMI instalments) billed on or before `cutoff`, net of all
+  // repayments. Positive ⇒ that cycle's bill is still (partly) unpaid.
+  // The cutoff is extended to the END of the statement day so a charge dated
+  // ON the billing date (any time, or a date-only entry) is counted on THAT
+  // statement — not pushed to the next cycle. Only charges dated a later day
+  // roll forward.
+  const unpaidAsOf = (cutoff) => {
+    const dayEnd = new Date(
+      cutoff.getFullYear(),
+      cutoff.getMonth(),
+      cutoff.getDate(),
+      23,
+      59,
+      59,
+      999,
+    );
+    return (
+      allTransactions
+        .filter((t) => t.cardId === card.id && new Date(t.occurredAt) <= dayEnd)
+        .reduce((s, t) => s + (parseFloat(t.amount) || 0), 0) +
+      getBilledCardEmiTotal(card.id, commitments, dayEnd) -
+      repayments
+    );
+  };
+
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const result = (amount, due) => ({
+    amount,
+    dueDate: due,
+    diffDays: Math.round((due - today) / 86_400_000),
+  });
+
+  if (!stmtDay) {
+    // Legacy fallback (no statement day): bill = everything owed now, due on
+    // this month's dueDay, anchored until settled, else rolling to next month.
+    const total = unpaidAsOf(now);
+    if (!(total > 0)) return null;
+    const y = now.getFullYear();
+    const m = now.getMonth();
+    const clamp = (yy, mm) => Math.min(dueDay, new Date(yy, mm + 1, 0).getDate());
+    const thisMonthDue = new Date(y, m, clamp(y, m));
+    let due;
+    if (thisMonthDue >= now) due = thisMonthDue;
+    else if (unpaidAsOf(thisMonthDue) > 0) due = thisMonthDue;
+    else due = new Date(y, m + 1, clamp(y, m + 1));
+    return result(Math.max(0, total), due);
   }
-  return oldCharges + cardPaidEmis - repayments > 0;
+
+  // Sweep statement cycles oldest → newest and return the first unpaid one.
+  const cur = lastStatementDate(stmtDay, now);
+  for (let i = -14; i <= 2; i++) {
+    const s = statementOn(stmtDay, cur.getFullYear(), cur.getMonth() + i);
+    const bal = unpaidAsOf(s);
+    if (bal > 0) return result(bal, dueDateForStatement(s, dueDay));
+  }
+  return null;
 }
 
 // True when an EMI commitment has a repayment logged this calendar month
@@ -131,24 +213,10 @@ function commitmentPaidThisMonth(commitment, allTransactions) {
 
 // Days until the card's next due date, payment-aware. Negative means the
 // current cycle's bill is unpaid and overdue — and it stays negative until
-// the user logs a repayment. Only rolls to the next cycle once the current
-// bill is settled. This is the correct fix for the silent-rollforward bug
-// where a card with an unpaid May 1 bill was showing "28d left" on May 5.
+// the user logs a repayment. Statement-cycle aware: the due date follows the
+// latest statement, and post-statement charges don't pull the date forward.
 export function daysUntilCardDue(card, allTransactions = [], commitments = []) {
-  const day = parseInt(card?.dueDay);
-  if (!day) return null;
-  const now = new Date();
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const thisMonthDue = new Date(now.getFullYear(), now.getMonth(), day);
-  const nextMonthDue = new Date(now.getFullYear(), now.getMonth() + 1, day);
-
-  if (thisMonthDue >= today) {
-    return Math.round((thisMonthDue - today) / 86_400_000);
-  }
-  if (cardBillUnpaid(card, allTransactions, commitments, thisMonthDue)) {
-    return -Math.round((today - thisMonthDue) / 86_400_000);
-  }
-  return Math.round((nextMonthDue - today) / 86_400_000);
+  return getCardDue(card, allTransactions, commitments)?.diffDays ?? null;
 }
 
 // Days until the EMI commitment's next due date, payment-aware. Stays
@@ -321,8 +389,10 @@ function isEmiBilledNow(c) {
 }
 
 // Total of EMI installments billed by `today` across all credit-card-paid
-// commitments routed to the given card. Each installment is counted only if
-// its calendar date (commitment dueDay of that month) is on or before today.
+// commitments routed to the given card. Each installment posts to the card on
+// the commitment's BILLING day (the statement date — mirrors the card's
+// statementDay), not its payment due day: an EMI lands on the statement when
+// the statement generates, and only becomes payable on the later due date.
 // This represents the cumulative EMI portion that the card has been charged.
 export function getBilledCardEmiTotal(cardId, commitments, today = new Date()) {
   let total = 0;
@@ -334,7 +404,8 @@ export function getBilledCardEmiTotal(cardId, commitments, today = new Date()) {
     if (amt <= 0) continue;
     const first = getEmiFirstPaymentDate(c);
     if (!first) continue;
-    const dueDay =
+    const billingDay =
+      parseInt(c.billingDay) ||
       parseInt(c.dueDay) ||
       (c.startDate ? new Date(c.startDate).getDate() : 1) ||
       1;
@@ -344,7 +415,7 @@ export function getBilledCardEmiTotal(cardId, commitments, today = new Date()) {
       const y = first.getFullYear();
       const m = first.getMonth() + i;
       const lastDay = new Date(y, m + 1, 0).getDate();
-      const day = Math.min(dueDay, lastDay);
+      const day = Math.min(billingDay, lastDay);
       const d = new Date(y, m, day);
       if (d > today) break;
       total += amt;
@@ -382,7 +453,14 @@ export function commitmentIsActive(c) {
   return Math.max(0, parseInt(c.tenureMonths) - (monthsBilled - 1)) > 0;
 }
 
-export function getUpcomingDues(cards, commitments, lendings, days = 30, allTransactions = []) {
+export function getUpcomingDues(
+  cards,
+  commitments,
+  lendings,
+  days = 30,
+  allTransactions = [],
+  subscriptions = [],
+) {
   const now = new Date();
   const yr = now.getFullYear();
   const mo = now.getMonth();
@@ -402,43 +480,20 @@ export function getUpcomingDues(cards, commitments, lendings, days = 30, allTran
   const result = [];
 
   cards.forEach((card) => {
-    // Card bill = total ever charged (transactions + EMI installments billed
-    // so far) minus total repayments. Treating txns and EMI as one shared
-    // liability against which repayments are applied is the only way to get
-    // the right answer when the user pays the card bill (which historically
-    // covered both at once). Using a max-of-zero floor on txns alone would
-    // hide unpaid balance whenever cumulative repayments exceeded card-tagged
-    // transactions because past EMIs were also being paid through them.
-    const txOutstanding = allTransactions
-      .filter((t) => t.cardId === card.id)
-      .reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
-    const repayments = allTransactions
-      .filter((t) => t.repaymentFor === card.id)
-      .reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
-    const billedEmis = getBilledCardEmiTotal(card.id, commitments, now);
-    const amount = Math.max(0, txOutstanding + billedEmis - repayments);
-    if (!(amount > 0)) return;
-    const dueDay = parseInt(card.dueDay);
-    const thisMonthDue = new Date(yr, mo, dueDay);
-    // Stay anchored on this month's due date until the bill is actually
-    // settled. Rolling to next month silently is what masked overdue bills.
-    let due;
-    if (thisMonthDue >= now) {
-      due = thisMonthDue;
-    } else if (cardBillUnpaid(card, allTransactions, commitments, thisMonthDue)) {
-      due = thisMonthDue;
-    } else {
-      due = new Date(yr, mo + 1, dueDay);
-    }
-    const diff = Math.round((due - now) / 86_400_000);
-    if (diff <= days)
+    // Statement-cycle aware bill: only charges posted on/before the latest
+    // statement date count toward the current due (post-statement purchases
+    // roll to the next cycle), and the due date follows that statement. See
+    // getCardDue for the full model.
+    const info = getCardDue(card, allTransactions, commitments, now);
+    if (!info || !(info.amount > 0)) return;
+    if (info.diffDays <= days)
       result.push({
         type: "card",
         id: card.id,
         name: card.name,
-        amount,
-        dueDate: due,
-        diffDays: diff,
+        amount: info.amount,
+        dueDate: info.dueDate,
+        diffDays: info.diffDays,
       });
   });
 
@@ -488,6 +543,24 @@ export function getUpcomingDues(cards, commitments, lendings, days = 30, allTran
           diffDays: diff,
         });
     });
+
+  // Subscriptions renewing within the window. Reuses the subscription cycle
+  // model so the due date and amount match what the Subscriptions page shows.
+  subscriptions.forEach((s) => {
+    if (s.status !== "active" && s.status !== "trial") return;
+    const next = subscriptionNextRenewal(s, now);
+    if (!next) return;
+    const diff = Math.round((next - now) / 86_400_000);
+    if (diff >= 0 && diff <= days)
+      result.push({
+        type: "subscription",
+        id: s.id,
+        name: s.name,
+        amount: parseFloat(s.amount) || 0,
+        dueDate: next,
+        diffDays: diff,
+      });
+  });
 
   return result.sort((a, b) => a.dueDate - b.dueDate);
 }

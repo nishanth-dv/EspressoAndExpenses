@@ -9,6 +9,7 @@ export const CATEGORIES = [
   "Rent",
   "Repayment",
   "Investment",
+  "Subscription",
   "Other",
 ];
 
@@ -266,6 +267,21 @@ export const DEFAULT_PREFERENCES = {
   // on, the import launcher shows on the Expenses page header and a
   // quick-action card on the Dashboard.
   statementImportEnabled: false,
+  // Subscriptions tracker. On by default so the dedicated page + nav entry
+  // are discoverable; can be turned off for users who don't want it.
+  subscriptionsEnabled: true,
+  // When on, each subscription's recurring charge is auto-posted to the
+  // ledger once per cycle (idempotent). Off → the page shows a "Log this
+  // charge" CTA instead, so nothing posts without an explicit tap.
+  subscriptionAutoPost: false,
+  // User-defined order of subscription type keys (built-in brands + custom).
+  // Drives the Preferences list and the Add Subscription chip order. Empty
+  // means natural order (built-ins, then custom).
+  subscriptionTypeOrder: [],
+  // Optional pages the user has enabled (mandatory pages are always on). See
+  // utils/pages.js. Defaults to all optional pages so existing users see no
+  // change; toggling a page off in Preferences hides it from nav + routing.
+  enabledPages: ["investments", "subscriptions", "solvency"],
   // Investment type keys the user has enabled. The Add Investment form
   // shows only these keys in its type-picker. Empty / undefined means
   // "all built-ins" — the migration in initializeDrive populates this
@@ -279,6 +295,16 @@ export const DEFAULT_PREFERENCES = {
   investmentTypeOrder: [],
   healthScore: { ...DEFAULT_HEALTH_SCORE },
   dueWindows: { ...DEFAULT_DUE_WINDOWS },
+  // Notifications feature (reminders for cards, EMIs, subscriptions, SIPs +
+  // a couple of "surprise" insight types). Master on/off lives here so the
+  // whole bell + modal can be hidden from Preferences → General.
+  notificationsEnabled: true,
+  // Per-type visibility. Empty object = every type at its own default (see
+  // NOTIFICATION_TYPES in utils/notificationEngine.js). A key set to false
+  // suppresses that type; true force-enables an off-by-default type. This
+  // gives the user full control over which reminders — and which surprises —
+  // ever surface.
+  notificationTypes: {},
 };
 
 export const DEFAULT_LISTS = {
@@ -312,6 +338,18 @@ export const DEFAULT_DATA = {
   cards: [],
   commitments: [],
   lendings: [],
+  // Recurring subscriptions (Netflix, Spotify, etc). Each entry:
+  //   { id, createdAt, name, brandKey, amount, cycle, anchorDate,
+  //     category, paymentMethod, cardId?, accountId?, status,
+  //     trialEndsOn?, autoPost?, notes? }
+  // Charges post to the ledger as expense transactions tagged
+  // `subscriptionId`. See utils/subscriptionUtils.js for the cycle model.
+  subscriptions: [],
+  // User-defined subscription types (brands/services) shown as chips in the
+  // Add Subscription form, alongside the built-in brands. Each entry:
+  //   { key, label, color, icon, iconStyle }
+  // Managed from Preferences → Subscription types.
+  subscriptionTypes: [],
   // Bank accounts for the multi-bank tracking feature. Each entry:
   // { id, bank, color, openingBalance, openingDate,
   //   verifiedBalance?, verifiedAt?, archived?, createdAt }
@@ -333,4 +371,9 @@ export const DEFAULT_DATA = {
   //     extra fields layered on top of the built-in's anchors
   // Entries may set { archived: true } to hide a type from the dropdown.
   investmentTypes: [],
+  // Notifications the user has dismissed early, keyed by the engine's stable
+  // eventKey → an ISO expiry (this cycle's end). Derived notifications are
+  // never stored; only these explicit dismissals are, and they self-prune
+  // once expired so the map can't grow unbounded. See utils/notificationEngine.js.
+  notificationDismissals: {},
 };

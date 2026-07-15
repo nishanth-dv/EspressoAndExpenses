@@ -22,9 +22,11 @@
 
 import { memo, useRef, useState, useMemo } from "react";
 import PropTypes from "prop-types";
-import { useDispatch } from "react-redux";
+import { useDispatch, useSelector } from "react-redux";
 import Modal from "../preStyledElements/modal/Modal";
+import Scroller from "./Scroller";
 import DynamicInvestmentForm from "../Forms/DynamicInvestmentForm";
+import { LOG_MODES } from "../utils/loggingMode";
 import {
   persistAddInvestmentType,
   persistUpdateInvestmentType,
@@ -475,6 +477,33 @@ const InvestmentTypeDesigner = ({ existing, onClose, onCreated }) => {
               </p>
             )}
 
+            <div className="itd-profile-section">
+              <p className="itd-section-label">
+                Asset class
+                <span className="itd-section-label-hint">
+                  {" "}
+                  — Advisory uses this for allocation
+                </span>
+              </p>
+              <div className="itd-profile-pills">
+                {[
+                  ["equity", "Equity"],
+                  ["debt", "Debt / Fixed"],
+                  ["gold", "Gold"],
+                  ["alt", "Alternatives"],
+                ].map(([k, label]) => (
+                  <button
+                    key={k}
+                    type="button"
+                    className={`itd-profile-pill${draft.assetClass === k ? " itd-profile-pill--on" : ""}`}
+                    onClick={() => updateDraft({ assetClass: k })}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
           {/* Balance impact toggle — hidden when the schema already has a
               per-investment deduct-from-balance field to avoid duplication. */}
           {!hasDeductField && (
@@ -599,14 +628,14 @@ const InvestmentTypeDesigner = ({ existing, onClose, onCreated }) => {
                 can't be edited, dropdowns can't open. The .itd-preview-frame
                 class also adds pointer-events:none + a faint overlay
                 cursor cue so the read-only intent is obvious. */}
-            <div className="itd-preview-frame" inert={true}>
+            <Scroller className="itd-preview-frame" options={{ overflow: { x: "hidden" } }} inert={true}>
               <DynamicInvestmentForm
                 key={JSON.stringify(rows)}
                 schema={draft}
                 onSubmit={() => {}}
                 onCancel={() => {}}
               />
-            </div>
+            </Scroller>
           </div>
         </div>
 
@@ -728,6 +757,15 @@ function RowEditor({
   const showBarAt = (slotIdx) =>
     !!drag && dragTargetValid && drag.toRowIdx === rowIndex && drag.toSlotIdx === slotIdx;
 
+  const quickSelect = useSelector(
+    (state) =>
+      state.transactions.transactionData?.preferences?.quickSelect ?? false,
+  );
+  const pillsTakeRow =
+    quickSelect &&
+    row.fields.length > 1 &&
+    row.fields.some((f) => f.type === "dropdown");
+
   return (
     <div className="itd-row-editor" data-row-id={row.id}>
       <div className="itd-row-header">
@@ -762,6 +800,12 @@ function RowEditor({
           <p className="itd-row-empty">Empty row. Add a field below.</p>
         )}
       </div>
+      {pillsTakeRow && (
+        <p className="itd-row-pills-note">
+          <i className="fa-solid fa-circle-info" /> A dropdown shows as pills and
+          takes the full width, so this row won&apos;t be multi-column.
+        </p>
+      )}
       <button
         type="button"
         className="itd-add-field-btn"
@@ -1091,6 +1135,36 @@ function FieldConfig({ field, onChange, onClose }) {
 
       {field.type === "auto-deduct" && (
         <>
+          <div className="itd-field-config-block">
+            <span className="itd-section-label">Default logging</span>
+            <div className="itd-logmode-opts">
+              {LOG_MODES.map((m) => {
+                const active =
+                  (field.config?.defaultMode || "manual") === m.key;
+                return (
+                  <button
+                    key={m.key}
+                    type="button"
+                    className={`itd-logmode-opt${active ? " itd-logmode-opt--on" : ""}`}
+                    onClick={() =>
+                      onChange({
+                        config: {
+                          ...(field.config ?? {}),
+                          defaultMode: m.key,
+                        },
+                      })
+                    }
+                  >
+                    <i className={`fa-solid ${m.icon}`} /> {m.label}
+                  </button>
+                );
+              })}
+            </div>
+            <p className="dyn-form-hint dyn-form-hint--soft">
+              <i className="fa-solid fa-circle-info" /> The mode new investments
+              of this type start on — each holding can override it.
+            </p>
+          </div>
           <label className="dyn-form-checkbox">
             <input
               type="checkbox"

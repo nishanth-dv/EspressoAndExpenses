@@ -15,6 +15,9 @@ dist-ssr
 # Code specifics
 .env
 
+# graphify generated output
+graphify-out/
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

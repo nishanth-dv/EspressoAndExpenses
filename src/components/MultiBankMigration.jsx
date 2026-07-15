@@ -1,5 +1,6 @@
 import { memo, useMemo, useState } from "react";
 import PropTypes from "prop-types";
+import LogoSelect from "./LogoSelect";
 
 // Groups untagged transactions by paymentMode (skipping credit-card spends
 // and self transfers) and lets the user assign a bank account per group.
@@ -127,24 +128,27 @@ const MultiBankMigration = ({ accounts, transactions, onApply, onClose }) => {
                   </span>
                 </button>
               </div>
-              <select
+              <LogoSelect
                 className="multibank-migration-select"
+                name={g.paymentMode}
                 value={value}
+                placeholder="Choose bank…"
                 onChange={(e) =>
                   setAssignments((a) => ({
                     ...a,
                     [g.paymentMode]: e.target.value,
                   }))
                 }
-              >
-                <option value="">Choose bank…</option>
-                {accounts.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.bank}
-                  </option>
-                ))}
-                <option value="skip">Skip — leave untagged</option>
-              </select>
+                options={[
+                  ...accounts.map((a) => ({
+                    value: a.id,
+                    label: a.bank,
+                    bank: a.bank,
+                    color: a.color,
+                  })),
+                  { value: "skip", label: "Skip — leave untagged" },
+                ]}
+              />
               {isOpen && (
                 <ul className="multibank-migration-txs">
                   {g.txs

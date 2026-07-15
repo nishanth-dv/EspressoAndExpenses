@@ -1,0 +1,842 @@
+/* ── Toolbox launcher ─────────────────────────────────── */
+/* The Toolbox FAB reuses .tally-fab for position + shape (left:14 bottom:80).
+   These overrides only tweak the idle look and the open state. */
+.toolkit-fab {
+  z-index: 61;
+}
+
+.toolkit-fab--open {
+  opacity: 1;
+}
+
+/* Popover of tools, anchored just above the FAB. */
+.toolkit-menu {
+  position: fixed;
+  left: 14px;
+  bottom: 132px;
+  z-index: 61;
+  width: 244px;
+  max-width: calc(100vw - 28px);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  background: var(--modal-bg);
+  border: 1px solid var(--surface-border-open);
+  border-radius: 14px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.3);
+}
+
+.toolkit-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 9px 10px;
+  border: none;
+  border-radius: 10px;
+  background: none;
+  color: var(--text-primary);
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.13s;
+}
+
+.toolkit-menu-item:hover {
+  background: var(--surface-bg);
+}
+
+.toolkit-menu-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+  border-radius: 9px;
+  background: var(--surface-bg);
+  color: var(--amount-investment);
+  font-size: 14px;
+}
+
+.toolkit-menu-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.toolkit-menu-title {
+  font-family: "Smooch Sans", sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.toolkit-menu-sub {
+  font-size: 11.5px;
+  color: var(--text-secondary);
+}
+
+/* ── Notes modal ──────────────────────────────────────── */
+/* Rendered inside the shared Modal — it supplies the backdrop, centred panel,
+   title bar and close button; these just lay out the notes content within it. */
+.note-modal {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: min(440px, 82vw);
+  max-width: 100%;
+}
+
+.note-modal-tools {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.note-filters {
+  display: flex;
+  gap: 6px;
+}
+
+.note-filter {
+  padding: 5px 12px;
+  border-radius: 20px;
+  border: 1px solid var(--surface-border);
+  background: var(--surface-bg);
+  color: var(--text-secondary);
+  font-family: "Smooch Sans", sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    color 0.13s,
+    border-color 0.13s,
+    background 0.13s;
+}
+
+.note-filter--active {
+  color: var(--bar-text);
+  background: var(--bar-bg);
+  border-color: transparent;
+}
+
+.note-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 11px;
+  border-radius: 10px;
+  border: 1px solid var(--surface-border);
+  background: var(--surface-bg);
+  color: var(--text-label);
+}
+
+.note-search input {
+  flex: 1;
+  border: none;
+  background: none;
+  outline: none;
+  color: var(--text-primary);
+  font-family: "Smooch Sans", sans-serif;
+  font-size: 14px;
+}
+
+.note-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 58vh;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.note-new-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  padding: 11px;
+  border-radius: 12px;
+  border: 1px dashed var(--surface-border-open);
+  background: var(--surface-bg);
+  color: var(--text-secondary);
+  font-family: "Smooch Sans", sans-serif;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    color 0.13s,
+    border-color 0.13s;
+}
+
+.note-new-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--amount-investment);
+}
+
+.note-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* ── Note card ────────────────────────────────────────── */
+.note-card {
+  padding: 12px 13px;
+  border-radius: 13px;
+  border: 1px solid var(--surface-border);
+  background: var(--surface-bg);
+}
+
+.note-card--pinned {
+  border-color: var(--amount-investment);
+}
+
+.note-card-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.note-card-title {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  font-family: "Smooch Sans", sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.note-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 9px;
+  border-radius: 20px;
+  background: var(--modal-bg);
+  border: 1px solid var(--surface-border);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.note-card-title ~ .note-chip {
+  flex-shrink: 0;
+}
+
+.note-card-head:not(:has(.note-card-title)) .note-chip {
+  margin-right: auto;
+}
+
+.note-card-actions {
+  display: flex;
+  gap: 2px;
+  margin-left: auto;
+}
+
+.note-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 8px;
+  background: none;
+  color: var(--text-label);
+  font-size: 13px;
+  cursor: pointer;
+  transition:
+    color 0.13s,
+    background 0.13s;
+}
+
+.note-icon-btn:hover {
+  background: var(--modal-bg);
+  color: var(--text-primary);
+}
+
+.note-icon-btn--on {
+  color: var(--amount-investment);
+}
+
+.note-icon-btn--danger:hover {
+  color: var(--amount-expense);
+}
+
+.note-card-meta {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--text-label);
+}
+
+.note-confirm {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--surface-border);
+}
+
+.note-confirm-text {
+  flex: 1;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+/* ── Light-markdown render ────────────────────────────── */
+.note-md {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.note-md-line {
+  margin: 0;
+}
+
+.note-md-blank {
+  height: 7px;
+}
+
+.note-md-bullet {
+  display: flex;
+  gap: 7px;
+}
+
+.note-md-dot {
+  color: var(--text-label);
+}
+
+.note-md-task {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  cursor: pointer;
+}
+
+.note-md-task input {
+  margin-top: 3px;
+  accent-color: var(--amount-investment);
+  cursor: pointer;
+}
+
+.note-md-task--done span {
+  text-decoration: line-through;
+  color: var(--text-label);
+}
+
+/* Interactive checklist — composer editor rows */
+.note-checklist {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.note-checklist-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.note-checklist-item > input[type="checkbox"] {
+  flex-shrink: 0;
+  accent-color: var(--amount-investment);
+  cursor: pointer;
+}
+
+.note-checklist-text {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  border-bottom: 1px solid var(--surface-border);
+  background: none;
+  outline: none;
+  color: var(--text-primary);
+  font-family: "Smooch Sans", sans-serif;
+  font-size: 14px;
+  padding: 3px 2px;
+}
+
+.note-checklist-text:focus {
+  border-bottom-color: var(--amount-investment);
+}
+
+.note-checklist-text--done {
+  text-decoration: line-through;
+  color: var(--text-label);
+}
+
+.note-checklist-del {
+  flex-shrink: 0;
+  border: none;
+  background: none;
+  color: var(--text-label);
+  cursor: pointer;
+  padding: 2px 4px;
+}
+
+.note-checklist-del:hover {
+  color: var(--amount-expense);
+}
+
+.note-checklist-add {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: none;
+  color: var(--amount-investment);
+  font-family: "Smooch Sans", sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 2px 0;
+}
+
+/* Interactive checklist — rendered on the note card */
+.note-check-list {
+  list-style: none;
+  margin: 6px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.note-check-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--text-primary);
+}
+
+.note-check-item > input[type="checkbox"] {
+  margin-top: 3px;
+  flex-shrink: 0;
+  accent-color: var(--amount-investment);
+  cursor: pointer;
+}
+
+.note-check-item--done > span {
+  text-decoration: line-through;
+  color: var(--text-label);
+}
+
+/* ── Composer ─────────────────────────────────────────── */
+.note-composer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 13px;
+  border: 1px solid var(--surface-border-open);
+  background: var(--surface-bg);
+}
+
+.note-composer-title {
+  border: none;
+  border-bottom: 1px solid var(--surface-border);
+  background: none;
+  outline: none;
+  padding: 4px 2px;
+  color: var(--text-primary);
+  font-family: "Smooch Sans", sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.note-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.note-toolbar-help {
+  margin-left: auto;
+}
+
+.note-toolbar > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 30px;
+  border: 1px solid var(--surface-border);
+  border-radius: 8px;
+  background: var(--modal-bg);
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+  transition:
+    color 0.13s,
+    border-color 0.13s;
+}
+
+.note-toolbar > button:hover {
+  color: var(--text-primary);
+  border-color: var(--amount-investment);
+}
+
+.note-composer-body {
+  border: 1px solid var(--surface-border);
+  border-radius: 10px;
+  background: var(--modal-bg);
+  outline: none;
+  padding: 9px 11px;
+  color: var(--text-primary);
+  font-family: "Smooch Sans", sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.note-composer-body:focus {
+  border-color: var(--amount-investment);
+}
+
+.note-scope {
+  display: flex;
+  gap: 6px;
+}
+
+.note-scope-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 11px;
+  border-radius: 20px;
+  border: 1px solid var(--surface-border);
+  background: var(--modal-bg);
+  color: var(--text-secondary);
+  font-family: "Smooch Sans", sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    color 0.13s,
+    border-color 0.13s;
+}
+
+.note-scope-chip--active {
+  color: var(--text-primary);
+  border-color: var(--amount-investment);
+}
+
+.note-scope-static {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.note-composer-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.note-btn {
+  padding: 7px 16px;
+  border-radius: 20px;
+  border: none;
+  font-family: "Smooch Sans", sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: opacity 0.13s;
+}
+
+.note-btn--primary {
+  background: var(--bar-bg);
+  color: var(--bar-text);
+}
+
+.note-btn--primary:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.note-btn--ghost {
+  background: none;
+  color: var(--text-secondary);
+}
+
+.note-btn--danger {
+  background: var(--amount-expense);
+  color: #fff;
+}
+
+.note-btn:not(:disabled):hover {
+  opacity: 0.85;
+}
+
+/* ── Empty state ──────────────────────────────────────── */
+.note-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 4px;
+  padding: 34px 16px;
+  color: var(--text-secondary);
+}
+
+.note-empty > i {
+  font-size: 30px;
+  color: var(--text-label);
+  margin-bottom: 6px;
+}
+
+.note-empty p {
+  margin: 0;
+  font-size: 15px;
+}
+
+.note-empty-sub {
+  font-size: 13px;
+  color: var(--text-label);
+}
+
+/* ── Phase 2: colour labels, reminders, entity, pinned ── */
+
+/* Colour label swatches in the composer */
+.note-color-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.note-color-swatch {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.note-color-swatch--active {
+  outline: 2px solid var(--text-secondary);
+  outline-offset: 2px;
+}
+
+.note-color-swatch--none {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--surface-border);
+  background: var(--modal-bg);
+  color: var(--text-label);
+  font-size: 10px;
+}
+
+/* Reminder field */
+.note-remind {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.note-remind-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.note-remind input {
+  border: 1px solid var(--surface-border);
+  border-radius: 8px;
+  background: var(--modal-bg);
+  color: var(--text-primary);
+  padding: 5px 8px;
+  font-family: "Smooch Sans", sans-serif;
+  font-size: 13px;
+  outline: none;
+}
+
+.note-remind-clear {
+  border: none;
+  background: none;
+  color: var(--text-label);
+  cursor: pointer;
+}
+
+/* Card colour tint + focus flash */
+.note-card--tinted {
+  border-left: 3px solid var(--note-color);
+}
+
+.note-card--focused {
+  animation: note-focus 1.7s ease;
+}
+
+@keyframes note-focus {
+  0%,
+  100% {
+    box-shadow: none;
+  }
+  25% {
+    box-shadow: 0 0 0 2px var(--amount-investment);
+  }
+}
+
+.note-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+
+.note-card-foot .note-card-meta {
+  margin: 0;
+}
+
+.note-remind-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px;
+  border-radius: 20px;
+  background: var(--modal-bg);
+  border: 1px solid var(--surface-border);
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.note-remind-chip--due {
+  color: var(--amount-expense);
+  border-color: var(--amount-expense);
+}
+
+/* Entity mode bar */
+.note-entity-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--surface-border);
+}
+
+.note-entity-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+.note-entity-all {
+  border: none;
+  background: none;
+  color: var(--amount-investment);
+  font-family: "Smooch Sans", sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* Entity attach button (used on transaction / investment cards) */
+.note-attach-btn {
+  position: relative;
+}
+
+.note-attach-btn--has {
+  color: var(--amount-investment);
+}
+
+.note-attach-count {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  background: var(--amount-investment);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* Dashboard pinned-notes widget */
+.pinned-notes {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.pinned-note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--surface-border);
+  border-left: 3px solid var(--note-color, var(--surface-border));
+  background: var(--surface-bg);
+  cursor: pointer;
+  transition: border-color 0.13s;
+}
+
+.pinned-note:hover {
+  border-color: var(--amount-investment);
+}
+
+.pinned-note-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.pinned-note-scope {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-label);
+  white-space: nowrap;
+}
+
+.note-card {
+  box-shadow: var(--card-shadow);
+}
+
+html[data-skin="glass"] .note-card {
+  box-shadow: 0 8px 24px -14px var(--glass-ambient, rgba(0, 0, 0, 0.4));
+}

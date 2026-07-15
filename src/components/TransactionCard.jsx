@@ -1,28 +1,41 @@
-import {memo, useState} from "react";
+import {memo, useMemo, useState, useRef, useEffect} from "react";
 import {motion, AnimatePresence} from "framer-motion";
 import {useDispatch, useSelector} from "react-redux";
-import {useNavigate} from "react-router-dom";
+import { useDeepLinkNav } from "../hooks/useDeepLinkNav";
 import PropTypes from "prop-types";
 import {
   persistUpdateTransaction,
   persistDeleteTransaction,
   persistUpdateInvestment,
+  persistAddAutoCategoryRule,
 } from "../redux/slices/transactionSlice";
+import { showToast } from "../redux/slices/toastSlice";
+import { computePulse, computeMerchantStats } from "../utils/pulse";
+import { categoryVisual } from "../utils/categoryVisual";
+import MerchantSheet from "./MerchantSheet";
 import Modal from "../preStyledElements/modal/Modal";
 import ExpenseForm from "../Forms/ExpenseForm";
 import IncomeForm from "../Forms/IncomeForm";
 import InvestmentForm from "../Forms/InvestmentForm";
 import SelfTransferForm from "../Forms/SelfTransferForm";
 import BankChipSelector from "./BankChipSelector";
+import BankLogo from "./BankLogo";
 import DateField from "./DateField";
 import { NoteContent, NoteBulletHint } from "./NoteText";
 import { getInvestmentTypeSchema } from "../utils/investmentTypeSchemas";
 import { getTypeInfo } from "../utils/investmentUtils";
+import { subscriptionVisual } from "../utils/subscriptionUtils";
 
 const formatter = new Intl.NumberFormat("en-IN", {
   style: "currency",
   currency: "INR",
   maximumFractionDigits: 2,
+});
+
+const inr0 = new Intl.NumberFormat("en-IN", {
+  style: "currency",
+  currency: "INR",
+  maximumFractionDigits: 0,
 });
 
 const formatDate = (iso) =>
@@ -39,9 +52,9 @@ const accordionTransition = {
   opacity: {duration: 0.2},
 };
 
-const TransactionCard = ({transaction}) => {
+const TransactionCard = ({transaction, balanceAfter, highlightId}) => {
   const dispatch = useDispatch();
-  const navigate = useNavigate();
+  const deepNav = useDeepLinkNav();
   const [open, setOpen] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -50,6 +63,26 @@ const TransactionCard = ({transaction}) => {
   // type-specific investment form.
   const [investEditMode, setInvestEditMode] = useState(null);
   const [entryDraft, setEntryDraft] = useState(null);
+  const [merchantOpen, setMerchantOpen] = useState(false);
+  const [showMore, setShowMore] = useState(false);
+  const cardRef = useRef(null);
+  const scrolledRef = useRef(false);
+  const [highlightActive, setHighlightActive] = useState(false);
+  const isHighlighted = highlightId != null && highlightId === transaction.id;
+
+  useEffect(() => {
+    if (!isHighlighted) {
+      scrolledRef.current = false;
+      return;
+    }
+    setHighlightActive(true);
+    if (cardRef.current && !scrolledRef.current) {
+      scrolledRef.current = true;
+      cardRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+    const t = setTimeout(() => setHighlightActive(false), 1800);
+    return () => clearTimeout(t);
+  }, [isHighlighted]);
 
   const {
     id,
@@ -59,6 +92,8 @@ const TransactionCard = ({transaction}) => {
     paymentMode,
     description,
     occurredAt,
+    createdAt,
+    updatedAt,
     transactionType,
     cardId,
     repaymentFor,
@@ -92,6 +127,62 @@ const TransactionCard = ({transaction}) => {
   const taggedAccount = accountId ? accountById(accountId) : null;
   const fromAccount = fromAccountId ? accountById(fromAccountId) : null;
   const toAccount = toAccountId ? accountById(toAccountId) : null;
+
+  const subscriptions = useSelector(
+    (state) => state.transactions.transactionData?.subscriptions ?? [],
+  );
+  const subscriptionTypes = useSelector(
+    (state) => state.transactions.transactionData?.subscriptionTypes ?? [],
+  );
+  const subscription = subscriptionId
+    ? subscriptions.find((s) => s.id === subscriptionId)
+    : null;
+  const subVisual =
+    subscriptionId
+      ? subscriptionVisual(subscription ?? { name: source }, subscriptionTypes)
+      : null;
+
+  const allTransactions = useSelector(
+    (state) => state.transactions.transactionData?.transactions ?? [],
+  );
+  const budgets = useSelector(
+    (state) => state.transactions.transactionData?.budgets ?? {},
+  );
+  const autoCategoryRules = useSelector(
+    (state) =>
+      state.transactions.transactionData?.preferences?.autoCategoryRules ?? [],
+  );
+  const pulse = useMemo(
+    () => (open ? computePulse(transaction, allTransactions, budgets) : null),
+    [open, transaction, allTransactions, budgets],
+  );
+  const pulseLabelLower = (pulse?.label ?? "").toLowerCase();
+  const canAddRule =
+    !!pulse &&
+    !pulse.isFirst &&
+    isExpense &&
+    !!category &&
+    !!pulse.label &&
+    !autoCategoryRules.some(
+      (r) =>
+        r.scope === "expense" &&
+        pulseLabelLower.includes((r.pattern ?? "").toLowerCase()),
+    );
+  const handleAddRule = (e) => {
+    e.stopPropagation();
+    if (!pulse?.label || !category) return;
+    dispatch(
+      persistAddAutoCategoryRule({
+        id: crypto.randomUUID(),
+        scope: "expense",
+        pattern: pulse.label,
+        category,
+      }),
+    );
+    dispatch(
+      showToast({ message: `Future “${pulse.label}” → ${category}` }),
+    );
+  };
 
   const solvencyCards = useSelector((state) => state.transactions.transactionData?.cards ?? []);
   const solvencyCommitments = useSelector(
@@ -150,6 +241,181 @@ const TransactionCard = ({transaction}) => {
     : null;
 
   const displayName = transaction.name || (isInvestment ? "Investment" : source);
+
+  // Buy/Sell signal for investment activity in the ledger: a purchase/instalment
+  // (investment type) is a Buy; sale/surrender/maturity proceeds (income tagged
+  // to the Investment category) are a Sell.
+  const investSignal = isInvestment
+    ? "buy"
+    : transactionType === "income" && category === "Investment"
+      ? "sell"
+      : null;
+  // The Sell badge already conveys "sold", so drop a redundant "Sold:" prefix.
+  const summaryName =
+    investSignal === "sell" ? displayName.replace(/^Sold:\s*/i, "") : displayName;
+
+  // Avatar ICON is chosen by specificity (subscription brand → investment type
+  // → transfer → category). Avatar COLOR is unified by money-type using the
+  // app's semantic amount tokens, so the whole ledger reads in one cohesive
+  // palette (green in / red out / blue invest / violet transfer·repay) rather
+  // than a per-category rainbow.
+  const catVisual = categoryVisual(category, transactionType);
+  const avatarIcon = isSelfTransfer
+    ? "fa-arrow-right-arrow-left"
+    : subscriptionId && subVisual
+      ? subVisual.icon
+      : investType?.icon || catVisual.icon;
+  const avatarIconStyle =
+    subscriptionId && subVisual ? subVisual.iconStyle : "fa-solid";
+  const typeAccent = isSelfTransfer
+    ? "var(--amount-repayment)"
+    : transactionType === "income"
+      ? "var(--amount-income)"
+      : transactionType === "investment"
+        ? "var(--amount-investment)"
+        : category === "Repayment"
+          ? "var(--amount-repayment)"
+          : "var(--amount-expense)";
+  const avatar = {
+    icon: avatarIcon,
+    iconStyle: avatarIconStyle,
+    color: typeAccent,
+  };
+  const hasFacts =
+    !!category ||
+    !!paymentMode ||
+    (!isSelfTransfer && !!taggedAccount) ||
+    balanceAfter != null ||
+    !!repaymentName;
+
+  const merchantStats = useMemo(
+    () =>
+      merchantOpen ? computeMerchantStats(transaction, allTransactions) : null,
+    [merchantOpen, transaction, allTransactions],
+  );
+  const canOpenMerchant = !isSelfTransfer && !!(transaction.name || source);
+
+  const pulseCard = pulse && (
+    <div className="tx-pulse">
+      <div className="tx-pulse-stats">
+        <div className="tx-pulse-stat">
+          <i className="fa-solid fa-arrows-rotate tx-pulse-ic" />
+          <span>
+            {pulse.isFirst ? (
+              <>
+                First time with <b>{pulse.label}</b>
+              </>
+            ) : (
+              <>
+                {pulse.ordinalWord} this month ·{" "}
+                <b>{inr0.format(pulse.monthTotal)}</b> so far
+              </>
+            )}
+          </span>
+        </div>
+        {pulse.vsUsual && (
+          <div
+            className={`tx-pulse-stat tx-pulse-stat--${
+              pulse.vsUsual.pct > 5
+                ? "up"
+                : pulse.vsUsual.pct < -5
+                  ? "down"
+                  : "flat"
+            }`}
+          >
+            <i
+              className={`fa-solid ${
+                pulse.vsUsual.pct > 5
+                  ? "fa-arrow-trend-up"
+                  : pulse.vsUsual.pct < -5
+                    ? "fa-arrow-trend-down"
+                    : "fa-equals"
+              } tx-pulse-ic`}
+            />
+            <span>
+              {Math.abs(pulse.vsUsual.pct) <= 5 ? (
+                <>
+                  in line with your usual{" "}
+                  <b>{inr0.format(pulse.vsUsual.usual)}</b>
+                </>
+              ) : (
+                <>
+                  {Math.abs(pulse.vsUsual.pct)}%{" "}
+                  {pulse.vsUsual.pct > 0 ? "above" : "below"} your usual{" "}
+                  <b>{inr0.format(pulse.vsUsual.usual)}</b>
+                </>
+              )}
+            </span>
+          </div>
+        )}
+      </div>
+      {pulse.budget && (
+        <div className="tx-pulse-budget">
+          <div className="tx-pulse-budget-head">
+            <span>{category}</span>
+            <span className={pulse.budget.pct >= 100 ? "tx-pulse-over" : ""}>
+              {pulse.budget.pct}% of {inr0.format(pulse.budget.limit)}
+            </span>
+          </div>
+          <div className="tx-pulse-bar">
+            <div
+              className={`tx-pulse-bar-fill${
+                pulse.budget.pct >= 100 ? " tx-pulse-bar-fill--over" : ""
+              }`}
+              style={{ width: `${Math.min(100, pulse.budget.pct)}%` }}
+            />
+            {pulse.budget.projected != null &&
+              pulse.budget.projectedPct > pulse.budget.pct && (
+                <span
+                  className="tx-pulse-bar-pace"
+                  style={{
+                    left: `${Math.min(100, pulse.budget.projectedPct)}%`,
+                  }}
+                  title="Projected month-end"
+                />
+              )}
+          </div>
+          {pulse.budget.projected != null && (
+            <div className="tx-pulse-forecast">
+              <span
+                className={
+                  pulse.budget.projected > pulse.budget.limit
+                    ? "tx-pulse-over"
+                    : ""
+                }
+              >
+                <i className="fa-solid fa-arrow-trend-up" /> On pace for{" "}
+                {inr0.format(pulse.budget.projected)} by month-end
+              </span>
+              {pulse.budget.daysLeft > 0 && pulse.budget.remaining > 0 && (
+                <span className="tx-pulse-safe">
+                  <i className="fa-solid fa-shield-halved" /> Safe:{" "}
+                  {inr0.format(pulse.budget.dailyAllowance)}/day
+                </span>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+      {!pulse.budget && pulse.budgetNudge && (
+        <p className="tx-pulse-nudge">
+          <i className="fa-solid fa-circle-info" /> Set a {category} budget on the
+          Dashboard to see your spending pace here.
+        </p>
+      )}
+      {pulse.headline && <p className="tx-pulse-headline">{pulse.headline}</p>}
+      {canAddRule && (
+        <button
+          type="button"
+          className="tx-pulse-action"
+          onClick={handleAddRule}
+        >
+          <i className="fa-solid fa-bolt" /> Auto-tag “{pulse.label}” as{" "}
+          {category}
+        </button>
+      )}
+    </div>
+  );
 
   function handleDeleteClick(e) {
     e.stopPropagation();
@@ -210,51 +476,53 @@ const TransactionCard = ({transaction}) => {
   return (
     <>
       <div
-        className={`transaction-card${open ? " transaction-card--open" : ""}${cardColor ? " transaction-card--credit" : ""}${tintClass}`}
+        ref={cardRef}
+        className={`transaction-card${open ? " transaction-card--open" : ""}${cardColor ? " transaction-card--credit" : ""}${tintClass}${highlightActive ? " transaction-card--highlight" : ""}`}
         style={cardColor ? { "--credit-color": cardColor } : undefined}
         onClick={() => setOpen((p) => !p)}
         role="button"
         aria-expanded={open}
       >
         <div className="transaction-summary">
-          <span className="transaction-name">{displayName}</span>
+          <span
+            className={`tx-avatar${canOpenMerchant ? " tx-avatar--tappable" : ""}`}
+            style={{ "--tx-accent": avatar.color }}
+            role={canOpenMerchant ? "button" : undefined}
+            aria-label={canOpenMerchant ? `${summaryName} history` : undefined}
+            onClick={
+              canOpenMerchant
+                ? (e) => {
+                    e.stopPropagation();
+                    setMerchantOpen(true);
+                  }
+                : undefined
+            }
+          >
+            <i className={`${avatar.iconStyle} ${avatar.icon}`} />
+            {investSignal && (
+              <span className={`tx-avatar-sig tx-avatar-sig--${investSignal}`}>
+                <i
+                  className={`fa-solid ${
+                    investSignal === "buy" ? "fa-arrow-down" : "fa-arrow-up"
+                  }`}
+                />
+              </span>
+            )}
+          </span>
+          <div className="tx-main">
+            <span className="transaction-name">{summaryName}</span>
+          </div>
           <div className="transaction-summary-right">
-            {investType && (
-              <span
-                className="tx-recurring-tag tx-investment-tag"
-                style={{
-                  background: investType.color + "22",
-                  color: investType.color,
-                }}
-              >
-                <i className={`fa-solid ${investType.icon}`} /> {investType.label}
-              </span>
-            )}
-            {subscriptionId && (
-              <span className="tx-recurring-tag tx-recurring-tag--sub">
-                <i className="fa-solid fa-rotate" /> Subscription
-              </span>
-            )}
-            {isSelfTransfer && (
-              <span className="tx-recurring-tag tx-recurring-tag--transfer">
-                <i className="fa-solid fa-arrow-right-arrow-left" /> Transfer
-              </span>
-            )}
             <span className={`transaction-amount ${amountClass}`}>
-              {isSelfTransfer
-                ? ""
-                : !isInvestment && !isExpense
-                  ? "+"
-                  : ""}
-              &nbsp;
+              {isSelfTransfer ? "" : !isInvestment && !isExpense ? "+" : ""}
               {formatter.format(amount)}
             </span>
-            <motion.i
-              className="fa-solid fa-chevron-down transaction-chevron"
-              animate={{rotate: open ? 180 : 0}}
-              transition={{duration: 0.28, ease: [0.25, 0.46, 0.45, 0.94]}}
-            />
           </div>
+          <motion.i
+            className="fa-solid fa-chevron-down transaction-chevron"
+            animate={{ rotate: open ? 180 : 0 }}
+            transition={{ duration: 0.28, ease: [0.25, 0.46, 0.45, 0.94] }}
+          />
         </div>
 
         <AnimatePresence initial={false}>
@@ -267,17 +535,35 @@ const TransactionCard = ({transaction}) => {
               style={{overflow: "hidden"}}
             >
               <div className="detail-rows">
+                <div className="tx-meta-footer">
+                  <span>
+                    <i className="fa-regular fa-clock" /> Added{" "}
+                    <span className="tx-meta-time">
+                      {formatDate(occurredAt || createdAt)}
+                    </span>
+                  </span>
+                  {updatedAt &&
+                    new Date(updatedAt) - new Date(createdAt || updatedAt) >
+                      1000 && (
+                      <span>
+                        <i className="fa-solid fa-pen" /> Updated{" "}
+                        <span className="tx-meta-time">
+                          {formatDate(updatedAt)}
+                        </span>
+                      </span>
+                    )}
+                </div>
               {isSelfTransfer && (fromAccount || toAccount) && (
                   <div className="detail-row">
                     <span className="detail-label">Route</span>
                     <span className="detail-value detail-value--transfer">
                       {fromAccount ? (
-                        <span
-                          className="detail-bank-chip"
-                          style={{
-                            background: fromAccount.color || "var(--surface-active)",
-                          }}
-                        >
+                        <span className="detail-bank-value">
+                          <BankLogo
+                            bank={fromAccount.bank}
+                            color={fromAccount.color}
+                            size={18}
+                          />
                           {fromAccount.bank}
                         </span>
                       ) : (
@@ -287,12 +573,12 @@ const TransactionCard = ({transaction}) => {
                       )}
                       <i className="fa-solid fa-arrow-right detail-transfer-arrow" />
                       {toAccount ? (
-                        <span
-                          className="detail-bank-chip"
-                          style={{
-                            background: toAccount.color || "var(--surface-active)",
-                          }}
-                        >
+                        <span className="detail-bank-value">
+                          <BankLogo
+                            bank={toAccount.bank}
+                            color={toAccount.color}
+                            size={18}
+                          />
                           {toAccount.bank}
                         </span>
                       ) : (
@@ -303,53 +589,133 @@ const TransactionCard = ({transaction}) => {
                     </span>
                   </div>
                 )}
-                {!isSelfTransfer && taggedAccount && (
-                  <div className="detail-row">
-                    <span className="detail-label">Bank</span>
-                    <span
-                      className="detail-bank-chip"
-                      style={{
-                        background:
-                          taggedAccount.color || "var(--surface-active)",
-                      }}
-                    >
-                      {taggedAccount.bank}
-                    </span>
-                  </div>
-                )}
-                {category && (
-                  <div className="detail-row">
-                    <span className="detail-label">Category</span>
-                    <span className="transaction-category">{category}</span>
-                  </div>
-                )}
-                {paymentMode && (
-                  <div className="detail-row">
-                    <span className="detail-label">Payment</span>
-                    <span className="detail-value">
-                      {paymentMode}
-                      {cardName && (
-                        <span className="detail-card-tag">{cardName}</span>
-                      )}
-                    </span>
-                  </div>
-                )}
-                {repaymentName && (
-                  <div className="detail-row">
-                    <span className="detail-label">For</span>
-                    <span className="detail-value">{repaymentName}</span>
-                  </div>
-                )}
-                <div className="detail-row">
-                  <span className="detail-label">Date</span>
-                  <span className="detail-value">{formatDate(occurredAt)}</span>
+                {hasFacts && (
+                <div className="tx-facts">
+                  {category && (
+                    <div className="tx-fact">
+                      <span
+                        className="tx-fact-ic tx-fact-ic--accent"
+                        style={{ "--tx-accent": typeAccent }}
+                      >
+                        <i className={`${catVisual.iconStyle} ${catVisual.icon}`} />
+                      </span>
+                      <div className="tx-fact-body">
+                        <span className="tx-fact-label">Category</span>
+                        <span className="tx-fact-value">{category}</span>
+                      </div>
+                    </div>
+                  )}
+                  {paymentMode && (
+                    <div className="tx-fact">
+                      <span className="tx-fact-ic">
+                        <i
+                          className={`fa-solid ${
+                            cardName ? "fa-credit-card" : "fa-wallet"
+                          }`}
+                        />
+                      </span>
+                      <div className="tx-fact-body">
+                        <span className="tx-fact-label">Payment</span>
+                        <span className="tx-fact-value">
+                          {paymentMode}
+                          {cardName && (
+                            <span className="detail-card-tag">{cardName}</span>
+                          )}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                  {!isSelfTransfer && taggedAccount && (
+                    <div className="tx-fact">
+                      <span className="tx-fact-ic">
+                        <BankLogo
+                          bank={taggedAccount.bank}
+                          color={taggedAccount.color}
+                          size={18}
+                        />
+                      </span>
+                      <div className="tx-fact-body">
+                        <span className="tx-fact-label">Bank</span>
+                        <span className="tx-fact-value">{taggedAccount.bank}</span>
+                      </div>
+                    </div>
+                  )}
+                  {balanceAfter != null && (
+                    <div className="tx-fact">
+                      <span className="tx-fact-ic">
+                        <i className="fa-solid fa-scale-balanced" />
+                      </span>
+                      <div className="tx-fact-body">
+                        <span className="tx-fact-label">Balance after</span>
+                        <span className="tx-fact-value transaction-balance">
+                          {formatter.format(balanceAfter)}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                  {repaymentName && (
+                    <div className="tx-fact">
+                      <span className="tx-fact-ic">
+                        <i className="fa-solid fa-link" />
+                      </span>
+                      <div className="tx-fact-body">
+                        <span className="tx-fact-label">For</span>
+                        <span className="tx-fact-value">{repaymentName}</span>
+                      </div>
+                    </div>
+                  )}
                 </div>
+                )}
                 {description && (
-                  <div className="detail-row detail-row--wrap">
-                    <span className="detail-label">Note</span>
-                    <span className="detail-value detail-value--note">
+                  <div className="tx-note">
+                    <span className="tx-note-label">
+                      <i className="fa-solid fa-pen-nib" /> Note
+                    </span>
+                    <span className="detail-value--note">
                       <NoteContent text={description} />
                     </span>
+                  </div>
+                )}
+                {(pulse || canOpenMerchant) && (
+                  <div
+                    className={`tx-seemore-wrap${showMore ? " tx-seemore-wrap--open" : ""}`}
+                  >
+                    <button
+                      type="button"
+                      className={`tx-seemore${showMore ? " tx-seemore--open" : ""}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setShowMore((v) => !v);
+                      }}
+                      aria-expanded={showMore}
+                    >
+                      <span>
+                        <i className="fa-solid fa-wand-magic-sparkles" />{" "}
+                        {showMore ? "See less" : "Smart insights"}
+                      </span>
+                      <i
+                        className={`fa-solid fa-chevron-down tx-seemore-chev${
+                          showMore ? " tx-seemore-chev--open" : ""
+                        }`}
+                      />
+                    </button>
+                    {showMore && (
+                      <div className="tx-more">
+                        {canOpenMerchant && (
+                          <button
+                            className="tx-action-btn tx-action-btn--history tx-more-history"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setMerchantOpen(true);
+                            }}
+                          >
+                            <i className="fa-solid fa-clock-rotate-left" />{" "}
+                            Merchant history
+                          </button>
+                        )}
+                        {pulseCard}
+                      </div>
+                    )}
                   </div>
                 )}
                 <div className="tx-actions">
@@ -358,25 +724,25 @@ const TransactionCard = ({transaction}) => {
                       className="tx-action-btn tx-action-btn--invest"
                       onClick={(e) => {
                         e.stopPropagation();
-                        navigate(`/Subscriptions?highlight=${subscriptionId}`);
+                        deepNav(`/Subscriptions?highlight=${subscriptionId}`);
                       }}
                     >
                       <i className="fa-solid fa-rotate" /> View
                     </button>
                   )}
-                  {isInvestment && investment && (
+                  {isInvestment && (
                     <button
                       className="tx-action-btn tx-action-btn--invest"
                       onClick={(e) => {
                         e.stopPropagation();
                         if (sipInvestmentId) {
-                          navigate(`/Invest?ledger=${sipInvestmentId}&highlightTx=${id}`);
+                          deepNav(`/Invest?ledger=${sipInvestmentId}&highlightTx=${id}`);
                         } else if (licPolicyId) {
-                          navigate(`/Invest?ledger=${licPolicyId}&highlightTx=${id}`);
+                          deepNav(`/Invest?ledger=${licPolicyId}&highlightTx=${id}`);
                         } else if (autoDeductInvestmentId) {
-                          navigate(`/Invest?ledger=${autoDeductInvestmentId}&highlightTx=${id}`);
+                          deepNav(`/Invest?ledger=${autoDeductInvestmentId}&highlightTx=${id}`);
                         } else {
-                          navigate(`/Invest?highlight=${investment.id}`);
+                          deepNav(`/Invest?highlight=${investment?.id ?? id}`);
                         }
                       }}
                     >
@@ -680,6 +1046,12 @@ const TransactionCard = ({transaction}) => {
           </div>
         </Modal>
       )}
+      <MerchantSheet
+        open={merchantOpen}
+        onClose={() => setMerchantOpen(false)}
+        stats={merchantStats}
+        accent={avatar.color}
+      />
     </>
   );
 };
@@ -698,7 +1070,10 @@ TransactionCard.propTypes = {
     description: PropTypes.string,
     occurredAt: PropTypes.string.isRequired,
     createdAt: PropTypes.string.isRequired,
+    updatedAt: PropTypes.string,
   }).isRequired,
+  balanceAfter: PropTypes.number,
+  highlightId: PropTypes.string,
 };
 
 export default memo(TransactionCard);

@@ -1,9 +1,13 @@
 import {memo, useState, useMemo, useEffect, useCallback, useRef} from "react";
 import {useSearchParams} from "react-router-dom";
+import { useDeepLinkNav } from "../hooks/useDeepLinkNav";
+import { useLedger } from "../hooks/useLedger";
+import { useCoreData } from "../hooks/useCoreData";
 import {useSelector, useDispatch} from "react-redux";
 import {motion, AnimatePresence} from "framer-motion";
 import Modal from "../preStyledElements/modal/Modal";
 import DateField from "../components/DateField";
+import BankLogo from "../components/BankLogo";
 import CardForm from "../Forms/CardForm";
 import CommitmentForm from "../Forms/CommitmentForm";
 import LendingForm from "../Forms/LendingForm";
@@ -29,11 +33,22 @@ import {
   daysUntilCardDue,
   daysUntilCommitmentDue,
   getUpcomingDues,
-  getDueCalendar,
   getCommitmentTypeInfo,
+  emiCardId,
+  isCardFundedEmi,
+  emiInstallmentsBilled,
   COMMITMENT_TYPES,
 } from "../utils/solvencyUtils";
 import { subscriptionTotals } from "../utils/subscriptionUtils";
+import {
+  solvencyTotals,
+  computeSolvencyHealth,
+  commitmentRemainingMonths,
+} from "../utils/solvencyStats";
+import { solvencyInsights } from "../utils/solvencyInsights";
+import { resolveMonthlyIncome } from "../utils/incomeUtils";
+import useCountUp from "../hooks/useCountUp";
+import Reveal from "../components/Reveal";
 import "../styles/solvency.css";
 
 const INR = new Intl.NumberFormat("en-IN", {
@@ -294,97 +309,6 @@ function HealthScoreCircle({score, grade, color, deductions}) {
   );
 }
 
-// ── Summary Stats ─────────────────────────────────────
-
-function SummaryStats({cards, commitments, lendings}) {
-  const totalCardOutstanding = cards.reduce(
-    (s, c) => s + (parseFloat(c.outstanding) || 0),
-    0
-  );
-  // Pool-aware total credit limit — only used as the denominator for the
-  // utilization ratio. Cards sharing a creditGroupId share one physical
-  // limit, so count each pool once.
-  const totalLimit = (() => {
-    const seenPools = new Set();
-    let total = 0;
-    for (const c of cards) {
-      if (c.creditGroupId) {
-        if (seenPools.has(c.creditGroupId)) continue;
-        seenPools.add(c.creditGroupId);
-        total += parseFloat(c.poolLimit) || parseFloat(c.limit) || 0;
-      } else {
-        total += parseFloat(c.limit) || 0;
-      }
-    }
-    return total;
-  })();
-  const monthlyEMI = commitments.reduce(
-    (s, c) => s + (parseFloat(c.emiAmount) || 0),
-    0
-  );
-  const netLent =
-    lendings
-      .filter((l) => l.direction === "lent")
-      .reduce((s, l) => s + (parseFloat(l.outstanding) || 0), 0) -
-    lendings
-      .filter((l) => l.direction === "borrowed")
-      .reduce((s, l) => s + (parseFloat(l.outstanding) || 0), 0);
-
-  // Credit utilization — banks watch this number. Green < 30%, amber 30-60%,
-  // red > 60%. Hidden entirely when the user has no cards with a stated
-  // limit (denominator zero).
-  const utilization = totalLimit > 0 ? totalCardOutstanding / totalLimit : null;
-  const utilColor =
-    utilization == null
-      ? null
-      : utilization < 0.3
-        ? "var(--amount-income)"
-        : utilization < 0.6
-          ? "#d4a35a"
-          : "var(--amount-expense)";
-  // Compact ₹ for the sub-line so the card stays readable on mobile.
-  const fmtShort = (v) =>
-    v >= 100000
-      ? `₹${(v / 100000).toFixed(1)}L`
-      : v >= 1000
-        ? `₹${(v / 1000).toFixed(0)}k`
-        : `₹${Math.round(v)}`;
-
-  const stats = [
-    ...(utilization != null
-      ? [
-          {
-            label: "Credit utilization",
-            value: `${Math.round(utilization * 100)}%`,
-            sub: `${fmtShort(totalCardOutstanding)} of ${fmtShort(totalLimit)}`,
-            color: utilColor,
-          },
-        ]
-      : []),
-    {label: "Card outstanding", value: INR.format(totalCardOutstanding)},
-    {label: "Monthly EMIs", value: INR.format(monthlyEMI)},
-    {
-      label: netLent >= 0 ? "Net lent out" : "Net borrowed",
-      value: INR.format(Math.abs(netLent)),
-      color: netLent >= 0 ? "var(--amount-income)" : "var(--amount-expense)",
-    },
-  ];
-
-  return (
-    <div className="sol-stats">
-      {stats.map((s) => (
-        <div key={s.label} className="sol-stat-card">
-          <p className="sol-stat-label">{s.label}</p>
-          <p className="sol-stat-value" style={s.color ? {color: s.color} : {}}>
-            {s.value}
-          </p>
-          {s.sub && <p className="sol-stat-sub">{s.sub}</p>}
-        </div>
-      ))}
-    </div>
-  );
-}
-
 // ── Funding-source pill (shared) ──────────────────────
 //
 // Renders a small "via {Card Name}" or "from bank" pill underneath
@@ -441,7 +365,7 @@ function ThisMonthCard({cards, commitments, lendings, allTransactions, dueWindow
     commitments.filter(commitmentIsActive).forEach((c) => {
       // EMIs paid via a credit card settle when the card bill is paid — the
       // card's own row already accounts for them, so don't double-flag here.
-      if (c.paymentMedium === "credit_card" && c.cardId) return;
+      if (isCardFundedEmi(c)) return;
       const days = daysUntilCommitmentDue(c, allTransactions);
       if (days != null && days < -overdueDays) n++;
     });
@@ -512,87 +436,6 @@ function ThisMonthCard({cards, commitments, lendings, allTransactions, dueWindow
   );
 }
 
-// ── Cash Flow ──────────────────────────────────────────
-
-function CashFlowCard({commitments, allTransactions}) {
-  const subscriptions = useSelector(
-    (state) => state.transactions.transactionData?.subscriptions ?? [],
-  );
-  const now = new Date();
-  const income = useMemo(
-    () => {
-      const now = new Date();
-      return allTransactions
-        .filter((t) => {
-          if (t.transactionType !== "income") return false;
-          const d = new Date(t.occurredAt);
-          return (
-            d.getFullYear() === now.getFullYear() &&
-            d.getMonth() === now.getMonth()
-          );
-        })
-        .reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
-    },
-    [allTransactions]
-  );
-
-  if (income <= 0) return null;
-
-  const fixed =
-    commitments
-      .filter(commitmentIsActive)
-      .reduce((s, c) => s + (parseFloat(c.emiAmount) || 0), 0) +
-    subscriptionTotals(subscriptions).monthly;
-  const free = income - fixed;
-  const pct = Math.min(100, Math.round((fixed / income) * 100));
-  const freeColor =
-    free >= 0 ? "var(--amount-income)" : "var(--amount-expense)";
-
-  return (
-    <div className="sol-section">
-      <div className="sol-section-header">
-        <p className="sol-section-title">
-          Cash flow · {now.toLocaleDateString("en-IN", {month: "long"})}
-        </p>
-      </div>
-      <div className="sol-cashflow-stats">
-        <div className="sol-cashflow-stat">
-          <span className="sol-cashflow-label">Income</span>
-          <span
-            className="sol-cashflow-value"
-            style={{color: "var(--amount-income)"}}
-          >
-            {INR.format(income)}
-          </span>
-        </div>
-        <div className="sol-cashflow-stat">
-          <span className="sol-cashflow-label">Fixed</span>
-          <span
-            className="sol-cashflow-value"
-            style={{color: "var(--amount-expense)"}}
-          >
-            {INR.format(fixed)}
-          </span>
-        </div>
-        <div className="sol-cashflow-stat">
-          <span className="sol-cashflow-label">
-            {free >= 0 ? "Free" : "Deficit"}
-          </span>
-          <span className="sol-cashflow-value" style={{color: freeColor}}>
-            {INR.format(Math.abs(free))}
-          </span>
-        </div>
-      </div>
-      <div className="sol-cashflow-bar-wrap">
-        <div className="sol-cashflow-bar-fill" style={{width: `${pct}%`}} />
-      </div>
-      <p className="sol-cashflow-ratio">
-        {pct}% of income committed to fixed obligations
-      </p>
-    </div>
-  );
-}
-
 // ── Obligations Breakdown ─────────────────────────────
 
 function ObligationsBar({commitments}) {
@@ -652,6 +495,92 @@ function ObligationsBar({commitments}) {
   );
 }
 
+// ── Road to debt-free (horizontal payoff journey) ─────
+
+const DF_SCALE = 88;
+
+function DebtFreeTimeline({ commitments }) {
+  const items = useMemo(() => {
+    const now = new Date();
+    return commitments
+      .filter((c) => c.type === "emi" && commitmentIsActive(c))
+      .map((c) => {
+        const months = commitmentRemainingMonths(c);
+        const info = getCommitmentTypeInfo(c.type);
+        const payoff = new Date(now.getFullYear(), now.getMonth() + months, 1);
+        return {
+          id: c.id,
+          name: c.name,
+          months,
+          payoff,
+          color: info.color,
+          icon: info.icon,
+        };
+      })
+      .filter((x) => x.months > 0)
+      .sort((a, b) => a.months - b.months);
+  }, [commitments]);
+
+  const laned = useMemo(() => {
+    const laneEnds = [];
+    const maxM = items.length ? items[items.length - 1].months : 1;
+    return items.map((it) => {
+      const x = (it.months / maxM) * DF_SCALE;
+      let lane = laneEnds.findIndex((e) => x - e > 11);
+      if (lane === -1) lane = laneEnds.length;
+      laneEnds[lane] = x;
+      return { ...it, x, lane };
+    });
+  }, [items]);
+
+  if (items.length === 0) return null;
+
+  const maxMonths = items[items.length - 1].months || 1;
+  const laneCount = Math.max(1, ...laned.map((d) => d.lane + 1));
+  const fmtPay = (d) =>
+    d.toLocaleDateString("en-IN", { month: "short", year: "numeric" });
+  const dfLabel = fmtPay(items[items.length - 1].payoff);
+
+  const yearMarks = [];
+  for (let y = 1; y <= Math.floor(maxMonths / 12); y++)
+    yearMarks.push({ m: y * 12, label: `${y}y` });
+
+  return (
+    <div className="sol-df">
+      <div className="sol-df-head">
+        <span className="sol-df-title">Road to debt-free</span>
+        <span className="sol-df-target">
+          <i className="fa-solid fa-flag-checkered" /> {dfLabel}
+        </span>
+      </div>
+      <div className="sol-df-track" style={{ height: laneCount * 30 + 18 }}>
+        {yearMarks.map((ym) => (
+          <div
+            key={ym.m}
+            className="sol-df-grid"
+            style={{ left: `${(ym.m / maxMonths) * DF_SCALE}%` }}
+          >
+            <span className="sol-df-grid-label">{ym.label}</span>
+          </div>
+        ))}
+        {laned.map((d) => (
+          <div
+            key={d.id}
+            className="sol-df-marker"
+            style={{ left: `${d.x}%`, top: d.lane * 30 + 2, "--accent": d.color }}
+            title={`${d.name} · clear by ${fmtPay(d.payoff)}`}
+          >
+            <i className={`fa-solid ${d.icon}`} />
+          </div>
+        ))}
+        <div className="sol-df-flag" title={`Debt-free · ${dfLabel}`}>
+          <i className="fa-solid fa-flag-checkered" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Loan Progress Timeline ────────────────────────────
 
 function LoanTimeline({commitments, cards, onCardTap}) {
@@ -688,11 +617,12 @@ function LoanTimeline({commitments, cards, onCardTap}) {
         {loans.map((c) => {
           const tenure = parseInt(c.tenureMonths);
           const start = new Date(c.startDate);
-          const monthsPaid = Math.max(
-            0,
-            (now.getFullYear() - start.getFullYear()) * 12 +
-              (now.getMonth() - start.getMonth())
-          );
+          const cardStmtDay = cardById.get(emiCardId(c))?.statementDay;
+          // Billing-aware progress: only instalments whose bill has actually
+          // been generated count (shared with the card bill / ledger via
+          // emiInstallmentsBilled), so an unbilled month is never assumed
+          // cleared — progress no longer runs ahead of the statement.
+          const monthsPaid = emiInstallmentsBilled(c, now, cardStmtDay);
           const remaining = Math.max(0, tenure - monthsPaid);
           // Progress = share of the ORIGINAL principal actually repaid, using
           // the same amortisation math as card balances — not calendar time.
@@ -701,13 +631,18 @@ function LoanTimeline({commitments, cards, onCardTap}) {
           // instead of tracking the clock.
           const emi = parseFloat(c.emiAmount) || 0;
           const principal = calcPrincipalFromEMI(emi, c.interestRate || 0, tenure);
+          const snapDate = c.currentOutstandingDate || c.startDate;
+          const billedSinceSnap = Math.max(
+            0,
+            monthsPaid - emiInstallmentsBilled(c, new Date(snapDate), cardStmtDay),
+          );
           const outstanding =
             c.currentOutstanding != null
               ? calcOutstandingFromSnapshot(
                   c.currentOutstanding,
                   c.interestRate || 0,
                   emi,
-                  monthsSince(c.currentOutstandingDate || c.startDate)
+                  billedSinceSnap
                 )
               : calcOutstanding(principal, c.interestRate || 0, tenure, monthsPaid);
           const pct =
@@ -728,9 +663,8 @@ function LoanTimeline({commitments, cards, onCardTap}) {
             year: "numeric",
           });
 
-          const isCardFunded =
-            c.paymentMedium === "credit_card" && c.cardId;
-          const fundingCard = isCardFunded ? cardById.get(c.cardId) : null;
+          const isCardFunded = isCardFundedEmi(c);
+          const fundingCard = isCardFunded ? cardById.get(emiCardId(c)) : null;
 
           return (
             <div key={c.id} className="sol-loan-item">
@@ -802,47 +736,6 @@ function LoanTimeline({commitments, cards, onCardTap}) {
   );
 }
 
-// ── Due Calendar ──────────────────────────────────────
-
-function DueCalendar({cards, commitments}) {
-  const today = new Date().getDate();
-  const calendar = useMemo(
-    () => getDueCalendar(cards, commitments),
-    [cards, commitments]
-  );
-
-  return (
-    <div className="sol-calendar-wrap">
-      <div className="sol-calendar-strip">
-        {calendar.map(({day, items}) => {
-          const hasItems = items.length > 0;
-          const dotColor = hasItems ? items[0].color : null;
-          const isToday = day === today;
-          return (
-            <div
-              key={day}
-              className={`sol-cal-cell${hasItems ? " sol-cal-cell--has" : ""}${
-                isToday ? " sol-cal-cell--today" : ""
-              }`}
-              style={
-                hasItems
-                  ? {
-                      background: `color-mix(in srgb, ${dotColor} 19%, transparent)`,
-                      borderColor: `color-mix(in srgb, ${dotColor} 60%, transparent)`,
-                    }
-                  : {}
-              }
-              title={items.map((i) => i.name).join(", ")}
-            >
-              {day}
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 // ── Upcoming Dues ─────────────────────────────────────
 
 function UpcomingDues({
@@ -853,22 +746,16 @@ function UpcomingDues({
   allTransactions,
   dueWindows,
 }) {
-  const upcomingDays = dueWindows?.upcomingDays ?? 30;
+  // The overview's upcoming list is a fixed 7-day glance and shows only
+  // dues/obligations — subscriptions (renewals) are intentionally left out; they
+  // live on the Subscriptions page.
+  const upcomingDays = 7;
   const soonDays = dueWindows?.soonDays ?? 7;
-  const subscriptions = useSelector(
-    (state) => state.transactions.transactionData?.subscriptions ?? [],
-  );
+  const deepNav = useDeepLinkNav();
   const dues = useMemo(
     () =>
-      getUpcomingDues(
-        cards,
-        commitments,
-        lendings,
-        upcomingDays,
-        allTransactions,
-        subscriptions,
-      ),
-    [cards, commitments, lendings, allTransactions, upcomingDays, subscriptions]
+      getUpcomingDues(cards, commitments, lendings, upcomingDays, allTransactions),
+    [cards, commitments, lendings, allTransactions, upcomingDays]
   );
 
   if (dues.length === 0)
@@ -893,74 +780,158 @@ function UpcomingDues({
   );
   const cardById = new Map((cards ?? []).map((c) => [c.id, c]));
 
-  return (
-    <div className="sol-upcoming-list">
-      {dues.map((d) => {
-        const badgeClass =
-          d.diffDays < 0
-            ? "sol-due-badge--overdue"
-            : d.diffDays <= soonDays
-            ? "sol-due-badge--soon"
-            : "sol-due-badge--ok";
-        const badgeText =
-          d.diffDays < 0
-            ? `${Math.abs(d.diffDays)}d overdue`
-            : d.diffDays === 0
-            ? "Due today"
-            : `${d.diffDays}d left`;
-        // Resolve the funding source for commitment-type rows from the
-        // canonical commitment record so we don't depend on getUpcoming-
-        // Dues passing cardId through correctly.
-        const sourceCardId =
-          d.type === "commitment"
-            ? commitmentById.get(d.id)?.cardId ?? null
-            : null;
-        const sourceCard = sourceCardId ? cardById.get(sourceCardId) : null;
-        const targetCardId =
-          d.type === "card" ? d.id : sourceCardId;
-        const isTappable = !!targetCardId;
-        return (
-          <div
-            key={d.id}
-            className={`sol-due-item${isTappable ? " sol-due-item--tappable" : ""}`}
-            onClick={isTappable ? () => onCardTap?.(targetCardId) : undefined}
-            role={isTappable ? "button" : undefined}
-          >
-            <div className="sol-due-left">
-              <i className={`fa-solid ${typeIcon[d.type]} sol-due-icon`} />
-              <div>
-                <div className="sol-due-name">{d.name}</div>
-                <div className="sol-due-date">
-                  {fmtDate(d.dueDate.toISOString())}
-                </div>
-                {d.type === "commitment" && sourceCardId && (
-                  <div className="sol-due-source">
-                    <i className="fa-solid fa-credit-card" />
-                    <span>
-                      via{" "}
-                      <strong>
-                        {sourceCard ? sourceCard.name : "deleted card"}
-                      </strong>
-                    </span>
-                  </div>
-                )}
+  const renderDue = (d) => {
+    const badgeClass =
+      d.diffDays < 0
+        ? "sol-due-badge--overdue"
+        : d.diffDays <= soonDays
+        ? "sol-due-badge--soon"
+        : "sol-due-badge--ok";
+    const badgeText =
+      d.diffDays < 0
+        ? `${Math.abs(d.diffDays)}d overdue`
+        : d.diffDays === 0
+        ? "Due today"
+        : `${d.diffDays}d left`;
+    const sourceCardId =
+      d.type === "commitment"
+        ? commitmentById.get(d.id)?.cardId ?? null
+        : null;
+    const sourceCard = sourceCardId ? cardById.get(sourceCardId) : null;
+    const targetCardId = d.type === "card" ? d.id : sourceCardId;
+    const isSubscription = d.type === "subscription";
+    const isTappable = isSubscription || !!targetCardId;
+    const onClick = isSubscription
+      ? () => deepNav(`/Subscriptions?highlight=${d.id}`)
+      : targetCardId
+      ? () => onCardTap?.(targetCardId)
+      : undefined;
+    return (
+      <div
+        key={d.id}
+        className={`sol-due-item${isTappable ? " sol-due-item--tappable" : ""}`}
+        onClick={onClick}
+        role={isTappable ? "button" : undefined}
+      >
+        <div className="sol-due-left">
+          <i className={`fa-solid ${typeIcon[d.type]} sol-due-icon`} />
+          <div>
+            <div className="sol-due-name">{d.name}</div>
+            <div className="sol-due-date">
+              {fmtDate(d.dueDate.toISOString())}
+            </div>
+            {d.type === "commitment" && sourceCardId && (
+              <div className="sol-due-source">
+                <i className="fa-solid fa-credit-card" />
+                <span>
+                  via{" "}
+                  <strong>
+                    {sourceCard ? sourceCard.name : "deleted card"}
+                  </strong>
+                </span>
               </div>
-            </div>
-            <div className="sol-due-right">
-              <span className="sol-due-amount">{INR.format(d.amount)}</span>
-              <span className={`sol-due-badge ${badgeClass}`}>{badgeText}</span>
-            </div>
-            {isTappable && (
-              <i className="fa-solid fa-arrow-up-right-from-square sol-due-nav-arrow" />
             )}
           </div>
-        );
-      })}
+        </div>
+        <div className="sol-due-right">
+          <span className="sol-due-amount">{INR.format(d.amount)}</span>
+          <span className={`sol-due-badge ${badgeClass}`}>{badgeText}</span>
+        </div>
+        {isTappable && (
+          <i className="fa-solid fa-arrow-up-right-from-square sol-due-nav-arrow" />
+        )}
+      </div>
+    );
+  };
+
+  return <div className="sol-upcoming-list">{dues.map(renderDue)}</div>;
+}
+
+// ── Overview Tab ──────────────────────────────────────
+
+function SolvencyHero({ totals }) {
+  const animated = useCountUp(totals.totalOwed);
+  const df = totals.debtFreeDate;
+  const dfLabel = df
+    ? df.toLocaleDateString("en-IN", { month: "short", year: "numeric" })
+    : null;
+  const util = totals.utilization;
+  const utilColor =
+    util == null
+      ? undefined
+      : util < 0.3
+        ? "var(--amount-income)"
+        : util < 0.6
+          ? "#d4a35a"
+          : "var(--amount-expense)";
+
+  return (
+    <div className="sol-lead">
+      <span className="sol-lead-eyebrow">Total owed</span>
+      <div className="sol-lead-value">{INR.format(Math.round(animated))}</div>
+      <div className="sol-lead-chips">
+        {dfLabel && (
+          <span className="sol-lead-chip sol-lead-chip--good">
+            <i className="fa-solid fa-flag-checkered" /> Debt-free by {dfLabel}
+          </span>
+        )}
+        {util != null && (
+          <span className="sol-lead-chip" style={{ color: utilColor }}>
+            <i className="fa-solid fa-gauge-high" /> {Math.round(util * 100)}%
+            utilization
+          </span>
+        )}
+        {totals.netLent !== 0 && (
+          <span className="sol-lead-chip">
+            <i className="fa-solid fa-arrow-right-arrow-left" />
+            {totals.netLent > 0
+              ? `${INR.format(totals.netLent)} owed to you`
+              : `${INR.format(Math.abs(totals.netLent))} you owe`}
+          </span>
+        )}
+      </div>
+      <div className="sol-lead-strip">
+        <div className="sol-lead-stat">
+          <span className="sol-lead-stat-lbl">Cards</span>
+          <span className="sol-lead-stat-val">
+            {INR.format(totals.totalCardOutstanding)}
+          </span>
+        </div>
+        <div className="sol-lead-stat">
+          <span className="sol-lead-stat-lbl">Loans</span>
+          <span className="sol-lead-stat-val">
+            {INR.format(totals.loanOutstanding)}
+          </span>
+        </div>
+        <div className="sol-lead-stat">
+          <span className="sol-lead-stat-lbl">Per month</span>
+          <span className="sol-lead-stat-val">
+            {INR.format(totals.monthlyEMI)}
+          </span>
+        </div>
+      </div>
     </div>
   );
 }
 
-// ── Overview Tab ──────────────────────────────────────
+function SolvencyInsights({ insights }) {
+  if (!insights.length) return null;
+  return (
+    <div className="sol-insights">
+      {insights.slice(0, 6).map((ins) => (
+        <div key={ins.id} className={`sol-insight sol-insight--${ins.kind}`}>
+          <span className="sol-insight-icon">
+            <i className={`fa-solid ${ins.icon}`} />
+          </span>
+          <div className="sol-insight-text">
+            <span className="sol-insight-title">{ins.title}</span>
+            <span className="sol-insight-detail">{ins.detail}</span>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 function OverviewTab({
   cards,
@@ -970,41 +941,69 @@ function OverviewTab({
   allTransactions,
   dueWindows,
 }) {
+  const totals = useMemo(
+    () => solvencyTotals(cards, commitments, lendings),
+    [cards, commitments, lendings],
+  );
+  const income = useMemo(
+    () => resolveMonthlyIncome(allTransactions ?? []).monthly || 0,
+    [allTransactions],
+  );
+  const insights = useMemo(
+    () => solvencyInsights(cards, commitments, lendings, allTransactions),
+    [cards, commitments, lendings, allTransactions],
+  );
+  const flags = useMemo(
+    () => ({
+      overdue: insights.filter((i) => i.kind === "overdue").length,
+      stale: insights.filter((i) => i.kind === "stale").length,
+    }),
+    [insights],
+  );
+  const health = useMemo(
+    () => computeSolvencyHealth(totals, income, flags),
+    [totals, income, flags],
+  );
+
   return (
     <>
-      <ThisMonthCard
-        cards={cards}
-        commitments={commitments}
-        lendings={lendings}
-        allTransactions={allTransactions}
-        dueWindows={dueWindows}
-      />
-      <CashFlowCard
-        commitments={commitments}
-        allTransactions={allTransactions}
-      />
-      <ObligationsBar commitments={commitments} />
-      <LoanTimeline
-        commitments={commitments}
-        cards={cards}
-        onCardTap={onCardTap}
-      />
-      <SummaryStats
-        cards={cards}
-        commitments={commitments}
-        lendings={lendings}
-      />
-      <div className="sol-section">
+      <SolvencyHero totals={totals} />
+      <Reveal>
+        <HealthScoreCircle
+          score={health.score}
+          grade={health.grade}
+          color={health.color}
+          deductions={health.deductions}
+        />
+      </Reveal>
+      <Reveal>
+        <SolvencyInsights insights={insights} />
+      </Reveal>
+      <Reveal>
+        <ThisMonthCard
+          cards={cards}
+          commitments={commitments}
+          lendings={lendings}
+          allTransactions={allTransactions}
+          dueWindows={dueWindows}
+        />
+      </Reveal>
+      <Reveal>
+        <ObligationsBar commitments={commitments} />
+      </Reveal>
+      <Reveal>
+        <DebtFreeTimeline commitments={commitments} />
+      </Reveal>
+      <Reveal>
+        <LoanTimeline
+          commitments={commitments}
+          cards={cards}
+          onCardTap={onCardTap}
+        />
+      </Reveal>
+      <Reveal className="sol-section">
         <div className="sol-section-header">
-          <p className="sol-section-title">Due calendar</p>
-        </div>
-        <DueCalendar cards={cards} commitments={commitments} />
-      </div>
-      <div className="sol-section">
-        <div className="sol-section-header">
-          <p className="sol-section-title">
-            Upcoming ({dueWindows?.upcomingDays ?? 30} days)
-          </p>
+          <p className="sol-section-title">Upcoming (7 days)</p>
         </div>
         <UpcomingDues
           cards={cards}
@@ -1014,12 +1013,48 @@ function OverviewTab({
           allTransactions={allTransactions}
           dueWindows={dueWindows}
         />
-      </div>
+      </Reveal>
     </>
   );
 }
 
 // ── Cards Tab ─────────────────────────────────────────
+
+function UtilRing({ pct, color }) {
+  const r = 15;
+  const circ = 2 * Math.PI * r;
+  const offset = circ - Math.min(1, pct) * circ;
+  return (
+    <div className="sol-util-ring">
+      <svg viewBox="0 0 40 40" aria-hidden="true">
+        <circle
+          cx="20"
+          cy="20"
+          r={r}
+          fill="none"
+          stroke="var(--surface-border)"
+          strokeWidth="4"
+        />
+        <circle
+          cx="20"
+          cy="20"
+          r={r}
+          fill="none"
+          stroke={color}
+          strokeWidth="4"
+          strokeDasharray={circ}
+          strokeDashoffset={offset}
+          strokeLinecap="round"
+          transform="rotate(-90 20 20)"
+          style={{ transition: "stroke-dashoffset 0.6s ease" }}
+        />
+      </svg>
+      <span className="sol-util-ring-pct" style={{ color }}>
+        {Math.round(pct * 100)}
+      </span>
+    </div>
+  );
+}
 
 function CardItem({
   card,
@@ -1090,14 +1125,18 @@ function CardItem({
     const synthetic = [];
     const now = new Date();
     for (const c of commitments) {
-      if (c?.paymentMedium !== "credit_card") continue;
-      if (c?.cardId !== card.id) continue;
+      if (emiCardId(c) !== card.id) continue;
       if (!commitmentIsActive(c)) continue;
       const amt = parseFloat(c.emiAmount) || 0;
       if (amt <= 0 || !c.startDate) continue;
       const first = getEmiFirstPaymentDate(c);
       if (!first) continue;
-      const dueDay = parseInt(c.dueDay) || new Date(c.startDate).getDate() || 1;
+      const billDay =
+        parseInt(c.billingDay) ||
+        parseInt(card.statementDay) ||
+        parseInt(c.dueDay) ||
+        new Date(c.startDate).getDate() ||
+        1;
       const tenure = parseInt(c.tenureMonths) || 0;
       const months =
         (now.getFullYear() - first.getFullYear()) * 12 +
@@ -1109,7 +1148,7 @@ function CardItem({
         const y = first.getFullYear();
         const m = first.getMonth() + i;
         const lastDay = new Date(y, m + 1, 0).getDate();
-        const day = Math.min(dueDay, lastDay);
+        const day = Math.min(billDay, lastDay);
         const occurredAtDate = new Date(y, m, day);
         // Skip installments whose auto-debit day hasn't arrived yet — the
         // bank hasn't actually billed it, so it shouldn't show in the ledger.
@@ -1141,10 +1180,14 @@ function CardItem({
       aria-expanded={open}
     >
       <div className="sol-card-summary">
-        <div
-          className="sol-card-color-bar"
-          style={{background: card.color || "#4a90d9"}}
-        />
+        {displayLimit > 0 ? (
+          <UtilRing pct={util} color={utilColor} />
+        ) : (
+          <div
+            className="sol-card-color-bar"
+            style={{background: card.color || "#4a90d9"}}
+          />
+        )}
         <div className="sol-card-info">
           <div className="sol-card-name">
             {card.name}
@@ -1155,26 +1198,15 @@ function CardItem({
             )}
           </div>
           <div className="sol-card-bank">
+            {card.bank && (
+              <BankLogo bank={card.bank} color={card.color} size={16} />
+            )}
             {card.bank}
             {isPooled && card.poolMembers.length > 0 && (
               <span className="sol-card-pool-meta">
                 {" · with "}{card.poolMembers.map((m) => m.name).join(", ")}
               </span>
             )}
-          </div>
-          <div className="sol-card-util-row">
-            <div className="sol-util-bar-bg">
-              <div
-                className="sol-util-bar-fill"
-                style={{
-                  width: `${(util * 100).toFixed(1)}%`,
-                  background: utilColor,
-                }}
-              />
-            </div>
-            <span className="sol-util-pct" style={{color: utilColor}}>
-              {(util * 100).toFixed(0)}%
-            </span>
           </div>
         </div>
         <div className="sol-card-meta">
@@ -1428,19 +1460,20 @@ function CardsTab({
 
   return (
     <div className="sol-section">
-      {cards.map((c) => (
-        <CardItem
-          key={c.id}
-          card={c}
-          transactions={transactions}
-          commitments={commitments}
-          onEdit={onEdit}
-          onDelete={onDelete}
-          autoExpand={highlightCardId === c.id}
-          onExpandDone={onHighlightClear}
-          onEmiBadgeClick={onEmiBadgeClick}
-          onJumpToCard={onJumpToCard}
-        />
+      {cards.map((c, i) => (
+        <Reveal key={c.id} delay={Math.min(i, 6) * 0.04}>
+          <CardItem
+            card={c}
+            transactions={transactions}
+            commitments={commitments}
+            onEdit={onEdit}
+            onDelete={onDelete}
+            autoExpand={highlightCardId === c.id}
+            onExpandDone={onHighlightClear}
+            onEmiBadgeClick={onEmiBadgeClick}
+            onJumpToCard={onJumpToCard}
+          />
+        </Reveal>
       ))}
     </div>
   );
@@ -1467,9 +1500,7 @@ function CommitmentItem({commitment, onEdit, onDelete, autoExpand, onExpandDone}
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [autoExpand]);
   const typeInfo = getCommitmentTypeInfo(commitment.type);
-  const allTransactions = useSelector(
-    (state) => state.transactions.transactionData?.transactions ?? [],
-  );
+  const allTransactions = useLedger();
   const daysLeft = commitment.dueDay
     ? daysUntilCommitmentDue(commitment, allTransactions)
     : null;
@@ -1560,15 +1591,21 @@ function CommitmentItem({commitment, onEdit, onDelete, autoExpand, onExpandDone}
         <div className="sol-commit-name">{commitment.name}</div>
 
         {isLoan && tenureMonths > 0 && (
-          <div className="sol-commit-progress-row">
-            <div className="sol-progress-bar-bg">
-              <div
-                className="sol-progress-bar-fill"
-                style={{width: `${pct}%`, background: typeInfo.color}}
-              />
+          <>
+            <div className="sol-commit-progress-row">
+              <div className="sol-progress-bar-bg">
+                <div
+                  className="sol-progress-bar-fill"
+                  style={{width: `${pct}%`, background: typeInfo.color}}
+                />
+              </div>
+              <span className="sol-progress-pct">{pct}%</span>
             </div>
-            <span className="sol-progress-pct">{pct}%</span>
-          </div>
+            <div className="sol-commit-progress-cap">
+              {monthsPaid} of {tenureMonths} paid · {INR.format(outstanding)} left
+              {commitment.interestRate ? ` · ${commitment.interestRate}%` : ""}
+            </div>
+          </>
         )}
 
         <div className="sol-commit-footer-row">
@@ -1672,8 +1709,16 @@ function CommitmentItem({commitment, onEdit, onDelete, autoExpand, onExpandDone}
                     }}
                   />
                   <span
+                    className="sol-paid-via"
                     style={{color: linkedCard?.color || "var(--text-label)"}}
                   >
+                    {linkedCard.bank && (
+                      <BankLogo
+                        bank={linkedCard.bank}
+                        color={linkedCard.color}
+                        size={14}
+                      />
+                    )}
                     Paid via <strong>{linkedCard.name}</strong> (
                     {linkedCard.bank})
                   </span>
@@ -1736,15 +1781,16 @@ function CommitmentsTab({
 
   return (
     <div className="sol-section">
-      {commitments.map((c) => (
-        <CommitmentItem
-          key={c.id}
-          commitment={c}
-          onEdit={onEdit}
-          onDelete={onDelete}
-          autoExpand={highlightCommitmentId === c.id}
-          onExpandDone={onHighlightClear}
-        />
+      {commitments.map((c, i) => (
+        <Reveal key={c.id} delay={Math.min(i, 6) * 0.04}>
+          <CommitmentItem
+            commitment={c}
+            onEdit={onEdit}
+            onDelete={onDelete}
+            autoExpand={highlightCommitmentId === c.id}
+            onExpandDone={onHighlightClear}
+          />
+        </Reveal>
       ))}
     </div>
   );
@@ -1762,6 +1808,12 @@ function LendingItem({lending, onEdit, onDelete, onMarkReturned}) {
     <div className="sol-lending-item">
       <div className="sol-lending-info">
         <div className="sol-lending-name">{lending.name}</div>
+        {lending.date && outstanding > 0 && monthsSince(lending.date) >= 1 && (
+          <div className="sol-lending-age">
+            {isLent ? "Lent" : "Borrowed"} {fmtDuration(monthsSince(lending.date))}{" "}
+            ago
+          </div>
+        )}
         {outstanding === 0 && (
           <div
             className="sol-lending-due"
@@ -1879,6 +1931,13 @@ function LendingsTab({
               }`}
               onClick={() => setDirection(d.key)}
             >
+              {direction === d.key && (
+                <motion.span
+                  layoutId="solLendDirPill"
+                  className="sol-lend-dir-pill"
+                  transition={{ type: "spring", stiffness: 480, damping: 38 }}
+                />
+              )}
               <i className={`fa-solid ${d.icon}`} />
               {d.label}
               {d.key === "lent" && totalLent > 0 && (
@@ -1923,14 +1982,15 @@ function LendingsTab({
         </div>
       ) : (
         <div className="sol-section">
-          {filtered.map((l) => (
-            <LendingItem
-              key={l.id}
-              lending={l}
-              onEdit={onEdit}
-              onDelete={onDelete}
-              onMarkReturned={onMarkReturned}
-            />
+          {filtered.map((l, i) => (
+            <Reveal key={l.id} delay={Math.min(i, 6) * 0.04}>
+              <LendingItem
+                lending={l}
+                onEdit={onEdit}
+                onDelete={onDelete}
+                onMarkReturned={onMarkReturned}
+              />
+            </Reveal>
           ))}
         </div>
       )}
@@ -2128,9 +2188,11 @@ const SolvencyPage = () => {
   const lendings = useSelector(
     (state) => state.transactions.transactionData?.lendings ?? []
   );
-  const allTransactions = useSelector(
-    (state) => state.transactions.transactionData?.transactions ?? []
-  );
+  const allTransactions = useLedger();
+  // Seed the small bounded collections + settings/preferences (cards,
+  // commitments, lendings, subscriptions, accounts, prefs) into the blob so the
+  // selectors below read page-wise data — no loadAll dependency on this page.
+  useCoreData();
   const dueWindows = useSelector(
     (state) => state.transactions.transactionData?.preferences?.dueWindows,
   );
@@ -2152,12 +2214,7 @@ const SolvencyPage = () => {
       const txOutstanding = chargeByCard.get(card.id) || 0;
       const repayments = repayByCard.get(card.id) || 0;
       const emiOutstanding = commitments
-        .filter(
-          (c) =>
-            c.paymentMedium === "credit_card" &&
-            c.cardId === card.id &&
-            commitmentIsActive(c)
-        )
+        .filter((c) => emiCardId(c) === card.id && commitmentIsActive(c))
         .reduce((s, c) => {
           const emi = parseFloat(c.emiAmount) || 0;
           if (c.currentOutstanding != null) {
@@ -2410,6 +2467,13 @@ const SolvencyPage = () => {
             className={`sol-tab${activeTab === t ? " sol-tab--active" : ""}`}
             onClick={() => setActiveTab(t)}
           >
+            {activeTab === t && (
+              <motion.span
+                layoutId="solTabPill"
+                className="sol-tab-pill"
+                transition={{ type: "spring", stiffness: 480, damping: 38 }}
+              />
+            )}
             {t}
           </button>
         ))}

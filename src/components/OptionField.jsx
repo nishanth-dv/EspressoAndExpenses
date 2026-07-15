@@ -1,6 +1,8 @@
 import { memo } from "react";
 import PropTypes from "prop-types";
 import { useSelector } from "react-redux";
+import BankLogo from "./BankLogo";
+import LogoSelect from "./LogoSelect";
 
 // A drop-in replacement for a labelled <select> that honours the user's
 // "One-tap fields" preference: when on it renders a tap-to-pick chip strip
@@ -31,8 +33,25 @@ const OptionField = ({
   );
   const opts = normalise(options);
   const extra = className ? ` ${className}` : "";
+  const hasLogos = opts.some((o) => o.bank);
 
   if (!quickSelect) {
+    if (hasLogos) {
+      return (
+        <LogoSelect
+          name={name}
+          value={value}
+          onChange={onChange}
+          options={opts}
+          label={label}
+          placeholder={placeholder}
+          required={required}
+          disabled={disabled}
+          invalid={invalid}
+          className={className}
+        />
+      );
+    }
     return (
       <div className={`field${invalid ? " field--invalid" : ""}${extra}`}>
         <select
@@ -82,6 +101,7 @@ const OptionField = ({
               className={`opt-chip${active ? " opt-chip--active" : ""}`}
               onClick={() => emit(o.value)}
             >
+              {o.bank && <BankLogo bank={o.bank} color={o.color} size={18} />}
               {o.label}
             </button>
           );

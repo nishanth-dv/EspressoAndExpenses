@@ -16,6 +16,7 @@ const PagesPanel = () => {
   const preferences = useSelector(
     (state) => state.transactions.transactionData?.preferences,
   );
+  const visiblePages = APP_PAGES.filter((p) => p.open);
 
   function toggle(key) {
     // Current enabled optional set, defaulting to "all on" when unset.
@@ -39,7 +40,7 @@ const PagesPanel = () => {
       </p>
 
       <ul className="pref-pages-list">
-        {APP_PAGES.map((p) => {
+        {visiblePages.map((p) => {
           const on = isPageEnabled(p.key, preferences);
           return (
             <li key={p.key} className="pref-page-row">

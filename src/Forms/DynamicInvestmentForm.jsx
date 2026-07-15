@@ -24,6 +24,8 @@ import DayPicker from "./DayPicker";
 import BankChipSelector from "../components/BankChipSelector";
 import OptionField from "../components/OptionField";
 import DateField from "../components/DateField";
+import LoggingModeSelector from "../components/LoggingModeSelector";
+import { LOG_MODES, recommendedLogMode } from "../utils/loggingMode";
 import {
   fetchCurrentPrice,
   searchStockTickers,
@@ -63,7 +65,7 @@ function buildFormFromSchema(schema, existing) {
 
 // ── Field renderer ────────────────────────────────────
 
-function FieldRenderer({ field, value, onChange, accounts, multiBankEnabled, formState, setFormField }) {
+function FieldRenderer({ field, value, onChange, accounts, multiBankEnabled, formState, setFormField, typeKey }) {
   const setVal = (v) => onChange(v);
 
   switch (field.type) {
@@ -241,6 +243,7 @@ function FieldRenderer({ field, value, onChange, accounts, multiBankEnabled, for
           onChange={setVal}
           accounts={accounts}
           multiBankEnabled={multiBankEnabled}
+          typeKey={typeKey}
         />
       );
 
@@ -599,97 +602,107 @@ DeductFromBalanceField.propTypes = {
 // ── Auto-deduct schedule (frequency + day + bank picker) ──────
 
 const FREQUENCY_OPTIONS = [
-  { value: "monthly",   label: "Monthly"  },
-  { value: "quarterly", label: "Quarterly" },
-  { value: "yearly",    label: "Yearly"   },
+  { value: "monthly",    label: "Monthly"     },
+  { value: "quarterly",  label: "Quarterly"   },
+  { value: "halfyearly", label: "Half-yearly" },
+  { value: "yearly",     label: "Yearly"      },
 ];
 
-function AutoDeductField({ field, value, onChange, accounts, multiBankEnabled }) {
+function frequencyNoun(freq) {
+  if (freq === "yearly") return "year";
+  if (freq === "halfyearly") return "half-year";
+  if (freq === "quarterly") return "quarter";
+  return "month";
+}
+
+function AutoDeductField({
+  field,
+  value,
+  onChange,
+  accounts,
+  multiBankEnabled,
+  typeKey,
+}) {
   const v = value ?? {};
   const update = (patch) => onChange({ ...v, ...patch });
-  const locked = !!field.locked; // anchor → always-on; extras → user toggles
-  const enabled = locked ? true : !!v.enabled;
-  return (
-    <div className="dyn-auto-deduct">
-      <div className="dyn-auto-deduct-head">
-        {locked ? (
-          <span className="dyn-auto-deduct-locked">
-            <i className="fa-solid fa-rotate" /> {field.label}
-          </span>
-        ) : (
-          <label className="dyn-form-checkbox">
-            <input
-              type="checkbox"
-              checked={enabled}
-              onChange={(e) => update({ enabled: e.target.checked })}
-            />
-            <span>{field.label}</span>
-          </label>
-        )}
+  const designerDefault = field?.config?.defaultMode;
+  const reco = recommendedLogMode(typeKey);
+  const suggested =
+    designerDefault || (reco.mode === "off" ? "manual" : reco.mode);
+  const context =
+    !designerDefault && reco.mode !== "off"
+      ? reco.context
+      : LOG_MODES.find((m) => m.key === suggested)?.blurb;
+  const mode = v.mode || suggested;
+  const setMode = (m) => update({ mode: m, enabled: m !== "off" });
+
+  const schedule = (
+    <div className="dyn-auto-deduct-body">
+      <div className="dyn-form-row dyn-form-row--cols-2">
+        <OptionField
+          value={v.frequency ?? "monthly"}
+          onChange={(e) => update({ frequency: e.target.value })}
+          label="Frequency"
+          options={FREQUENCY_OPTIONS}
+        />
+        <DayPicker
+          label={mode === "auto" ? "Debit day" : "Reminder day"}
+          value={v.dayOfMonth ? String(v.dayOfMonth) : ""}
+          onChange={(d) => update({ dayOfMonth: parseInt(d) || 1 })}
+        />
       </div>
-      {enabled && (
-        <div className="dyn-auto-deduct-body">
-          <div className="dyn-form-row dyn-form-row--cols-2">
-            <OptionField
-              value={v.frequency ?? "monthly"}
-              onChange={(e) => update({ frequency: e.target.value })}
-              label="Frequency"
-              options={FREQUENCY_OPTIONS}
-            />
-            <DayPicker
-              label="Auto-debit day"
-              value={v.dayOfMonth ? String(v.dayOfMonth) : ""}
-              onChange={(d) => update({ dayOfMonth: parseInt(d) || 1 })}
-            />
-          </div>
-          <p className="dyn-form-hint dyn-form-hint--soft">
-            <i className="fa-solid fa-circle-info" /> Treat this as an
-            approximate day — real NACH debits drift by a few days for
-            weekends, holidays, and bank cut-offs. We won't write a
-            ledger entry on this date; instead, the activity view will
-            show a pending row each {v.frequency === "yearly"
-              ? "year"
-              : v.frequency === "quarterly"
-                ? "quarter"
-                : "month"} that you tap to confirm with the actual date
-            (or just import your statement and we'll reconcile in bulk).
-          </p>
-          <label className="dyn-form-checkbox">
-            <input
-              type="checkbox"
-              checked={!!v.variableAmount}
-              onChange={(e) => update({ variableAmount: e.target.checked })}
-            />
-            <span>Amount varies each period</span>
-          </label>
-          {v.variableAmount && (
-            <p className="dyn-form-hint dyn-form-hint--soft">
-              <i className="fa-solid fa-circle-info" /> Each pending row lets you
-              edit the amount before logging — handy for chit auctions or any
-              instalment that changes month to month.
-            </p>
-          )}
-          {multiBankEnabled && accounts?.length > 0 && (
-            <BankChipSelector
-              accounts={accounts}
-              value={v.accountId ?? ""}
-              onChange={(id) => update({ accountId: id })}
-              label="From bank (required)"
-              allowUntagged={false}
-            />
-          )}
-        </div>
+      <p className="dyn-form-hint dyn-form-hint--soft">
+        <i className="fa-solid fa-circle-info" />{" "}
+        {mode === "auto"
+          ? `We'll post an instalment on this day each ${frequencyNoun(v.frequency)}. Real debits can drift a day or two — edit or reconcile from a statement if needed.`
+          : `Treat this as an approximate day — real NACH debits drift for weekends and holidays. We won't write a ledger entry; instead the activity view shows a pending row each ${frequencyNoun(v.frequency)} that you tap to confirm with the actual date.`}
+      </p>
+      <label className="dyn-form-checkbox">
+        <input
+          type="checkbox"
+          checked={!!v.variableAmount}
+          onChange={(e) => update({ variableAmount: e.target.checked })}
+        />
+        <span>Amount varies each period</span>
+      </label>
+      {v.variableAmount && (
+        <p className="dyn-form-hint dyn-form-hint--soft">
+          <i className="fa-solid fa-circle-info" /> Each period lets you edit the
+          amount before logging — handy for chit auctions or any instalment that
+          changes month to month.
+        </p>
+      )}
+      {multiBankEnabled && accounts?.length > 0 && (
+        <BankChipSelector
+          accounts={accounts}
+          value={v.accountId ?? ""}
+          onChange={(id) => update({ accountId: id })}
+          label="From bank (required)"
+          allowUntagged={false}
+        />
       )}
     </div>
+  );
+
+  return (
+    <LoggingModeSelector
+      typeKey={typeKey}
+      value={mode}
+      onChange={setMode}
+      scheduleSlot={schedule}
+      suggested={suggested}
+      context={context}
+    />
   );
 }
 
 AutoDeductField.propTypes = {
-  field: PropTypes.object.isRequired,
+  field: PropTypes.object,
   value: PropTypes.any,
   onChange: PropTypes.func.isRequired,
   accounts: PropTypes.array,
   multiBankEnabled: PropTypes.bool,
+  typeKey: PropTypes.string,
 };
 
 // ── Main form ─────────────────────────────────────────
@@ -708,6 +721,10 @@ const DynamicInvestmentForm = ({
     (state) =>
       state.transactions.transactionData?.preferences?.multiBankEnabled ??
       false,
+  );
+  const quickSelect = useSelector(
+    (state) =>
+      state.transactions.transactionData?.preferences?.quickSelect ?? false,
   );
 
   const initialForm = useMemo(() => {
@@ -754,7 +771,14 @@ const DynamicInvestmentForm = ({
   return (
     <form className="expense-form dyn-investment-form" onSubmit={handleSubmit}>
       {(schema?.rows ?? []).map((row, ri) => {
-        const cols = Math.min(3, Math.max(1, row.fields?.length || 1));
+        // With pills on, a dropdown renders as a chip strip that needs the full
+        // row — so any row containing one collapses to a single column (every
+        // field in it stacks full-width).
+        const hasPills =
+          quickSelect && (row.fields ?? []).some((f) => f.type === "dropdown");
+        const cols = hasPills
+          ? 1
+          : Math.min(3, Math.max(1, row.fields?.length || 1));
         return (
           <div
             key={row.id ?? `r-${ri}`}
@@ -770,6 +794,7 @@ const DynamicInvestmentForm = ({
                 multiBankEnabled={multiBankEnabled}
                 formState={form}
                 setFormField={setField}
+                typeKey={schema.key}
               />
             ))}
           </div>

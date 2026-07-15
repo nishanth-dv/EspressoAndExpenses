@@ -20,16 +20,21 @@ import {
   persistDeleteAccount,
   persistUpdateAccount,
   persistSetOpeningBalance,
+  persistVerifyAccountBalance,
+  persistResetOpeningBalance,
   persistBulkTagAccounts,
   persistUpdateMerchantAlias,
   persistRemoveMerchantAlias,
 } from "../redux/slices/transactionSlice";
 import MultiBankMigration from "../components/MultiBankMigration";
+import BankLogo from "../components/BankLogo";
 import AutoCapturePanel from "../components/AutoCapturePanel";
 import InvestmentTypesPanel from "../components/InvestmentTypesPanel";
 import SubscriptionTypesPanel from "../components/SubscriptionTypesPanel";
 import NotificationsPanel from "../components/NotificationsPanel";
 import PagesPanel from "../components/PagesPanel";
+import BackupPanel from "../components/BackupPanel";
+import { dbEnabled, currentEmail } from "../utils/storage/allowlist";
 import { getPage } from "../utils/pages";
 import {
   BANKS,
@@ -40,7 +45,11 @@ import {
   PAYMENT_MODES,
 } from "../utils/constants";
 import { matchAutoCategory } from "../utils/autoCategory";
-import { computeAccountBalance } from "../utils/accountUtils";
+import {
+  computeAccountBalance,
+  getReconciliationDelta,
+} from "../utils/accountUtils";
+import { INCOME_TYPES } from "../utils/incomeUtils";
 
 const INR0 = new Intl.NumberFormat("en-IN", {
   style: "currency",
@@ -87,10 +96,20 @@ const SECTION_META = {
     title: "Notifications",
     kw: "notifications reminders alerts bell due card emi sip subscription renewal trial reminder surprises",
   },
+  backup: {
+    cat: "general",
+    title: "Backup & restore",
+    kw: "backup restore drive export data recovery snapshot save copy revert",
+  },
   categories: {
     cat: "transactions",
     title: "Categories",
     kw: "categories expense income tags labels",
+  },
+  income: {
+    cat: "transactions",
+    title: "Income",
+    kw: "income salary business monthly baseline refund reimbursement exclude cash flow coverage source type earnings",
   },
   paymentModes: {
     cat: "transactions",
@@ -107,6 +126,11 @@ const SECTION_META = {
     cat: "transactions",
     title: "Entry type tabs",
     kw: "entry type tabs expense investment subscription switch modal kind segment pick category",
+  },
+  tally: {
+    cat: "transactions",
+    title: "Toolbox",
+    kw: "toolkit tally add up sum total calculator amounts tap select notes note memo checklist reminder jot calendar agenda month due dates upcoming schedule",
   },
   stmtImport: {
     cat: "transactions",
@@ -149,6 +173,10 @@ const COLLAPSE_TRANSITION = {
   ease: [0.25, 0.46, 0.45, 0.94],
 };
 
+// A cash-in-hand account. Not a real bank, so it never enters the Banks list
+// (or the Add-Card dropdown) — it's only trackable as a multi-bank account.
+const CASH_ACCOUNT = "Cash";
+
 const MultiBankAccountList = memo(function MultiBankAccountList({
   banks,
   accounts,
@@ -160,6 +188,9 @@ const MultiBankAccountList = memo(function MultiBankAccountList({
 }) {
   const tracked = new Set(accounts.map((a) => a.bank));
   const available = banks.filter((b) => !tracked.has(b));
+  // Cash isn't a bank (so it stays out of the Banks list / Add-Card dropdown),
+  // but it can be tracked as an account like any other. Offer it once.
+  const canAddCash = !tracked.has(CASH_ACCOUNT);
 
   return (
     <div className="pref-multibank">
@@ -181,12 +212,21 @@ const MultiBankAccountList = memo(function MultiBankAccountList({
         </ul>
       )}
 
-      {available.length > 0 && (
+      {(available.length > 0 || canAddCash) && (
         <>
           <p className="pref-section-hint pref-multibank-hint">
             Add an account
           </p>
           <div className="pref-multibank-chips">
+            {canAddCash && (
+              <button
+                type="button"
+                className="pref-multibank-chip pref-multibank-chip--cash"
+                onClick={() => onAdd(CASH_ACCOUNT)}
+              >
+                <i className="fa-solid fa-wallet" /> {CASH_ACCOUNT}
+              </button>
+            )}
             {available.map((b) => (
               <button
                 key={b}
@@ -232,43 +272,48 @@ const BankAccountRow = memo(function BankAccountRow({
   onRemove,
 }) {
   const live = computeAccountBalance(account, transactions);
-  const hasEntered = account.openingBalance != null;
-  const entered = hasEntered ? parseFloat(account.openingBalance) || 0 : null;
-  const drift = hasEntered ? live - entered : 0;
-  const driftMatters = Math.abs(drift) > 1;
+  // Same reconciliation source of truth as the balance carousel: drift is the
+  // computed balance vs the user-verified balance (verifiedBalance/verifiedAt),
+  // NOT the opening balance. This keeps both screens in agreement.
+  const recon = getReconciliationDelta(account, transactions);
+  const drift = recon ? recon.delta : 0;
+  const driftMatters = recon != null && Math.abs(drift) > 100;
+  const verifiedDate = recon
+    ? new Date(recon.verifiedAt).toLocaleDateString("en-IN", {
+        day: "numeric",
+        month: "short",
+      })
+    : null;
 
   return (
     <li className="pref-multibank-row">
-      <span
-        className="pref-multibank-dot"
-        style={{ background: account.color || "var(--text-secondary)" }}
-      />
+      <BankLogo bank={account.bank} color={account.color} size={26} />
       <div className="pref-multibank-meta">
         <span className="pref-multibank-name">{account.bank}</span>
         <span className="pref-multibank-balance-live">
           {INR0.format(live)}
-          {hasEntered && driftMatters && (
+          {recon && driftMatters && (
             <span
               className={`pref-multibank-drift${
                 drift < 0
                   ? " pref-multibank-drift--down"
                   : " pref-multibank-drift--up"
               }`}
-              title={`You set ${INR0.format(entered)}; computed balance is ${INR0.format(live)}.`}
+              title={`Verified ${INR0.format(recon.verifiedBalance)} on ${verifiedDate}; computed balance is ${INR0.format(recon.computed)}.`}
             >
               <i className="fa-solid fa-triangle-exclamation" />
               {drift > 0 ? "+" : "−"}
               {INR0.format(Math.abs(drift))} drift
             </span>
           )}
-          {hasEntered && !driftMatters && (
+          {recon && !driftMatters && (
             <span className="pref-multibank-drift pref-multibank-drift--ok">
-              <i className="fa-solid fa-circle-check" /> up to date
+              <i className="fa-solid fa-circle-check" /> Verified {verifiedDate}
             </span>
           )}
-          {!hasEntered && (
+          {!recon && (
             <span className="pref-multibank-drift pref-multibank-drift--unset">
-              No current balance set
+              Not verified
             </span>
           )}
         </span>
@@ -300,7 +345,8 @@ BankAccountRow.propTypes = {
     id: PropTypes.string.isRequired,
     bank: PropTypes.string.isRequired,
     color: PropTypes.string,
-    openingBalance: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    verifiedBalance: PropTypes.oneOfType([PropTypes.string, PropTypes.number]),
+    verifiedAt: PropTypes.string,
     createdAt: PropTypes.string,
   }).isRequired,
   transactions: PropTypes.array.isRequired,
@@ -315,21 +361,89 @@ function randomBankColor() {
   return `hsl(${h}, ${s}%, ${l}%)`;
 }
 
-const BankAccountModal = ({ bank, account, onSave, onClose }) => {
+const BankAccountModal = ({
+  bank,
+  account,
+  transactions,
+  onSave,
+  onReset,
+  onClose,
+}) => {
+  const isEdit = !!account;
+  // Computed balance from the ledger — what we reconcile the user's figure
+  // against (edit mode only; a new account has no transactions yet).
+  const computed = useMemo(
+    () => (account ? computeAccountBalance(account, transactions) : 0),
+    [account, transactions],
+  );
+  // Standing reconciliation drift (computed vs last verified) — surfaces the
+  // "reset opening balance" repair when the opening entry looks wrong.
+  const recon = useMemo(
+    () => (account ? getReconciliationDelta(account, transactions) : null),
+    [account, transactions],
+  );
+  const hasDrift = recon != null && Math.abs(recon.delta) > 100;
   const [balance, setBalance] = useState(
-    account?.openingBalance != null ? String(account.openingBalance) : "",
+    isEdit
+      ? String(account.verifiedBalance ?? computed.toFixed(2))
+      : "",
   );
   const [color, setColor] = useState(() => account?.color || randomBankColor());
+  const [confirming, setConfirming] = useState(false);
 
-  function save() {
-    const amt = parseFloat(balance);
-    onSave({ color, balance: Number.isFinite(amt) && amt >= 0 ? amt : 0 });
+  const parsed = parseFloat(balance);
+  const valid = Number.isFinite(parsed) && parsed >= 0;
+  const value = valid ? parsed : 0;
+  const drift = isEdit && valid ? computed - parsed : 0;
+
+  // ── Confirmation step: nothing is saved/verified until the user confirms ──
+  if (confirming) {
+    return (
+      <div className="bank-account-modal bank-account-confirm">
+        <div className="bank-account-modal-bank">
+          <BankLogo bank={bank} color={color} size={28} />
+          <span className="bank-account-modal-bank-name">{bank}</span>
+        </div>
+        <p className="bank-account-confirm-msg">
+          <i className="fa-solid fa-circle-question" />{" "}
+          {isEdit ? (
+            <>
+              Mark <strong>{bank}</strong>&apos;s verified balance as{" "}
+              <strong>{INR0.format(value)}</strong> as of today? This records a
+              reconciliation checkpoint — it won&apos;t change any of your
+              transactions.
+            </>
+          ) : (
+            <>
+              Start tracking <strong>{bank}</strong> with a balance of{" "}
+              <strong>{INR0.format(value)}</strong>?
+            </>
+          )}
+        </p>
+        <div className="form-actions">
+          <button
+            type="button"
+            className="cancel-button"
+            onClick={() => setConfirming(false)}
+          >
+            Back
+          </button>
+          <button
+            type="button"
+            className="generic-button"
+            onClick={() => onSave({ color, balance: value })}
+          >
+            <i className="fa-solid fa-circle-check" /> Confirm
+          </button>
+        </div>
+      </div>
+    );
   }
 
   return (
     <div className="bank-account-modal">
       <div className="bank-account-modal-bank">
-        <span className="pref-multibank-dot" style={{ background: color }} />
+        <BankLogo bank={bank} color={color} size={28} />
         <span className="bank-account-modal-bank-name">{bank}</span>
       </div>
 
@@ -337,13 +451,44 @@ const BankAccountModal = ({ bank, account, onSave, onClose }) => {
         <input
           type="number"
           inputMode="decimal"
+          step="any"
           value={balance}
           onChange={(e) => setBalance(e.target.value)}
           placeholder=" "
           autoFocus
         />
-        <label>Current balance</label>
+        <label>{isEdit ? "Actual balance (₹)" : "Starting balance (₹)"}</label>
       </div>
+
+      {isEdit && valid && (
+        <p
+          className={`bank-account-drift-preview${
+            Math.abs(drift) > 100
+              ? " bank-account-drift-preview--drift"
+              : " bank-account-drift-preview--ok"
+          }`}
+        >
+          {Math.abs(drift) <= 0.5 ? (
+            <>
+              <i className="fa-solid fa-circle-check" /> Matches your computed
+              balance exactly.
+            </>
+          ) : (
+            <>
+              <i className="fa-solid fa-scale-unbalanced" /> We computed{" "}
+              <strong>{INR0.format(computed)}</strong> — drift of{" "}
+              <strong>
+                {drift > 0 ? "+" : "−"}
+                {INR0.format(Math.abs(drift))}
+              </strong>
+              {drift > 0
+                ? " (possible phantom / duplicate entries)"
+                : " (you may be missing transactions)"}
+              .
+            </>
+          )}
+        </p>
+      )}
 
       <div className="bank-account-color-field">
         <span className="bank-account-color-label">Account colour</span>
@@ -363,12 +508,39 @@ const BankAccountModal = ({ bank, account, onSave, onClose }) => {
         </div>
       </div>
 
+      {isEdit && hasDrift && (
+        <div className="bank-account-reset">
+          <p className="bank-account-reset-info">
+            <i className="fa-solid fa-wrench" /> Computed balance is off from your
+            last verified balance by{" "}
+            <strong>
+              {recon.delta > 0 ? "+" : "−"}
+              {INR0.format(Math.abs(recon.delta))}
+            </strong>
+            . If that drift came from an incorrectly-entered balance (not missing
+            transactions), reset the opening balance to clear it.
+          </p>
+          <button
+            type="button"
+            className="bank-account-reset-btn"
+            onClick={() => onReset(account)}
+          >
+            <i className="fa-solid fa-rotate-left" /> Reset opening balance
+          </button>
+        </div>
+      )}
+
       <div className="form-actions">
         <button type="button" className="cancel-button" onClick={onClose}>
           Cancel
         </button>
-        <button type="button" className="generic-button" onClick={save}>
-          {account ? "Save" : "Add account"}
+        <button
+          type="button"
+          className="generic-button"
+          disabled={!valid}
+          onClick={() => setConfirming(true)}
+        >
+          {isEdit ? "Verify balance" : "Add account"}
         </button>
       </div>
     </div>
@@ -378,7 +550,9 @@ const BankAccountModal = ({ bank, account, onSave, onClose }) => {
 BankAccountModal.propTypes = {
   bank: PropTypes.string.isRequired,
   account: PropTypes.object,
+  transactions: PropTypes.array,
   onSave: PropTypes.func.isRequired,
+  onReset: PropTypes.func,
   onClose: PropTypes.func.isRequired,
 };
 
@@ -692,6 +866,7 @@ const CategoryRow = memo(function CategoryRow({
 const PreferencesPage = () => {
   const dispatch = useDispatch();
   const navigate = useNavigate();
+  const isAdmin = useSelector((state) => state.access.isAdmin);
   const [theme, toggleTheme, skin, setSkin] = useTheme();
 
   // Browser history is usually populated by react-router pushes. If the
@@ -762,6 +937,20 @@ const PreferencesPage = () => {
       state.transactions.transactionData?.preferences?.dueWindows ??
       DEFAULT_DUE_WINDOWS,
   );
+  const incomeType = useSelector(
+    (state) =>
+      state.transactions.transactionData?.preferences?.incomeType ?? "auto",
+  );
+  const incomeExcludeCategories = useSelector(
+    (state) =>
+      state.transactions.transactionData?.preferences
+        ?.incomeExcludeCategories ?? [],
+  );
+  const incomeCategories = useSelector(
+    (state) =>
+      state.transactions.transactionData?.categories?.income ??
+      INCOME_CATEGORIES,
+  );
   const multiBankEnabled = useSelector(
     (state) =>
       state.transactions.transactionData?.preferences?.multiBankEnabled ??
@@ -771,6 +960,18 @@ const PreferencesPage = () => {
     (state) =>
       state.transactions.transactionData?.preferences?.entryTabsEnabled ??
       false,
+  );
+  const tallyEnabled = useSelector(
+    (state) =>
+      state.transactions.transactionData?.preferences?.tallyEnabled ?? true,
+  );
+  const notesEnabled = useSelector(
+    (state) =>
+      state.transactions.transactionData?.preferences?.notesEnabled ?? true,
+  );
+  const calendarEnabled = useSelector(
+    (state) =>
+      state.transactions.transactionData?.preferences?.calendarEnabled ?? true,
   );
   const statementImportEnabled = useSelector(
     (state) =>
@@ -838,6 +1039,7 @@ const PreferencesPage = () => {
   const [query, setQuery] = useState("");
   const [highlightSection, setHighlightSection] = useState(null);
   const [bankModal, setBankModal] = useState(null);
+  const [resetTarget, setResetTarget] = useState(null);
 
   useLayoutEffect(() => {
     const hash = window.location.hash.replace(/^#/, "");
@@ -875,23 +1077,27 @@ const PreferencesPage = () => {
 
   function handleSaveBankAccount({ color, balance }) {
     if (!bankModal) return;
+    const asOf = new Date().toISOString();
     if (bankModal.mode === "add") {
+      // New account: seed the ledger's starting balance (an opening entry), and
+      // mark it verified as of now so the balance carousel and this screen agree
+      // and start drift-free.
       const id = crypto.randomUUID();
       dispatch(
-        persistAddAccount({
-          id,
-          bank: bankModal.bank,
-          color,
-          createdAt: new Date().toISOString(),
-        }),
+        persistAddAccount({ id, bank: bankModal.bank, color, createdAt: asOf }),
       );
       dispatch(persistSetOpeningBalance({ accountId: id, amount: balance }));
+      dispatch(persistVerifyAccountBalance({ id, balance, asOf }));
     } else {
+      // Existing account: this is a reconciliation, NOT a rewrite of the opening
+      // balance. Record verifiedBalance/verifiedAt (same source of truth as the
+      // carousel) so we never back-date the ledger and skew the computed total.
       dispatch(persistUpdateAccount({ ...bankModal.account, color }));
       dispatch(
-        persistSetOpeningBalance({
-          accountId: bankModal.account.id,
-          amount: balance,
+        persistVerifyAccountBalance({
+          id: bankModal.account.id,
+          balance,
+          asOf,
         }),
       );
     }
@@ -1307,6 +1513,25 @@ const PreferencesPage = () => {
         <h1 className="pref-title">Preferences</h1>
       </div>
 
+      {isAdmin && (
+        <button
+          type="button"
+          className="pref-admin-card"
+          onClick={() => navigate("/Admin")}
+        >
+          <span className="pref-admin-icon">
+            <i className="fa-solid fa-user-shield" />
+          </span>
+          <span className="pref-admin-text">
+            <span className="pref-admin-title">Admin · Page access</span>
+            <span className="pref-admin-sub">
+              Grant or revoke gated pages per user
+            </span>
+          </span>
+          <i className="fa-solid fa-chevron-right pref-admin-arrow" />
+        </button>
+      )}
+
       <div className="pref-controls">
         <div className="pref-search">
           <i className="fa-solid fa-magnifying-glass" />
@@ -1597,6 +1822,19 @@ const PreferencesPage = () => {
         />
       </PrefSection>
 
+      {dbEnabled(currentEmail()) && (
+        <PrefSection
+          visible={sectionVisible("backup")}
+          id="backup"
+          title="Backup & restore"
+          summary="Google Drive"
+          expanded={isOpen("backup")}
+          onToggle={toggleSection}
+        >
+          <BackupPanel />
+        </PrefSection>
+      )}
+
       {catHasVisible("transactions") && (
         <ZoneHeading icon="fa-list-ul" label="Transactions & data" />
       )}
@@ -1671,6 +1909,79 @@ const PreferencesPage = () => {
             Add
           </button>
         </form>
+      </PrefSection>
+
+      <PrefSection
+        visible={sectionVisible("income")}
+        id="income"
+        title="Income"
+        summary={
+          INCOME_TYPES.find((t) => t.key === incomeType)?.label ?? "Auto-detect"
+        }
+        expanded={isOpen("income")}
+        onToggle={toggleSection}
+      >
+        <p className="pref-section-hint">
+          How &ldquo;monthly income&rdquo; is estimated for baseline metrics
+          across the app (Cash flow, income coverage), so a salary credited late
+          in the month doesn&apos;t skew them.{" "}
+          {INCOME_TYPES.find((t) => t.key === incomeType)?.blurb}
+        </p>
+        <div className="pref-grid">
+          <label className="pref-field">
+            <span>Income type</span>
+            <select
+              value={incomeType}
+              onChange={(e) =>
+                dispatch(persistSetPreference("incomeType", e.target.value))
+              }
+            >
+              {INCOME_TYPES.map((t) => (
+                <option key={t.key} value={t.key}>
+                  {t.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        <p className="pref-section-hint" style={{ marginTop: 14 }}>
+          Don&apos;t count these income categories toward the baseline (e.g.
+          refunds, reimbursements, one-off receipts). Tap to toggle:
+        </p>
+        <div className="pref-multibank-chips">
+          {incomeCategories.map((cat) => {
+            const excluded = incomeExcludeCategories.includes(cat);
+            return (
+              <button
+                key={cat}
+                type="button"
+                className="pref-multibank-chip"
+                style={
+                  excluded
+                    ? {
+                        borderStyle: "solid",
+                        borderColor: "#d1483f",
+                        color: "#d1483f",
+                      }
+                    : undefined
+                }
+                aria-pressed={excluded}
+                onClick={() => {
+                  const next = excluded
+                    ? incomeExcludeCategories.filter((c) => c !== cat)
+                    : [...incomeExcludeCategories, cat];
+                  dispatch(
+                    persistSetPreference("incomeExcludeCategories", next),
+                  );
+                }}
+              >
+                <i className={`fa-solid ${excluded ? "fa-ban" : "fa-plus"}`} />{" "}
+                {cat}
+              </button>
+            );
+          })}
+        </div>
       </PrefSection>
 
       <PrefSection
@@ -2044,6 +2355,82 @@ const PreferencesPage = () => {
       </PrefSection>
 
       <PrefSection
+        visible={sectionVisible("tally")}
+        id="tally"
+        title="Toolbox"
+        summary={`Tally ${tallyEnabled ? "on" : "off"} · Notes ${notesEnabled ? "on" : "off"} · Calendar ${calendarEnabled ? "on" : "off"}`}
+        expanded={isOpen("tally")}
+        onToggle={toggleSection}
+      >
+        <div className="pref-row">
+          <div className="pref-row-text">
+            <p className="pref-row-label">Tally</p>
+            <p className="pref-row-hint">
+              The floating Toolbox button lets you start Tally — tap any amounts
+              on screen to add them up. Turn it off to remove Tally from the
+              Toolbox.
+            </p>
+          </div>
+          <button
+            type="button"
+            className={`pref-switch${tallyEnabled ? " pref-switch--on" : ""}`}
+            role="switch"
+            aria-checked={tallyEnabled}
+            aria-label="Toggle Tally"
+            onClick={() =>
+              dispatch(persistSetPreference("tallyEnabled", !tallyEnabled))
+            }
+          >
+            <span className="pref-switch-thumb" />
+          </button>
+        </div>
+        <div className="pref-row">
+          <div className="pref-row-text">
+            <p className="pref-row-label">Notes</p>
+            <p className="pref-row-hint">
+              Jot free-form notes from the Toolbox — global, tied to a page, or
+              to a specific item — with checklists and light formatting. Turn it
+              off to remove Notes from the Toolbox.
+            </p>
+          </div>
+          <button
+            type="button"
+            className={`pref-switch${notesEnabled ? " pref-switch--on" : ""}`}
+            role="switch"
+            aria-checked={notesEnabled}
+            aria-label="Toggle Notes"
+            onClick={() =>
+              dispatch(persistSetPreference("notesEnabled", !notesEnabled))
+            }
+          >
+            <span className="pref-switch-thumb" />
+          </button>
+        </div>
+        <div className="pref-row">
+          <div className="pref-row-text">
+            <p className="pref-row-label">Calendar</p>
+            <p className="pref-row-hint">
+              A unified agenda + month view from the Toolbox — upcoming card
+              dues, EMIs, renewals, SIP/premium debits, note reminders and past
+              spending. Turn it off to remove Calendar from the Toolbox.
+            </p>
+          </div>
+          <button
+            type="button"
+            className={`pref-switch${calendarEnabled ? " pref-switch--on" : ""}`}
+            role="switch"
+            aria-checked={calendarEnabled}
+            aria-label="Toggle Calendar"
+            onClick={() =>
+              dispatch(persistSetPreference("calendarEnabled", !calendarEnabled))
+            }
+          >
+            <span className="pref-switch-thumb" />
+          </button>
+        </div>
+      </PrefSection>
+
+      <PrefSection
         visible={sectionVisible("autoCapture")}
         id="autoCapture"
         title="Auto-capture"
@@ -2337,6 +2724,7 @@ const PreferencesPage = () => {
           </label>
         </div>
 
+
         <p
           className="pref-section-hint"
           style={{ marginTop: 18 }}
@@ -2503,9 +2891,64 @@ const PreferencesPage = () => {
           <BankAccountModal
             bank={bankModal.bank}
             account={bankModal.account}
+            transactions={allTransactions}
             onSave={handleSaveBankAccount}
+            onReset={(account) => {
+              setBankModal(null);
+              setResetTarget(account);
+            }}
             onClose={() => setBankModal(null)}
           />
+        </Modal>
+      )}
+
+      {resetTarget && (
+        <Modal
+          open={!!resetTarget}
+          onClose={() => setResetTarget(null)}
+          title="Reset opening balance?"
+        >
+          <div className="bank-account-reset-confirm">
+            <div className="bank-account-modal-bank">
+              <BankLogo
+                bank={resetTarget.bank}
+                color={resetTarget.color}
+                size={28}
+              />
+              <span className="bank-account-modal-bank-name">
+                {resetTarget.bank}
+              </span>
+            </div>
+            <p className="bank-account-confirm-msg">
+              <i className="fa-solid fa-circle-info" /> This adjusts{" "}
+              <strong>{resetTarget.bank}</strong>&apos;s{" "}
+              <strong>opening (&ldquo;Current Balance&rdquo;) entry</strong> so
+              the computed balance lines up with your last verified balance,
+              clearing the current drift. Your real transactions are{" "}
+              <strong>not</strong> changed. Use this only when the drift came
+              from an incorrectly-entered balance — not from missing
+              transactions.
+            </p>
+            <div className="form-actions">
+              <button
+                type="button"
+                className="cancel-button"
+                onClick={() => setResetTarget(null)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="generic-button"
+                onClick={() => {
+                  dispatch(persistResetOpeningBalance(resetTarget.id));
+                  setResetTarget(null);
+                }}
+              >
+                <i className="fa-solid fa-rotate-left" /> Reset balance
+              </button>
+            </div>
+          </div>
         </Modal>
       )}
 

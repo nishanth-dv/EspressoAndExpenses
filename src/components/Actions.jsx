@@ -46,11 +46,11 @@ const Actions = () => {
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const onInvestPage = pathname.toLowerCase().includes("invest");
-  const onTransactionsPage = pathname.toLowerCase().includes("transactions");
   const onSolvencyPage = pathname.toLowerCase().includes("solvency");
   const onPreferencesPage = pathname.toLowerCase().includes("preferences");
-  const onDashboardPage = pathname.toLowerCase().includes("dashboard");
   const onSubscriptionsPage = pathname.toLowerCase().includes("subscriptions");
+  const onAdvisoryPage = pathname.toLowerCase().includes("advisory");
+  const hasFooter = !(onSolvencyPage || onPreferencesPage || onAdvisoryPage);
 
   useEffect(() => {
     if (window.location.hash.toLowerCase() === "#expense") {
@@ -58,27 +58,26 @@ const Actions = () => {
     }
   }, [navigate]);
 
-  // Mobile browsers can anchor `position: fixed` to the layout viewport, so
-  // the footer drifts when the URL bar collapses/expands. Track the visual
-  // viewport and shift the footer by the offset between layout and visual
-  // bottoms so it always sits at the visible bottom edge.
+  // Publish the fixed footer's height as --footer-h so .outlet can reserve
+  // exactly that much bottom padding (and 0 when there's no footer).
   const footerRef = useRef(null);
   useEffect(() => {
-    const vv = window.visualViewport;
-    if (!vv) return;
-    const update = () => {
-      if (!footerRef.current) return;
-      const offset = window.innerHeight - vv.height - vv.offsetTop;
-      footerRef.current.style.bottom = `${Math.max(0, offset)}px`;
-    };
-    update();
-    vv.addEventListener("resize", update);
-    vv.addEventListener("scroll", update);
+    const root = document.documentElement;
+    const el = footerRef.current;
+    if (!hasFooter || !el) {
+      root.style.setProperty("--footer-h", "0px");
+      return;
+    }
+    const apply = () =>
+      root.style.setProperty("--footer-h", `${el.offsetHeight}px`);
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(el);
     return () => {
-      vv.removeEventListener("resize", update);
-      vv.removeEventListener("scroll", update);
+      ro.disconnect();
+      root.style.setProperty("--footer-h", "0px");
     };
-  }, []);
+  }, [hasFooter]);
 
   const handleTransaction = (transaction) => {
     setIsIncomeFormOpen(false);
@@ -128,16 +127,13 @@ const Actions = () => {
     dispatch(persistAddSubscription(subscription));
   };
 
-  if (onSolvencyPage || onPreferencesPage) return null;
+  if (!hasFooter) return null;
 
   const showTransfer = !onInvestPage && !onSubscriptionsPage && canSelfTransfer;
 
   return (
     <>
-      <footer
-        ref={footerRef}
-        className={`action-footer${(onTransactionsPage || onInvestPage || onDashboardPage || onSubscriptionsPage) ? " action-footer--sticky" : ""}`}
-      >
+      <footer ref={footerRef} className="action-footer">
         {/* Left spacer mirrors the right "side" slot so the centered group
             stays visually centred when the transfer button is present. */}
         {showTransfer && (

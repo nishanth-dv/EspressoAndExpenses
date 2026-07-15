@@ -217,7 +217,8 @@ export const CARD_COLORS = [
 
 export const BANKS = [
   "HDFC", "ICICI", "SBI", "Axis", "Kotak", "IDFC", "Yes Bank",
-  "IndusInd", "Amex", "Citi", "Standard Chartered", "RBL", "Other",
+  "IndusInd", "Amex", "Citi", "Standard Chartered", "RBL",
+  "Karnataka Bank", "Other",
 ];
 
 export const DEFAULT_HEALTH_SCORE = {
@@ -258,6 +259,13 @@ export const DEFAULT_DUE_WINDOWS = {
 export const DEFAULT_PREFERENCES = {
   fdRate: 7,
   inflationRate: 6,
+  // How "monthly income" is modelled for baseline metrics (Cash flow, income
+  // coverage) so a month-end salary doesn't skew them. "auto" | "salaried" |
+  // "business" — see utils/incomeUtils.
+  incomeType: "auto",
+  // Income categories to EXCLUDE from the monthly-income baseline (refunds,
+  // reimbursements, one-off receipts, …). Array of category names.
+  incomeExcludeCategories: [],
   voiceAddEnabled: false,
   autoCategoryRules: [],
   privacyMode: false,
@@ -299,6 +307,15 @@ export const DEFAULT_PREFERENCES = {
   // a couple of "surprise" insight types). Master on/off lives here so the
   // whole bell + modal can be hidden from Preferences → General.
   notificationsEnabled: true,
+  // Toolbox → Notes. When on, the Toolbox launcher (the floating button that
+  // also opens Tally) offers a Notes drawer for jotting free-form notes,
+  // scoped globally, to a page, or to a specific entity. Off hides Notes from
+  // the Toolbox (and, if Tally is also off, the launcher disappears entirely).
+  notesEnabled: true,
+  // Toolbox → Calendar. A unified agenda/month view of upcoming obligations
+  // (card dues, EMIs, renewals, SIP/premium debits), note reminders and past
+  // spending. Derived from existing data — nothing new is stored.
+  calendarEnabled: true,
   // Per-type visibility. Empty object = every type at its own default (see
   // NOTIFICATION_TYPES in utils/notificationEngine.js). A key set to false
   // suppresses that type; true force-enables an off-by-default type. This
@@ -335,6 +352,14 @@ export const DEFAULT_DATA = {
   budgets: {},
   investments: [],
   goals: [],
+  // Free-form notes (Toolbox → Notes). Each entry:
+  //   { id, title?, body, scope: "global"|"page"|"entity", pageKey?,
+  //     entityRef?: { type, id }, pinned?, color?, remindAt?,
+  //     createdAt, updatedAt, archivedAt? }
+  // `body` is light markdown: **bold**, ~~strike~~, - bullets, and
+  // - [ ] / - [x] task items (ticking strikes the line through). Persisted as
+  // a first-class `notes` collection. See components/notes/.
+  notes: [],
   cards: [],
   commitments: [],
   lendings: [],

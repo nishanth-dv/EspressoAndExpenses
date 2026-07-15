@@ -1,7 +1,7 @@
 import { memo, useState, useEffect } from "react";
 import PropTypes from "prop-types";
 import { useSelector } from "react-redux";
-import { useNavigate } from "react-router-dom";
+import { useDeepLinkNav } from "../hooks/useDeepLinkNav";
 import BankChipSelector from "../components/BankChipSelector";
 import OptionField from "../components/OptionField";
 import DateField from "../components/DateField";
@@ -142,7 +142,7 @@ const SubscriptionForm = ({ onSubmit, onCancel, existing, prefill }) => {
     return EMPTY;
   });
 
-  const navigate = useNavigate();
+  const deepNav = useDeepLinkNav();
 
   const cards = useSelector(
     (state) => state.transactions.transactionData?.cards ?? [],
@@ -271,7 +271,7 @@ const SubscriptionForm = ({ onSubmit, onCancel, existing, prefill }) => {
             onClick={() => {
               onCancel();
               setTimeout(
-                () => navigate("/Preferences#subscriptionTypes"),
+                () => deepNav("/Preferences#subscriptionTypes"),
                 200,
               );
             }}

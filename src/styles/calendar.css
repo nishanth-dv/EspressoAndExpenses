@@ -1,0 +1,448 @@
+.cal-modal {
+  width: min(460px, 84vw);
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+/* View toggle */
+.cal-viewtabs {
+  display: flex;
+  gap: 6px;
+}
+
+.cal-viewtab {
+  flex: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--surface-border);
+  background: var(--surface-bg);
+  color: var(--text-secondary);
+  font-family: "Smooch Sans", sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    color 0.13s,
+    border-color 0.13s;
+}
+
+.cal-viewtab--active {
+  color: var(--bar-text);
+  background: var(--bar-bg);
+  border-color: transparent;
+  box-shadow: 0 2px 8px -3px rgba(0, 0, 0, 0.35);
+}
+
+/* Agenda */
+.cal-agenda {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 60vh;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.cal-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.cal-section-title {
+  margin: 0 0 2px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-label);
+}
+
+.cal-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  padding: 8px 10px;
+  border: 1px solid var(--surface-border);
+  border-radius: 11px;
+  background: var(--surface-bg);
+  cursor: pointer;
+  transition: border-color 0.13s;
+}
+
+.cal-row:hover {
+  border-color: var(--amount-investment);
+}
+
+.cal-row--static {
+  cursor: default;
+}
+
+.cal-row--static:hover {
+  border-color: var(--surface-border);
+}
+
+.cal-row-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: 8px;
+  background: var(--modal-bg);
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.cal-row-icon--obligation {
+  color: #f59e0b;
+}
+.cal-row-icon--reminder {
+  color: #0ea5e9;
+}
+.cal-row-icon--maturity {
+  color: #9b59b6;
+}
+.cal-row-icon--tax {
+  color: #14b8a6;
+}
+
+.cal-row-hint {
+  margin-top: 2px;
+  font-size: 11px;
+  color: var(--text-label);
+  font-style: italic;
+}
+
+.cal-row-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.cal-row-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cal-row-sub {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--text-label);
+}
+
+.cal-chip {
+  padding: 1px 7px;
+  border-radius: 20px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.cal-chip--due {
+  color: #b45309;
+  background: rgba(245, 158, 11, 0.16);
+}
+
+.cal-chip--overdue {
+  color: #fff;
+  background: var(--amount-expense);
+}
+
+.cal-chip--paid {
+  color: var(--amount-income);
+  background: color-mix(in srgb, var(--amount-income) 16%, transparent);
+}
+
+.cal-row--paid {
+  opacity: 0.62;
+}
+
+.cal-row--paid .cal-row-title {
+  text-decoration: line-through;
+}
+
+/* Pile-up heads-up under the This-week agenda header */
+.cal-pileup {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 0 2px;
+  padding: 6px 10px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--amount-expense) 12%, transparent);
+  color: var(--amount-expense);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.cal-amt {
+  flex-shrink: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.cal-amt--expense {
+  color: var(--amount-expense);
+}
+.cal-amt--income {
+  color: var(--amount-income);
+}
+.cal-amt--invest {
+  color: var(--amount-investment);
+}
+
+/* Month */
+.cal-monthnav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 2px;
+}
+
+.cal-monthlabel {
+  font-family: "Smooch Sans", sans-serif;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.cal-navbtn {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--surface-border);
+  border-radius: 9px;
+  background: var(--surface-bg);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 7px;
+  margin-bottom: 7px;
+}
+
+.cal-grid--head {
+  margin-bottom: 4px;
+}
+
+.cal-weekday {
+  text-align: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-label);
+  text-transform: uppercase;
+}
+
+.cal-cell {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-top: 5px;
+  border: 1px solid transparent;
+  border-radius: 9px;
+  background: var(--surface-bg);
+  color: var(--text-primary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: border-color 0.12s;
+}
+
+.cal-cell:hover {
+  border-color: var(--surface-border-open);
+}
+
+.cal-cell--out {
+  opacity: 0.38;
+}
+
+.cal-cell--today .cal-cell-num {
+  color: var(--amount-investment);
+  font-weight: 800;
+}
+
+.cal-cell--sel {
+  border-color: var(--amount-investment);
+}
+
+.cal-cell--busy {
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--amount-expense) 45%, transparent);
+}
+
+.cal-cell-num {
+  line-height: 1;
+}
+
+.cal-cell-dots {
+  position: absolute;
+  bottom: 5px;
+  display: flex;
+  gap: 2px;
+}
+
+.cal-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+}
+
+/* Day sheet */
+.cal-daysheet {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--surface-border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.cal-daysheet-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.cal-daysheet-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.cal-daysheet-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: none;
+  background: none;
+  color: var(--amount-investment);
+  font-family: "Smooch Sans", sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.cal-daysheet-empty {
+  margin: 4px 0;
+  font-size: 13px;
+  color: var(--text-label);
+}
+
+/* Cash-flow runway */
+.cal-flow {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.cal-flow-title {
+  display: flex;
+  align-items: center;
+  margin: 0;
+  font-family: "Smooch Sans", sans-serif;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.cal-flow-head {
+  display: flex;
+  gap: 12px;
+}
+
+.cal-flow-head > div {
+  flex: 1;
+  padding: 9px 12px;
+  border-radius: 11px;
+  border: 1px solid var(--surface-border);
+  background: var(--surface-bg);
+}
+
+.cal-flow-label {
+  margin: 0 0 2px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-label);
+}
+
+.cal-flow-val {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.cal-flow-val--out {
+  color: var(--amount-expense);
+}
+
+.cal-flow-chart {
+  width: 100%;
+}
+
+.cal-flow-note {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  padding: 8px 11px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--amount-income) 12%, transparent);
+  color: var(--amount-income);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.cal-flow-note--warn {
+  background: color-mix(in srgb, var(--amount-expense) 12%, transparent);
+  color: var(--amount-expense);
+}
+
+/* Empty state */
+.cal-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 4px;
+  padding: 34px 16px;
+  color: var(--text-secondary);
+}
+
+.cal-empty > i {
+  font-size: 30px;
+  color: var(--text-label);
+  margin-bottom: 6px;
+}
+
+.cal-empty p {
+  margin: 0;
+  font-size: 15px;
+}
+
+.cal-empty-sub {
+  font-size: 13px;
+  color: var(--text-label);
+}

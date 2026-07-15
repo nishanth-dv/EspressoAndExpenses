@@ -145,16 +145,34 @@ export function findAutoDeductAmount(inv, schema) {
   return 0;
 }
 
-// Returns { investedAmount, currentValue } for any investment
-export function calcInvestmentValues(inv, userTypes = []) {
+// Returns { investedAmount, currentValue } for any investment.
+// `transactions` is optional — when supplied, cash-flow holdings (chit fund,
+// APY, etc.) fold their posted auto-deduct instalments into the invested
+// total so the ledger stays the single source of truth (see below).
+export function calcInvestmentValues(inv, userTypes = [], transactions = []) {
   const info = getTypeInfo(inv.type);
   const profile = getInvestmentMathProfile(inv.type, userTypes);
 
   // Cash-flow profile (APY, chit fund, etc.) — tracks contributions in and
   // withdrawals out, no return math attempted. `currentValue` falls back to
   // `invested − withdrawn` when the user hasn't entered a manual snapshot.
+  //
+  // The static `investedAmount` field only captures an opening figure; the
+  // real corpus grows through auto-deduct instalments that are posted to the
+  // ledger (tagged `autoDeductInvestmentId`) and never write back to the lot.
+  // So invested = opening + every posted instalment for this lot (or, for a
+  // grouped card, its underlying lots). This keeps the ledger authoritative
+  // and makes deletions self-correct.
   if (profile === "cashflow") {
-    const invested = parseFloat(inv.investedAmount) || 0;
+    const base = parseFloat(inv.investedAmount) || 0;
+    const ids = inv._ids ?? [inv.id];
+    let contributed = 0;
+    for (const t of transactions) {
+      if (t.autoDeductInvestmentId && ids.includes(t.autoDeductInvestmentId)) {
+        contributed += parseFloat(t.amount) || 0;
+      }
+    }
+    const invested = base + contributed;
     const withdrawn = parseFloat(inv.withdrawals) || 0;
     const explicit = parseFloat(inv.currentValue);
     const current = Number.isFinite(explicit)
@@ -235,8 +253,12 @@ export function calcInvestmentValues(inv, userTypes = []) {
   };
 }
 
-export function calcReturns(inv) {
-  const { investedAmount, currentValue } = calcInvestmentValues(inv);
+export function calcReturns(inv, userTypes = [], transactions = []) {
+  const { investedAmount, currentValue } = calcInvestmentValues(
+    inv,
+    userTypes,
+    transactions,
+  );
   const absoluteReturn = currentValue - investedAmount;
   // Cash-flow investments don't carry a meaningful return % — withdrawals
   // shouldn't read as "losses". We surface invested + current honestly but

@@ -10,12 +10,22 @@ import {
   initializeDrive,
   persistSyncGmail,
   persistQueueAlert,
+  persistDailyBackup,
 } from "../redux/slices/transactionSlice";
 import { reconnectDrive } from "../utils/googleDrive";
+import { loadAccess } from "../redux/slices/accessSlice";
 import { showToast } from "../redux/slices/toastSlice";
 import { useLoader } from "../preStyledElements/loader/LoaderContext";
 import { useGlassParallax } from "../hooks/useGlassParallax";
 import RouteErrorBoundary from "../components/RouteErrorBoundary";
+import Scroller from "../components/Scroller";
+import DeepLinkBack from "../components/DeepLinkBack";
+import DbSeeder from "../components/DbSeeder";
+import { TallyProvider } from "../context/TallyContext";
+import { NotesProvider } from "../context/NotesContext";
+import { CalendarProvider } from "../context/CalendarContext";
+import TallyLayer from "../components/tally/TallyLayer";
+import ToolkitLayer from "../components/tally/ToolkitLayer";
 
 const Home = () => {
   const dispatch = useDispatch();
@@ -23,6 +33,7 @@ const Home = () => {
   const navigate = useNavigate();
   const fileID = useSelector((state) => state.transactions.fileID);
   const status = useSelector((state) => state.transactions.status);
+  const accessStatus = useSelector((state) => state.access.status);
   const privacyMode = useSelector(
     (state) => state.transactions.transactionData?.preferences?.privacyMode ?? false,
   );
@@ -32,10 +43,12 @@ const Home = () => {
   );
   const gmailSyncedRef = useRef(false);
   const captureHandledRef = useRef(false);
+  const backupRef = useRef(false);
   const [reconnecting, setReconnecting] = useState(false);
 
   const driveLoading =
     status === "idle" || status === "loading" || reconnecting;
+  const onInvest = location.pathname.startsWith("/Invest");
 
   // Cursor-tracked specular glide across glass panes (no-op unless Glass skin).
   useGlassParallax();
@@ -50,14 +63,25 @@ const Home = () => {
     if (!fileID) dispatch(initializeDrive());
   }, [dispatch, fileID]);
 
+  // Load page-access only once Drive/auth is ready. On first login the OAuth
+  // token isn't valid yet, so an early call rejects (needs-reconnect) and never
+  // retries — leaving gated-page entry points (e.g. the Advisory CTA) hidden
+  // until a manual refresh. Waiting for `status === "ready"` guarantees a valid
+  // token; the `idle` guard keeps this to a single dispatch.
+  useEffect(() => {
+    if (status === "ready" && accessStatus === "idle") {
+      dispatch(loadAccess());
+    }
+  }, [dispatch, status, accessStatus]);
+
   // Hold the fullscreen boot loader until Drive is ready.
   useEffect(() => {
-    if (driveLoading) {
+    if (driveLoading && !onInvest) {
       showLoader({ label: "Brewing" });
     } else {
       hideLoader();
     }
-  }, [driveLoading, showLoader, hideLoader]);
+  }, [driveLoading, onInvest, showLoader, hideLoader]);
 
   // Auto-capture: once per session, after Drive is ready, pull new bank/UPI
   // alert mails from Gmail into the review inbox. Silent — no scope prompt
@@ -67,6 +91,12 @@ const Home = () => {
     gmailSyncedRef.current = true;
     dispatch(persistSyncGmail());
   }, [status, autoReadEnabled, dispatch]);
+
+  useEffect(() => {
+    if (status !== "ready" || backupRef.current) return;
+    backupRef.current = true;
+    dispatch(persistDailyBackup());
+  }, [status, dispatch]);
 
   // Deep-link capture: an iOS Shortcut (or any link) opening the app with
   // ?capture=<alert text> queues that text into the review inbox, then lands
@@ -141,25 +171,33 @@ const Home = () => {
   }
 
   return (
-    <>
-      <Navbar />
-      <OfflineBanner />
-      <PrivacyBanner />
-      <div className="outlet">
-        <RouteErrorBoundary resetKey={location.pathname}>
-          <motion.div
-            className="page-container"
-            key={location.pathname}
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.18, ease: "easeInOut" }}
-          >
-            <Outlet />
-          </motion.div>
-        </RouteErrorBoundary>
-      </div>
-      <Actions />
-    </>
+    <TallyProvider>
+      <NotesProvider>
+        <CalendarProvider>
+        <DbSeeder />
+        <Navbar />
+        <OfflineBanner />
+        <PrivacyBanner />
+        <Scroller className="outlet" options={{ overflow: { x: "hidden" } }}>
+          <DeepLinkBack />
+          <RouteErrorBoundary resetKey={location.pathname}>
+            <motion.div
+              className="page-container"
+              key={location.pathname}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.18, ease: "easeInOut" }}
+            >
+              <Outlet />
+            </motion.div>
+          </RouteErrorBoundary>
+        </Scroller>
+        <Actions />
+        <TallyLayer />
+        <ToolkitLayer />
+        </CalendarProvider>
+      </NotesProvider>
+    </TallyProvider>
   );
 };
 

@@ -1,3 +1,122 @@
+/* ── Server-computed card (GraphQL / normalized tables) ── */
+
+.server-card {
+  background: var(--surface-bg);
+  border: 1px solid var(--surface-border);
+  border-radius: 14px;
+  padding: 14px 16px;
+  margin: 8px 0 12px;
+}
+
+.server-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.server-card-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.server-card-tag {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--amount-investment);
+  background: color-mix(in srgb, var(--amount-investment) 14%, transparent);
+  padding: 2px 7px;
+  border-radius: 999px;
+}
+
+.server-card-msg {
+  margin: 4px 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.server-card-msg--err {
+  color: var(--amount-expense);
+}
+
+.server-card-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.server-card-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.server-card-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.server-card-name {
+  flex: 1;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+
+.server-card-amt {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.server-insight {
+  display: flex;
+  gap: 8px;
+  margin: 6px 0;
+  font-size: 13.5px;
+  line-height: 1.45;
+  color: var(--text-primary);
+}
+
+.server-insight i {
+  margin-top: 2px;
+  flex-shrink: 0;
+}
+
+.server-insight--warn i {
+  color: var(--amount-expense);
+}
+
+.server-insight--ok i {
+  color: var(--amount-income);
+}
+
+.server-card-disclaimer {
+  margin: 8px 0 0;
+  font-size: 11px;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.server-card-subhead {
+  margin: 12px 0 6px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+
 /* ── Portfolio Hero ──────────────────────────────────── */
 
 .inv-hero {
@@ -156,6 +275,30 @@
 
 /* ── Holdings ────────────────────────────────────────── */
 
+.inv-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: 14px;
+  padding: 6px 12px 6px 10px;
+  border-radius: 20px;
+  border: 1px solid var(--surface-border);
+  background: var(--surface-bg);
+  color: var(--text-secondary);
+  font-family: "Smooch Sans", sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition:
+    color 0.15s,
+    border-color 0.15s;
+}
+
+.inv-back-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--surface-border-open);
+}
+
 .inv-holdings-header {
   display: flex;
   align-items: center;
@@ -208,6 +351,60 @@
   opacity: 0.85;
 }
 
+/* Per-type (or grand) totals strip — sits between the type rail and the
+   scroll box so it's always in view while the holdings scroll beneath it. */
+.inv-type-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 9px 12px;
+  margin-bottom: 12px;
+  border-radius: 12px;
+  background: var(--surface-bg);
+  border: 1px solid var(--surface-border);
+}
+
+.inv-type-total-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.inv-type-total-stats {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+}
+
+.inv-type-total-stat {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.inv-type-total-cap {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-label);
+}
+
+.inv-type-total-val {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.inv-type-total-ret {
+  font-size: 13px;
+  font-weight: 700;
+}
+
 /* Self-contained scroll box (as shipped) so the holdings list never makes the
    whole page taller than the viewport — that's what keeps the last card
    reachable above the fixed action footer. The per-type groups scroll inside
@@ -216,10 +413,13 @@
   display: flex;
   flex-direction: column;
   gap: 18px;
+}
+
+.inv-holdings-scroll {
   max-height: 480px;
   overflow-y: auto;
-  scrollbar-width: thin;
-  padding-right: 2px;
+  margin-right: -16px;
+  padding-right: 16px;
   animation: invListFade 0.22s ease;
 }
 
@@ -773,32 +973,36 @@
 
 .inv-tabs {
   display: flex;
+  width: fit-content;
   gap: 4px;
-  border-bottom: 1px solid var(--surface-border);
-  margin-bottom: 12px;
+  padding: 4px;
+  background: var(--surface-bg);
+  border: 1px solid var(--surface-border);
+  border-radius: 12px;
+  margin: 4px 0 12px;
 }
 
 .inv-tab {
   background: none;
   border: none;
-  padding: 8px 14px;
+  padding: 8px 16px;
+  border-radius: 9px;
   font-family: "Smooch Sans", sans-serif;
   font-size: 14px;
   font-weight: 600;
   color: var(--text-secondary);
   cursor: pointer;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
-  transition: color 0.15s, border-color 0.15s;
+  transition: color 0.15s, background 0.15s;
 }
 
-.inv-tab:hover {
+.inv-tab:hover:not(.inv-tab--active) {
   color: var(--text-primary);
 }
 
 .inv-tab--active {
-  color: var(--text-primary);
-  border-bottom-color: var(--bar-bg);
+  color: var(--bar-text);
+  background: var(--bar-bg);
+  box-shadow: 0 2px 8px -3px rgba(0, 0, 0, 0.35);
 }
 
 .inv-resume-form {
@@ -989,6 +1193,19 @@
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
   margin-top: 4px;
+}
+
+/* Unit holdings (stocks/ETF/gold/crypto/SIP) carry a 4th "Avg buy" stat.
+   Collapses to a 2×2 grid on narrow cards so the values never crush. */
+.inv-holding-amounts--4 {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+@media (max-width: 400px) {
+  .inv-holding-amounts--4 {
+    grid-template-columns: repeat(2, 1fr);
+    row-gap: 10px;
+  }
 }
 
 .inv-holding-amt-label {
@@ -2231,6 +2448,7 @@
   z-index: -1;
   border-radius: 9px;
   background: var(--bar-bg);
+  box-shadow: 0 2px 8px -3px rgba(0, 0, 0, 0.35);
 }
 
 /* Only brighten inactive tabs on hover. The active tab already paints its text
@@ -2381,9 +2599,154 @@
   color: var(--text-secondary);
 }
 
+.log-mode {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  background: var(--surface-bg, #fff);
+  border: 1px solid var(--surface-border, #e5e7eb);
+  border-radius: 12px;
+}
+
+.log-mode-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text, #111827);
+}
+
+.log-mode-opts {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.log-mode-opt {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+  padding: 10px;
+  min-width: 0;
+  background: var(--field-bg, #f8f9fa);
+  border: 1.5px solid var(--field-border, #e5e7eb);
+  border-radius: 10px;
+  cursor: pointer;
+  text-align: left;
+  transition:
+    border-color 0.16s ease,
+    background 0.16s ease;
+}
+
+.log-mode-opt:hover {
+  border-color: var(--accent, #6c5ce7);
+}
+
+.log-mode-opt--on {
+  border-color: var(--accent, #6c5ce7);
+  background: color-mix(in srgb, var(--accent, #6c5ce7) 8%, transparent);
+}
+
+.log-mode-opt-ico {
+  font-size: 0.95rem;
+  color: var(--accent, #6c5ce7);
+}
+
+.log-mode-opt-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text, #111827);
+}
+
+.log-mode-opt-blurb {
+  font-size: 0.68rem;
+  line-height: 1.35;
+  color: var(--text-muted, #6b7280);
+}
+
+.log-mode-badge {
+  position: absolute;
+  top: -8px;
+  right: 6px;
+  font-size: 0.58rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #fff;
+  background: var(--accent, #6c5ce7);
+  padding: 1px 6px;
+  border-radius: 6px;
+}
+
+.log-mode-context {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin: 0;
+  font-size: 0.75rem;
+  line-height: 1.45;
+  color: var(--text-muted, #6b7280);
+}
+
+.log-mode-context i {
+  color: #c98a1a;
+  margin-top: 2px;
+}
+
+.itd-field-config-block {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.itd-logmode-opts {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.itd-logmode-opt {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  background: var(--field-bg, #f8f9fa);
+  border: 1.5px solid var(--field-border, #e5e7eb);
+  border-radius: 8px;
+  font-size: 0.8rem;
+  color: var(--text, #111827);
+  cursor: pointer;
+  transition:
+    border-color 0.16s ease,
+    background 0.16s ease;
+}
+
+.itd-logmode-opt:hover {
+  border-color: var(--accent, #6c5ce7);
+}
+
+.itd-logmode-opt--on {
+  border-color: var(--accent, #6c5ce7);
+  background: color-mix(in srgb, var(--accent, #6c5ce7) 8%, transparent);
+}
+
+.itd-logmode-opt i {
+  color: var(--accent, #6c5ce7);
+}
+
 .inv-grace-row {
   display: flex;
   gap: 10px;
+}
+
+.inv-grace-row:has(.opt-field) {
+  flex-direction: column;
+  align-items: stretch;
 }
 
 .inv-grace-value {
@@ -2563,4 +2926,577 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
+}
+
+/* ── Unified card surface: darkened, subtle border, levitating shadow ── */
+.inv-hero-card,
+.inv-holding-card,
+.inv-highlight-card,
+.inv-goal-card,
+.inv-type-total,
+.server-card {
+  background: var(--card-bg);
+  border-color: var(--card-border);
+  box-shadow: var(--card-shadow);
+}
+html[data-skin="glass"] :is(.inv-hero-card, .inv-holding-card, .inv-highlight-card, .inv-goal-card, .inv-type-total, .server-card) {
+  background: var(--surface-bg);
+  box-shadow: 0 8px 24px -14px var(--glass-ambient, rgba(0, 0, 0, 0.4));
+  -webkit-backdrop-filter: blur(var(--glass-blur, 20px)) saturate(1.4);
+  backdrop-filter: blur(var(--glass-blur, 20px)) saturate(1.4);
+}
+
+/* ── Living portfolio-value hero ─────────────────────── */
+.inv-value-hero {
+  position: relative;
+  overflow: hidden;
+  padding: 18px 18px 16px;
+  border-radius: 20px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  box-shadow: var(--card-shadow);
+  margin-bottom: 14px;
+}
+html[data-skin="glass"] .inv-value-hero {
+  background: var(--surface-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur, 20px)) saturate(1.4);
+  backdrop-filter: blur(var(--glass-blur, 20px)) saturate(1.4);
+}
+.inv-vh-glow {
+  position: absolute;
+  top: -55%;
+  right: -18%;
+  width: 320px;
+  height: 320px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--vh-accent) 32%, transparent),
+    transparent 70%
+  );
+  filter: blur(22px);
+  pointer-events: none;
+  opacity: 0.7;
+}
+.inv-vh-top {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.inv-vh-eyebrow {
+  margin: 0 0 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-label);
+}
+.inv-vh-value {
+  margin: 0;
+  font-size: 32px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.inv-vh-change {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  padding: 6px 11px;
+  border-radius: 999px;
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  animation: inv-vh-pulse 2.6s ease-in-out infinite;
+}
+.inv-vh-change--up {
+  color: var(--amount-income);
+  background: color-mix(in srgb, var(--amount-income) 15%, transparent);
+}
+.inv-vh-change--down {
+  color: var(--amount-expense);
+  background: color-mix(in srgb, var(--amount-expense) 15%, transparent);
+}
+.inv-vh-change-pct {
+  opacity: 0.85;
+  font-weight: 600;
+}
+@keyframes inv-vh-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 transparent;
+  }
+  50% {
+    box-shadow: 0 0 0 4px color-mix(in srgb, currentColor 12%, transparent);
+  }
+}
+.inv-vh-chart {
+  position: relative;
+  margin: 8px -4px 0;
+}
+.inv-vh-chart-tag {
+  display: block;
+  margin-top: 3px;
+  padding-left: 14px;
+  font-size: 10px;
+  color: var(--text-label);
+  opacity: 0.7;
+  letter-spacing: 0.02em;
+}
+.inv-vh-periods {
+  position: relative;
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 999px;
+  background: var(--surface-active);
+  margin: 10px 0 12px;
+}
+.inv-vh-period {
+  position: relative;
+  border: none;
+  background: none;
+  padding: 5px 15px;
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.inv-vh-period--active {
+  color: var(--text-primary);
+}
+.inv-vh-period > span {
+  position: relative;
+  z-index: 1;
+}
+.inv-vh-period-pill {
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  background: var(--card-bg);
+  box-shadow: 0 2px 8px -3px rgba(0, 0, 0, 0.35);
+}
+.inv-vh-stats {
+  display: flex;
+  gap: 10px;
+}
+.inv-vh-stat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: var(--surface-active);
+}
+.inv-vh-stat-label {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-label);
+}
+.inv-vh-stat-value {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Interactive allocation ring ─────────────────────── */
+.inv-alloc-chart-wrap {
+  position: relative;
+  width: 100%;
+  max-width: 300px;
+  flex-shrink: 0;
+}
+.inv-alloc-center {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  pointer-events: none;
+  text-align: center;
+}
+.inv-alloc-center-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-label);
+  max-width: 96px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.inv-alloc-center-value {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.inv-alloc-center-pct {
+  font-size: 12px;
+  font-weight: 700;
+}
+.inv-alloc-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px 8px;
+  border: none;
+  border-radius: 9px;
+  background: none;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s ease;
+}
+.inv-alloc-legend-item:hover,
+.inv-alloc-legend-item--active {
+  background: var(--surface-active);
+}
+.inv-alloc-legend-item .inv-alloc-label {
+  flex-shrink: 0;
+  min-width: 84px;
+  text-align: left;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+.inv-alloc-legend-bar {
+  flex: 1;
+  height: 6px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--text-label) 16%, transparent);
+  overflow: hidden;
+}
+.inv-alloc-legend-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  transform-origin: left center;
+  animation: inv-alloc-grow 0.85s cubic-bezier(0.16, 1, 0.3, 1);
+}
+@keyframes inv-alloc-grow {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+.inv-alloc-legend-item .inv-alloc-pct {
+  flex-shrink: 0;
+  min-width: 34px;
+  text-align: right;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.inv-alloc-hint {
+  margin: 10px 0 0;
+  font-size: 11.5px;
+  color: var(--text-label);
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.inv-alloc-hint i {
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+/* ── Portfolio health gauge ──────────────────────────── */
+.inv-health-inner {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+}
+.inv-health-gauge {
+  position: relative;
+  flex-shrink: 0;
+  width: 120px;
+  height: 120px;
+}
+.inv-health-svg {
+  width: 120px;
+  height: 120px;
+  transform: rotate(-90deg);
+}
+.inv-health-track {
+  fill: none;
+  stroke: color-mix(in srgb, var(--text-label) 16%, transparent);
+  stroke-width: 9;
+}
+.inv-health-ring {
+  fill: none;
+  stroke: var(--gauge-accent);
+  stroke-width: 9;
+  stroke-linecap: round;
+  transition: stroke-dashoffset 1.15s cubic-bezier(0.16, 1, 0.3, 1);
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--gauge-accent) 45%, transparent));
+}
+.inv-health-score {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+}
+.inv-health-num {
+  font-size: 30px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.inv-health-band {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--gauge-accent);
+}
+.inv-health-factors {
+  flex: 1;
+  min-width: 0;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.inv-health-factor {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+  line-height: 1.3;
+}
+.inv-health-factor i {
+  font-size: 12px;
+  flex-shrink: 0;
+}
+.inv-health-factor--ok i {
+  color: var(--amount-income);
+}
+.inv-health-factor--warn i {
+  color: #eab308;
+}
+
+/* ── Smart holding cards (phase 3) ───────────────────── */
+.inv-holding-card {
+  transition: transform 0.16s ease, box-shadow 0.16s ease;
+}
+.inv-holding-card--accent {
+  box-shadow: inset 3px 0 0 var(--inv-accent), var(--card-shadow);
+}
+html[data-skin="glass"] .inv-holding-card--accent {
+  box-shadow: inset 3px 0 0 var(--inv-accent),
+    0 8px 24px -14px var(--glass-ambient, rgba(0, 0, 0, 0.4));
+}
+.inv-holding-card--accent:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    inset 3px 0 0 var(--inv-accent),
+    0 10px 22px -14px rgba(0, 0, 0, 0.45);
+}
+.inv-holding-header {
+  justify-content: flex-start;
+  gap: 8px;
+}
+.inv-holding-actions {
+  margin-left: auto;
+}
+.inv-momentum {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.inv-momentum--up {
+  color: var(--amount-income);
+  background: color-mix(in srgb, var(--amount-income) 14%, transparent);
+}
+.inv-momentum--down {
+  color: var(--amount-expense);
+  background: color-mix(in srgb, var(--amount-expense) 14%, transparent);
+}
+.inv-gain-bar {
+  display: flex;
+  gap: 1.5px;
+  height: 7px;
+  margin: 3px 0 1px;
+}
+.inv-gain-seg {
+  height: 100%;
+  border-radius: 999px;
+  transform-origin: left center;
+}
+.inv-gain-seg--base {
+  background: color-mix(in srgb, var(--text-label) 24%, transparent);
+}
+.inv-gain-seg--delta {
+  animation: inv-gain-grow 0.75s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.inv-gain-seg--up {
+  background: var(--amount-income);
+}
+.inv-gain-seg--down {
+  background: var(--amount-expense);
+}
+@keyframes inv-gain-grow {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+/* ── Momentum & milestones strip (phase 4) ───────────── */
+.inv-momentum-strip {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 4px 2px 12px;
+  margin-bottom: 4px;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+.inv-momentum-strip::-webkit-scrollbar {
+  display: none;
+}
+.inv-mom-card {
+  flex: 0 0 auto;
+  min-width: 168px;
+  max-width: 210px;
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 12px 14px;
+  border-radius: 15px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  box-shadow: 0 6px 18px -10px rgba(8, 8, 22, 0.4);
+  position: relative;
+  overflow: hidden;
+}
+html[data-skin="glass"] .inv-mom-card {
+  background: var(--surface-bg);
+  -webkit-backdrop-filter: blur(var(--glass-blur, 18px)) saturate(1.3);
+  backdrop-filter: blur(var(--glass-blur, 18px)) saturate(1.3);
+}
+.inv-mom-card::before {
+  content: "";
+  position: absolute;
+  top: -40%;
+  right: -20%;
+  width: 90px;
+  height: 90px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--mom-accent) 30%, transparent),
+    transparent 70%
+  );
+  filter: blur(8px);
+  pointer-events: none;
+  opacity: 0.6;
+}
+.inv-mom-icon {
+  position: relative;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  color: var(--mom-accent);
+  background: color-mix(in srgb, var(--mom-accent) 16%, transparent);
+}
+.inv-mom-ring {
+  position: relative;
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: conic-gradient(
+    var(--mom-accent) calc(var(--p) * 1%),
+    color-mix(in srgb, var(--text-label) 20%, transparent) 0
+  );
+}
+.inv-mom-ring::before {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border-radius: 50%;
+  background: var(--card-bg);
+}
+html[data-skin="glass"] .inv-mom-ring::before {
+  background: var(--surface-bg);
+}
+.inv-mom-ring span {
+  position: relative;
+  z-index: 1;
+  font-size: 10px;
+  font-weight: 800;
+  color: var(--mom-accent);
+}
+.inv-mom-text {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.inv-mom-title {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.inv-mom-sub {
+  font-size: 11px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.inv-insight-card,
+.inv-reminder-item {
+  box-shadow: var(--card-shadow);
+}
+
+html[data-skin="glass"] .inv-insight-card,
+html[data-skin="glass"] .inv-reminder-item {
+  box-shadow: 0 8px 24px -14px var(--glass-ambient, rgba(0, 0, 0, 0.4));
 }

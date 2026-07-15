@@ -1,5 +1,6 @@
 import { memo, useState } from "react";
 import PropTypes from "prop-types";
+import BankLogo from "./BankLogo";
 
 // Horizontal chip strip — one chip per tracked bank account, plus an
 // "Untagged" option. Used in expense / income / investment forms when
@@ -40,10 +41,7 @@ const BankChipSelector = ({
                 onChange(a.id);
               }}
             >
-              <span
-                className="bank-chip-dot"
-                style={{ background: a.color || "var(--text-secondary)" }}
-              />
+              <BankLogo bank={a.bank} color={a.color} size={18} />
               {a.bank}
             </button>
           );

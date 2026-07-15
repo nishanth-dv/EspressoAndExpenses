@@ -22,23 +22,75 @@ export function computeAccountBalance(account, transactions = []) {
   return bal;
 }
 
+export function computeRunningBalances(transactions = [], multiBank = true) {
+  const ordered = [...transactions].sort((a, b) => {
+    const da = new Date(a.occurredAt || a.createdAt).getTime();
+    const db = new Date(b.occurredAt || b.createdAt).getTime();
+    if (da !== db) return da - db;
+    const ca = new Date(a.createdAt || 0).getTime();
+    const cb = new Date(b.createdAt || 0).getTime();
+    if (ca !== cb) return ca - cb;
+    return String(a.id).localeCompare(String(b.id));
+  });
+
+  const running = new Map();
+  const result = new Map();
+  const bump = (key, delta) => {
+    const next = (running.get(key) || 0) + delta;
+    running.set(key, next);
+    return next;
+  };
+
+  for (const t of ordered) {
+    const amt = parseFloat(t.amount) || 0;
+    if (t.transactionType === "self_transfer") {
+      if (t.fromAccountId) bump(t.fromAccountId, -amt);
+      if (t.toAccountId) bump(t.toAccountId, amt);
+      continue;
+    }
+    if (multiBank && !t.accountId) continue;
+    const key = multiBank ? t.accountId : "__all__";
+    let delta;
+    if (t.transactionType === "income") delta = amt;
+    else if (t.transactionType === "investment") delta = -amt;
+    else if (t.cardId) continue;
+    else delta = -amt;
+    result.set(t.id, bump(key, delta));
+  }
+
+  return result;
+}
+
 // Reconciliation delta. Negative = the user's bank reports MORE than we
 // computed (we're missing entries); positive = we computed MORE than the
 // bank (we have phantom entries or duplicates).
+export function balanceAsOf(account, transactions = [], asOf) {
+  if (!asOf) return computeAccountBalance(account, transactions);
+  let cutoff = new Date(asOf).getTime();
+  if (Number.isNaN(cutoff)) return computeAccountBalance(account, transactions);
+  // A date-only / midnight checkpoint means "as of the END of that day" — the
+  // whole day's activity counts. This preserves the original day-granular
+  // behaviour and keeps existing (date-picked) verifications stable. A
+  // checkpoint that carries a real time-of-day — an auto-rolled checkpoint — is
+  // honoured to the exact instant, so post-checkpoint spending is cleanly
+  // excluded and recorded activity never manufactures drift.
+  if (cutoff % 86_400_000 === 0) cutoff += 86_400_000 - 1;
+  cutoff = Math.min(cutoff, Date.now()); // never reconcile against the future
+  const upTo = transactions.filter((t) => {
+    const ts = new Date(t.occurredAt || t.createdAt || 0).getTime();
+    return Number.isNaN(ts) || ts <= cutoff;
+  });
+  return computeAccountBalance(account, upTo);
+}
+
 export function getReconciliationDelta(account, transactions = []) {
   if (account?.verifiedBalance == null || !account.verifiedAt) return null;
-  // Only count transactions up to and including the verification date.
-  const cutoff = new Date(account.verifiedAt);
-  const upTo = transactions.filter((t) => {
-    const d = t.occurredAt ? new Date(t.occurredAt) : null;
-    return d ? d <= cutoff : true;
-  });
-  const computedAtVerify = computeAccountBalance(account, upTo);
+  const computed = balanceAsOf(account, transactions, account.verifiedAt);
   return {
-    delta: computedAtVerify - (parseFloat(account.verifiedBalance) || 0),
+    delta: computed - (parseFloat(account.verifiedBalance) || 0),
     verifiedAt: account.verifiedAt,
     verifiedBalance: parseFloat(account.verifiedBalance) || 0,
-    computed: computedAtVerify,
+    computed,
   };
 }
 

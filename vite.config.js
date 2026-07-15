@@ -29,10 +29,17 @@ export default defineConfig({
           )
             return "vendor-charts";
           if (id.includes("framer-motion")) return "vendor-motion";
+          // Anchor to the actual package folders — a bare "/react/" substring
+          // also matches unrelated paths like
+          // @reduxjs/toolkit/dist/query/react/*, which would misfile RTK Query
+          // into vendor-react and create a circular chunk dependency (breaks the
+          // prod bundle with "Cannot set properties of undefined (setting
+          // 'Activity')").
           if (
-            id.includes("/react/") ||
-            id.includes("/react-dom/") ||
-            id.includes("/scheduler/")
+            id.includes("/node_modules/react/") ||
+            id.includes("/node_modules/react-dom/") ||
+            id.includes("/node_modules/scheduler/") ||
+            id.includes("/node_modules/react-compiler-runtime/")
           )
             return "vendor-react";
           return "vendor";

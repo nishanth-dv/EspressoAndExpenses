@@ -1,6 +1,5 @@
 .dashboard {
   padding: 10px;
-  padding-bottom: calc(60px + env(safe-area-inset-bottom, 0px));
   display: flex;
   flex-direction: column;
   gap: 12px;
@@ -13,6 +12,7 @@
   border: 1px solid var(--surface-border);
   border-radius: 12px;
   padding: 16px;
+  box-shadow: var(--card-shadow);
 }
 
 .dash-section-title {
@@ -47,10 +47,17 @@
 }
 
 .summary-card {
-  background: var(--surface-bg);
-  border: 1px solid var(--surface-border);
-  border-radius: 12px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  box-shadow: var(--card-shadow);
+  border-radius: var(--card-radius);
   padding: 14px;
+}
+html[data-skin="glass"] .summary-card {
+  background: var(--surface-bg);
+  box-shadow: 0 8px 24px -14px var(--glass-ambient, rgba(0, 0, 0, 0.4));
+  -webkit-backdrop-filter: blur(var(--glass-blur, 20px)) saturate(1.4);
+  backdrop-filter: blur(var(--glass-blur, 20px)) saturate(1.4);
 }
 
 .summary-card-label {
@@ -70,72 +77,6 @@
 }
 
 .summary-card-sub {
-  margin: 3px 0 0;
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
-/* ── Insight grid ───────────────────────────────────── */
-
-.insight-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 10px;
-}
-
-@media (max-width: 767px) {
-  .insight-grid > *:last-child:nth-child(odd) {
-    grid-column: 1 / -1;
-  }
-}
-
-@media (min-width: 768px) {
-  /* auto-fit lets cards stretch when the count isn't a multiple of 5 */
-  .insight-grid {
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  }
-}
-
-.insight-card {
-  background: var(--surface-bg);
-  border: 1px solid var(--surface-border);
-  border-radius: 12px;
-  padding: 14px;
-}
-
-.insight-card--link {
-  display: block;
-  text-decoration: none;
-  color: inherit;
-  transition: border-color 0.18s ease, transform 0.18s ease;
-}
-
-.insight-card--link:hover {
-  border-color: #5b8dee;
-  transform: translateY(-2px);
-}
-
-.insight-label {
-  margin: 0 0 4px;
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--text-label);
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-}
-
-.insight-value {
-  margin: 0;
-  font-size: 17px;
-  font-weight: 700;
-  color: var(--text-primary);
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-}
-
-.insight-sub {
   margin: 3px 0 0;
   font-size: 12px;
   color: var(--text-secondary);
@@ -181,34 +122,6 @@
   }
 }
 
-/* ── Category breakdown ─────────────────────────────── */
-
-.cat-list {
-  display: flex;
-  flex-direction: column;
-  gap: 11px;
-}
-
-.cat-row-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: baseline;
-  margin-bottom: 5px;
-  gap: 8px;
-}
-
-.cat-name {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--text-primary);
-}
-
-.cat-meta {
-  font-size: 12px;
-  color: var(--text-secondary);
-  flex-shrink: 0;
-}
-
 .bar-track {
   height: 6px;
   background: var(--surface-border);
@@ -220,14 +133,6 @@
   height: 100%;
   border-radius: 3px;
   transition: width 0.45s ease;
-}
-
-.bar-fill--expense {
-  background: var(--amount-expense);
-}
-
-.bar-fill--income {
-  background: var(--amount-income);
 }
 
 /* ── Budget tracker ─────────────────────────────────── */
@@ -295,10 +200,6 @@
 
 .budget-set-btn:hover {
   color: var(--text-primary);
-}
-
-.bar-fill--over {
-  background: var(--amount-expense);
 }
 
 .budget-over-label {
@@ -541,4 +442,373 @@
   color: var(--empty-text);
   text-align: center;
   padding: 16px 0 4px;
+}
+
+/* ── Cash-flow hero ────────────────────────────────────── */
+.dash-hero {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 18px;
+  padding: 16px 18px;
+  box-shadow: var(--card-shadow);
+}
+
+.dash-hero-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.dash-hero-lead {
+  min-width: 0;
+}
+
+.dash-hero-eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-label);
+}
+
+.dash-hero-value {
+  margin-top: 4px;
+  font-size: 32px;
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+}
+
+.dash-hero-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+  padding: 3px 9px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  background: var(--surface-active);
+}
+
+.dash-hero-ring {
+  position: relative;
+  width: 72px;
+  height: 72px;
+  flex-shrink: 0;
+}
+
+.dash-hero-ring svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.dash-hero-ring-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.dash-hero-ring-num {
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--text-primary);
+}
+
+.dash-hero-ring-lbl {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-label);
+}
+
+.dash-hero-strip {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--surface-border);
+}
+
+.dash-hero-stat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.dash-hero-stat-lbl {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-label);
+}
+
+.dash-hero-stat-val {
+  font-size: 16px;
+  font-weight: 800;
+}
+
+/* ── Smart insight cards ───────────────────────────────── */
+.dash-insights {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dash-insight {
+  --ins-accent: var(--amount-investment);
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 11px 13px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-left: 3px solid var(--ins-accent);
+  border-radius: 12px;
+  box-shadow: var(--card-shadow);
+}
+
+.dash-insight--alert {
+  --ins-accent: var(--amount-expense);
+}
+.dash-insight--watch {
+  --ins-accent: #f59e0b;
+}
+.dash-insight--good {
+  --ins-accent: var(--amount-income);
+}
+
+.dash-insight-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: 9px;
+  font-size: 13px;
+  color: var(--ins-accent);
+  background: color-mix(in srgb, var(--ins-accent) 14%, transparent);
+}
+
+.dash-insight-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.dash-insight-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.dash-insight-detail {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+html[data-skin="glass"] .dash-hero,
+html[data-skin="glass"] .dash-insight {
+  background: var(--surface-bg);
+  box-shadow: 0 8px 24px -14px var(--glass-ambient, rgba(0, 0, 0, 0.4));
+  -webkit-backdrop-filter: blur(var(--glass-blur, 20px)) saturate(1.4);
+  backdrop-filter: blur(var(--glass-blur, 20px)) saturate(1.4);
+}
+
+/* ── Category spending ring ────────────────────────────── */
+.dash-ring {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dash-ring-chart {
+  position: relative;
+  width: 100%;
+}
+
+.dash-ring-center {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.dash-ring-val {
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1;
+  color: var(--text-primary);
+}
+
+.dash-ring-lbl {
+  max-width: 100px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text-label);
+  text-align: center;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dash-ring-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 156px;
+  overflow-y: auto;
+}
+
+.dash-ring-leg {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border: none;
+  background: none;
+  border-radius: 7px;
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.13s;
+}
+
+.dash-ring-leg:hover,
+.dash-ring-leg--active {
+  background: var(--surface-active);
+}
+
+.dash-ring-leg-dot {
+  width: 9px;
+  height: 9px;
+  flex-shrink: 0;
+  border-radius: 3px;
+}
+
+.dash-ring-leg-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dash-ring-leg-pct {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+
+/* ── Month-end forecast ────────────────────────────────── */
+.dash-fc-lead {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin-bottom: 12px;
+}
+
+.dash-fc-eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-label);
+}
+
+.dash-fc-value {
+  font-size: 28px;
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+}
+
+.dash-fc-sub {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.dash-fc-bar {
+  position: relative;
+  height: 12px;
+  border-radius: 6px;
+  background: var(--surface-border);
+  overflow: hidden;
+}
+
+.dash-fc-bar-proj,
+.dash-fc-bar-spent {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  border-radius: 6px;
+  transition: width 0.5s ease;
+}
+
+.dash-fc-bar-ref {
+  position: absolute;
+  top: -2px;
+  bottom: -2px;
+  width: 2px;
+  background: var(--text-primary);
+  opacity: 0.55;
+  border-radius: 1px;
+}
+
+.dash-fc-note {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+/* ── Budget summary ────────────────────────────────────── */
+.budget-summary {
+  margin-bottom: 16px;
+}
+
+.budget-summary-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 7px;
+}
+
+.budget-summary-val {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+.budget-summary-of {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-label);
+}
+
+.budget-summary-left {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.budget-summary-bar {
+  height: 9px;
 }

@@ -1,6 +1,6 @@
 import { memo, useState } from "react";
 import PropTypes from "prop-types";
-import { useNavigate } from "react-router-dom";
+import { useDeepLinkNav } from "../hooks/useDeepLinkNav";
 import { useDispatch, useSelector } from "react-redux";
 import Modal from "../preStyledElements/modal/Modal";
 import {
@@ -22,7 +22,7 @@ const INR = new Intl.NumberFormat("en-IN", {
 // dismisses everything visible. Both go through the self-expiring dismissal
 // map, so nothing is permanently silenced — it returns next cycle.
 function NotificationModal({ open, onClose, items }) {
-  const navigate = useNavigate();
+  const deepNav = useDeepLinkNav();
   const dispatch = useDispatch();
   const investments = useSelector(
     (s) => s.transactions.transactionData?.investments ?? [],
@@ -31,7 +31,7 @@ function NotificationModal({ open, onClose, items }) {
 
   const handleOpen = (n) => {
     onClose();
-    navigate(n.href);
+    deepNav(n.href);
   };
 
   const handleLog = async (e, n) => {

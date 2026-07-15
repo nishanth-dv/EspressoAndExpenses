@@ -11,8 +11,8 @@ const toastSlice = createSlice({
         state.toasts.push(action.payload);
         if (state.toasts.length > 4) state.toasts.shift();
       },
-      prepare({ message, type = "success", duration = 3500 }) {
-        return { payload: { id: _id++, message, type, duration } };
+      prepare({ message, type = "success", duration = 3500, action = null }) {
+        return { payload: { id: _id++, message, type, duration, action } };
       },
     },
     dismissToast(state, action) {

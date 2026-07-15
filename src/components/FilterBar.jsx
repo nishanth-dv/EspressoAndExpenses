@@ -4,6 +4,7 @@ import { useDispatch, useSelector } from "react-redux";
 import { setFilter } from "../redux/slices/filterSlice";
 import { getFilterLabel } from "../utils/filterUtils";
 import ExportButton from "./ExportButton";
+import BankLogo from "./BankLogo";
 
 const PERIOD_OPTIONS = [
   { value: "all",        label: "All Time" },
@@ -140,6 +141,14 @@ const FilterBar = ({
 
   const activeCount = chips.length;
 
+  const clearAll = () => {
+    dispatch(
+      setFilter({ scope, mode: "all", from: "", to: "", accountId: "", cardId: "" }),
+    );
+    if (searchable) onSearchChange("");
+    extraFilters.forEach((f) => f.onChange(f.defaultValue));
+  };
+
   return (
     <div className="fbar-wrap" ref={wrapRef}>
       <div className="fbar">
@@ -275,6 +284,7 @@ const FilterBar = ({
                         : undefined
                     }
                   >
+                    <BankLogo bank={a.bank} color={a.color} size={16} />
                     {a.bank}
                   </button>
                 ))}
@@ -363,6 +373,27 @@ const FilterBar = ({
                     </button>
                   );
                 };
+                const renderAll = (opts, key) => {
+                  const vals = opts.map((o) => o.value);
+                  const allSelected =
+                    vals.length > 0 && vals.every((v) => values.includes(v));
+                  return (
+                    <button
+                      key={`all-${key}`}
+                      type="button"
+                      className={`fbar-tag fbar-tag--all${allSelected ? " fbar-tag--selected" : ""}`}
+                      onClick={() =>
+                        f.onChange(
+                          allSelected
+                            ? values.filter((v) => !vals.includes(v))
+                            : [...new Set([...values, ...vals])],
+                        )
+                      }
+                    >
+                      All
+                    </button>
+                  );
+                };
                 const hasGroups = f.options.some((o) => o.group);
                 return hasGroups ? (
                   f.options.map((g) =>
@@ -370,6 +401,7 @@ const FilterBar = ({
                       <div key={g.group} className="fbar-tag-group">
                         <p className="fbar-tag-group-label">{g.group}</p>
                         <div className="fbar-tag-row">
+                          {renderAll(g.options, g.group)}
                           {g.options.map(renderTag)}
                         </div>
                       </div>
@@ -380,11 +412,24 @@ const FilterBar = ({
                     ),
                   )
                 ) : (
-                  <div className="fbar-tag-row">{f.options.map(renderTag)}</div>
+                  <div className="fbar-tag-row">
+                    {renderAll(f.options, f.key)}
+                    {f.options.map(renderTag)}
+                  </div>
                 );
               })()}
             </div>
           ))}
+
+          {activeCount > 0 && (
+            <button
+              type="button"
+              className="fbar-clear-all"
+              onClick={clearAll}
+            >
+              <i className="fa-solid fa-xmark" /> Clear all filters
+            </button>
+          )}
         </div>
       )}
     </div>

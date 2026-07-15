@@ -24,10 +24,15 @@ import {
   calcInvestmentValues,
   resolveGrace,
   graceToDays,
-  getInvestmentMathProfile,
   findAutoDeductAmount,
 } from "./investmentUtils";
 import { getInvestmentTypeSchema } from "./investmentTypeSchemas";
+import { resolveLogMode } from "./loggingMode";
+import { getCardDue } from "./solvencyUtils";
+import { getPage } from "./pages";
+import { runAdvisory } from "./advisory/engine";
+import { mergeProfile } from "./advisory/profile";
+import { isSuppressed } from "./advisory/state";
 
 // ── Type registry ────────────────────────────────────────
 // The single source of truth for what notifications exist. The Preferences
@@ -99,6 +104,16 @@ export const NOTIFICATION_TYPES = [
     lead: 3,
     grace: 3,
   },
+  {
+    key: "noteReminder",
+    group: "obligations",
+    label: "Note reminder",
+    hint: "Surfaces a note (Toolbox → Notes) when the reminder you set on it comes due.",
+    icon: "fa-note-sticky",
+    defaultOn: true,
+    lead: 1,
+    grace: 3,
+  },
   // ── Insights (insight-driven, not a fixed calendar date) ──
   // Default OFF — only the fixed-date Reminders fire out of the box; the user
   // opts into the proactive nudges from Preferences.
@@ -142,6 +157,14 @@ export const NOTIFICATION_TYPES = [
     label: "Milestones",
     hint: "Celebrates the wins — an investment crossing 2× / 3× / 5× / 10×. Each shows once.",
     icon: "fa-trophy",
+    defaultOn: false,
+  },
+  {
+    key: "advisoryDigest",
+    group: "insights",
+    label: "Advisory digest",
+    hint: "A monthly round-up of your top money moves and the savings on the table — jumps straight to Advisory.",
+    icon: "fa-lightbulb",
     defaultOn: false,
   },
 ];
@@ -344,23 +367,48 @@ function licPremiumState(inv, transactions, now) {
   return nextDue;
 }
 
-function autoDeductPeriodInfo(frequency, day, now) {
+function autoDeductPeriodInfo(frequency, day, now, anchorMonth) {
   const yr = now.getFullYear();
   const mo = now.getMonth();
   const d = parseInt(day, 10) || 1;
+  const am = Number.isInteger(anchorMonth) ? anchorMonth : mo;
   if (frequency === "yearly") {
     return {
       key: `${yr}`,
-      due: clampDay(yr, 0, d),
+      due: clampDay(yr, am, d),
       matches: (x) => x.getFullYear() === yr,
       periodEnd: new Date(yr, 11, 31, 23, 59, 59),
     };
   }
+  if (frequency === "halfyearly") {
+    const h = Math.floor(mo / 6);
+    let dueMonth = h * 6;
+    for (let m = h * 6; m < h * 6 + 6; m++) {
+      if ((((m - am) % 6) + 6) % 6 === 0) {
+        dueMonth = m;
+        break;
+      }
+    }
+    return {
+      key: `${yr}-H${h}`,
+      due: clampDay(yr, dueMonth, d),
+      matches: (x) =>
+        x.getFullYear() === yr && Math.floor(x.getMonth() / 6) === h,
+      periodEnd: new Date(yr, h * 6 + 6, 0, 23, 59, 59),
+    };
+  }
   if (frequency === "quarterly") {
     const q = Math.floor(mo / 3);
+    let dueMonth = q * 3;
+    for (let m = q * 3; m < q * 3 + 3; m++) {
+      if ((((m - am) % 3) + 3) % 3 === 0) {
+        dueMonth = m;
+        break;
+      }
+    }
     return {
       key: `${yr}-Q${q}`,
-      due: clampDay(yr, q * 3, d),
+      due: clampDay(yr, dueMonth, d),
       matches: (x) =>
         x.getFullYear() === yr && Math.floor(x.getMonth() / 3) === q,
       periodEnd: new Date(yr, q * 3 + 3, 0, 23, 59, 59),
@@ -394,10 +442,10 @@ export function deriveNotifications(data, prefs, now = new Date()) {
     const t = TYPE_BY_KEY.get("cardDue");
     for (const card of cards) {
       if (!card.dueDay) continue;
-      const outstanding = num(card.outstanding);
-      if (outstanding != null && outstanding <= 0) continue;
-      const due = upcomingMonthly(card.dueDay, now, t.grace);
-      const days = daysUntil(due, now);
+      const info = getCardDue(card, transactions, commitments, now);
+      if (!info) continue;
+      const due = info.dueDate;
+      const days = info.diffDays;
       if (!inWindow(days, t.lead, t.grace)) continue;
       out.push({
         id: `cardDue:${card.id}:${isoDay(due)}`,
@@ -407,7 +455,7 @@ export function deriveNotifications(data, prefs, now = new Date()) {
         severity: severityFor(days),
         title: `${card.name} payment ${days < 0 ? "overdue" : "due"}`,
         subtitle: dueLabel(days),
-        amount: outstanding,
+        amount: info.amount,
         dueOn: due.toISOString(),
         daysLeft: days,
         href: `/Solvency?highlight=${card.id}&focus=card`,
@@ -534,20 +582,23 @@ export function deriveNotifications(data, prefs, now = new Date()) {
     const t = TYPE_BY_KEY.get("autoDeductDue");
     const userTypes = data.investmentTypes ?? [];
     for (const inv of investments) {
-      if (!inv.autoDeduct?.enabled || !inv.startDate) continue;
+      if (resolveLogMode(inv) !== "manual" || !inv.startDate) continue;
       if (inv.paused || inv.inHistory || inv.soldDate || inv.maturedAt) continue;
-      if (inv.type === "sip" || inv.type === "lic") continue; // own reminders
-      if (getInvestmentMathProfile(inv.type, userTypes) === "unit") continue;
+      if (inv.type === "lic") continue; // LIC has its own arrears reminders
       const start = new Date(inv.startDate);
       if (Number.isNaN(start.getTime()) || start > now) continue;
       const schema = getInvestmentTypeSchema(inv.type, userTypes);
       const amount = findAutoDeductAmount(inv, schema);
       if (!(amount > 0)) continue;
       const frequency = inv.autoDeduct.frequency || "monthly";
+      const anchorMonth = inv.startDate
+        ? new Date(inv.startDate).getMonth()
+        : undefined;
       const period = autoDeductPeriodInfo(
         frequency,
         inv.autoDeduct.dayOfMonth,
         now,
+        anchorMonth,
       );
       const logged = transactions.some(
         (tx) =>
@@ -751,6 +802,84 @@ export function deriveNotifications(data, prefs, now = new Date()) {
         daysLeft: null,
         href: `/Invest?highlight=${inv.id}`,
         expiresAt: null, // permanent: cleared only by the user, once
+      });
+    }
+  }
+
+  // Advisory digest — a monthly nudge summarising the top open recommendations
+  // and the savings on the table. Runs the same client advisory engine (without
+  // market rates, which aren't available here), skips cards the user already
+  // suppressed, and self-expires at month-end so it shows at most once a month.
+  if (isTypeEnabled(prefs, "advisoryDigest")) {
+    try {
+      const profile = mergeProfile(data, prefs?.advisoryProfile);
+      const { cards, moneyFound } = runAdvisory(
+        data,
+        profile,
+        {},
+        prefs?.advisoryFeedback,
+      );
+      const active = cards.filter((c) => !isSuppressed(prefs?.advisoryState, c.id));
+      if (active.length > 0) {
+        const t = TYPE_BY_KEY.get("advisoryDigest");
+        const monthKey = `${now.getFullYear()}-${now.getMonth()}`;
+        const top = active[0];
+        out.push({
+          id: `advisoryDigest:${monthKey}`,
+          type: "advisoryDigest",
+          group: "insights",
+          icon: t.icon,
+          severity: "info",
+          title: `${active.length} money move${active.length === 1 ? "" : "s"} for you`,
+          subtitle:
+            moneyFound > 0
+              ? `About ${inr(moneyFound)}/yr on the table — starting with "${top.title}".`
+              : `Top pick: ${top.title}.`,
+          amount: null,
+          dueOn: null,
+          daysLeft: null,
+          href: "/Advisory/actions",
+          expiresAt: endOfMonth(now),
+        });
+      }
+    } catch {
+      /* advisory engine is best-effort here — never break notifications */
+    }
+  }
+
+  // Note reminders — user-set reminders on notes (Toolbox → Notes). Gated by
+  // the notes feature toggle so disabling Notes silences them too.
+  if (prefs?.notesEnabled !== false && isTypeEnabled(prefs, "noteReminder")) {
+    const t = TYPE_BY_KEY.get("noteReminder");
+    for (const note of data.notes ?? []) {
+      if (!note.remindAt || note.archivedAt) continue;
+      const due = new Date(note.remindAt);
+      if (Number.isNaN(due.getTime())) continue;
+      const days = daysUntil(due, now);
+      if (!inWindow(days, t.lead, t.grace)) continue;
+      const firstLine =
+        (note.body ?? "").split("\n").find((l) => l.trim()) ?? "Note";
+      const label =
+        (note.title ?? "").trim() ||
+        firstLine
+          .replace(/^-\s+(\[[ xX]\]\s*)?/, "")
+          .replace(/\*\*|~~/g, "")
+          .slice(0, 60) ||
+        "Note";
+      const route = getPage(note.pageKey)?.route ?? "/Dashboard";
+      out.push({
+        id: `noteReminder:${note.id}:${isoDay(due)}`,
+        type: "noteReminder",
+        group: t.group,
+        icon: t.icon,
+        severity: severityFor(days),
+        title: `Note: ${label}`,
+        subtitle: dueLabel(days),
+        amount: null,
+        dueOn: due.toISOString(),
+        daysLeft: days,
+        href: `${route}?note=${note.id}`,
+        expiresAt: expiryFor(due, t.grace),
       });
     }
   }

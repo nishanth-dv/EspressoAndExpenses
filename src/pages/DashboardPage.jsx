@@ -1,9 +1,9 @@
 import { useMemo, useState, useEffect } from "react";
 import { useSelector, useDispatch } from "react-redux";
-import { Link } from "react-router-dom";
 import FilterBar from "../components/FilterBar";
 import BalanceCarousel from "../components/BalanceCarousel";
-import MoneyFlowSankey from "../components/MoneyFlowSankey";
+import MoneyFlowBreakdown from "../components/MoneyFlowBreakdown";
+import PinnedNotesCard from "../components/notes/PinnedNotesCard";
 import StatementImportButton from "../components/StatementImportButton";
 import {
   BarChart,
@@ -14,7 +14,12 @@ import {
   ResponsiveContainer,
   CartesianGrid,
   Legend,
+  PieChart,
+  Pie,
+  Cell,
+  ReferenceLine,
 } from "recharts";
+import { categoryVisual } from "../utils/categoryVisual";
 import { persistBudget } from "../redux/slices/transactionSlice";
 import { CATEGORIES } from "../utils/constants";
 import { applyFilter } from "../utils/filterUtils";
@@ -25,17 +30,17 @@ import {
   getMonthlyTrend,
   getCategoryBreakdown,
   getPaymentSplit,
-  getDailyAverage,
   getMonthDelta,
-  getBiggestExpense,
   getDayOfWeekData,
   getRecurringSpend,
-  getIncomeCoverage,
-  getTransactionFrequency,
   getThisMonthCategorySpend,
 } from "../utils/dashboardUtils";
 import { getPortfolioSummary } from "../utils/investmentUtils";
-import { subscriptionTotals } from "../utils/subscriptionUtils";
+import { useInvestments } from "../hooks/useInvestments";
+import { projectUpcomingIncome } from "../utils/incomeUtils";
+import { dashboardInsights } from "../utils/dashboardInsights";
+import useCountUp from "../hooks/useCountUp";
+import Reveal from "../components/Reveal";
 import "../styles/dashboard.css";
 
 // Observe data-theme changes so charts re-colour on toggle
@@ -113,128 +118,142 @@ function CustomTooltip({ active, payload, label }) {
 
 // ── Sections ─────────────────────────────────────────
 
-function SummaryStrip({ summary }) {
+function CashFlowHero({ summary }) {
   const { totalIncome, totalExpenses, totalInvested, savingsRate } = summary;
+  const net = totalIncome - totalExpenses;
+  const positive = net >= 0;
+  const animated = useCountUp(Math.abs(net));
+  const pctSpent = totalIncome > 0 ? (totalExpenses / totalIncome) * 100 : null;
+
+  const r = 15;
+  const circ = 2 * Math.PI * r;
+  const clamped = Math.max(0, Math.min(100, savingsRate));
+  const offset = circ - (clamped / 100) * circ;
+  const ringColor =
+    savingsRate >= 20
+      ? "var(--amount-income)"
+      : savingsRate >= 0
+        ? "#d4a35a"
+        : "var(--amount-expense)";
+
   return (
-    <div className="summary-strip">
-      <div className="summary-card">
-        <p className="summary-card-label">Total Income</p>
-        <p className="summary-card-value" style={{ color: "var(--amount-income)" }}>
-          {INR.format(totalIncome)}
-        </p>
-      </div>
-      <div className="summary-card">
-        <p className="summary-card-label">Total Expenses</p>
-        <p className="summary-card-value" style={{ color: "var(--amount-expense)" }}>
-          {INR.format(totalExpenses)}
-        </p>
-      </div>
-      {totalInvested > 0 && (
-        <div className="summary-card">
-          <p className="summary-card-label">Invested</p>
-          <p className="summary-card-value" style={{ color: "var(--amount-investment)" }}>
-            {INR.format(totalInvested)}
-          </p>
+    <div className="dash-hero">
+      <div className="dash-hero-main">
+        <div className="dash-hero-lead">
+          <span className="dash-hero-eyebrow">
+            {positive ? "Saved this period" : "Overspent this period"}
+          </span>
+          <div
+            className="dash-hero-value"
+            style={{
+              color: positive
+                ? "var(--amount-income)"
+                : "var(--amount-expense)",
+            }}
+          >
+            {positive ? "" : "−"}
+            {INR.format(Math.round(animated))}
+          </div>
+          {pctSpent != null && (
+            <span className="dash-hero-chip">
+              <i className="fa-solid fa-wallet" /> {Math.round(pctSpent)}% of
+              income spent
+            </span>
+          )}
         </div>
-      )}
-      <div className="summary-card">
-        <p className="summary-card-label">Savings Rate</p>
-        <p className="summary-card-value">{savingsRate.toFixed(1)}%</p>
-        <p className="summary-card-sub">of total income</p>
+        <div className="dash-hero-ring">
+          <svg viewBox="0 0 40 40" aria-hidden="true">
+            <circle
+              cx="20"
+              cy="20"
+              r={r}
+              fill="none"
+              stroke="var(--surface-border)"
+              strokeWidth="4"
+            />
+            <circle
+              cx="20"
+              cy="20"
+              r={r}
+              fill="none"
+              stroke={ringColor}
+              strokeWidth="4"
+              strokeDasharray={circ}
+              strokeDashoffset={offset}
+              strokeLinecap="round"
+              transform="rotate(-90 20 20)"
+              style={{ transition: "stroke-dashoffset 0.8s ease" }}
+            />
+          </svg>
+          <div className="dash-hero-ring-center">
+            <span className="dash-hero-ring-num">{savingsRate.toFixed(0)}%</span>
+            <span className="dash-hero-ring-lbl">saved</span>
+          </div>
+        </div>
+      </div>
+      <div className="dash-hero-strip">
+        <div className="dash-hero-stat">
+          <span className="dash-hero-stat-lbl">Income</span>
+          <span
+            className="dash-hero-stat-val"
+            style={{ color: "var(--amount-income)" }}
+          >
+            {INR.format(totalIncome)}
+          </span>
+        </div>
+        <div className="dash-hero-stat">
+          <span className="dash-hero-stat-lbl">Expenses</span>
+          <span
+            className="dash-hero-stat-val"
+            style={{ color: "var(--amount-expense)" }}
+          >
+            {INR.format(totalExpenses)}
+          </span>
+        </div>
+        {totalInvested > 0 && (
+          <div className="dash-hero-stat">
+            <span className="dash-hero-stat-lbl">Invested</span>
+            <span
+              className="dash-hero-stat-val"
+              style={{ color: "var(--amount-investment)" }}
+            >
+              {INR.format(totalInvested)}
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );
 }
 
-function InsightGrid({ transactions, allTransactions }) {
-  // these three are period-agnostic — always compute from full history
-  const monthDelta = useMemo(
-    () => getMonthDelta(allTransactions),
-    [allTransactions],
-  );
-  const biggest = useMemo(
-    () => getBiggestExpense(allTransactions),
-    [allTransactions],
-  );
-  // these respect the active filter
-  const dailyAvg = useMemo(() => getDailyAverage(transactions), [transactions]);
-  const coverage = useMemo(
-    () => getIncomeCoverage(transactions),
-    [transactions],
-  );
-  const freq = useMemo(
-    () => getTransactionFrequency(transactions),
-    [transactions],
-  );
-  const subscriptions = useSelector(
-    (state) => state.transactions.transactionData?.subscriptions ?? [],
-  );
-  const subTotals = useMemo(
-    () => subscriptionTotals(subscriptions),
-    [subscriptions],
-  );
-
+function SmartInsights({ insights }) {
+  if (!insights.length) return null;
   return (
-    <div className="insight-grid">
-      <div className="insight-card">
-        <p className="insight-label">Daily Avg Spend</p>
-        <p className="insight-value">{INR.format(dailyAvg.avg)}</p>
-        <p className="insight-sub">over {dailyAvg.days} days</p>
-      </div>
-
-      <div className="insight-card">
-        <p className="insight-label">This vs Last Month</p>
-        <p className="insight-value">
-          {INR.format(monthDelta.thisTotal)}
-          <DeltaBadge value={monthDelta.delta} />
-        </p>
-        <p className="insight-sub">last: {INR.format(monthDelta.lastTotal)}</p>
-      </div>
-
-      <div className="insight-card">
-        <p className="insight-label">Income Coverage</p>
-        <p className="insight-value">
-          {coverage.coverage !== null
-            ? `${coverage.coverage.toFixed(1)}%`
-            : "—"}
-        </p>
-        <p className="insight-sub">
-          {INR.format(coverage.expenses)} spent of {INR.format(coverage.income)}{" "}
-          earned
-        </p>
-      </div>
-
-      <div className="insight-card">
-        <p className="insight-label">Biggest This Month</p>
-        <p className="insight-value">
-          {biggest ? INR.format(parseFloat(biggest.amount)) : "—"}
-        </p>
-        <p className="insight-sub">{biggest?.name ?? "no expenses yet"}</p>
-      </div>
-
-      <div className="insight-card">
-        <p className="insight-label">Tx Frequency</p>
-        <p className="insight-value">{freq.txPerDay.toFixed(1)}/day</p>
-        <p className="insight-sub">
-          {freq.total} expenses over {freq.days} days
-        </p>
-      </div>
-
-      {subTotals.count > 0 && (
-        <Link to="/Subscriptions" className="insight-card insight-card--link">
-          <p className="insight-label">Subscriptions</p>
-          <p className="insight-value">{INR.format(subTotals.yearly)}/yr</p>
-          <p className="insight-sub">
-            {INR.format(subTotals.monthly)}/mo across {subTotals.count} active
-          </p>
-        </Link>
-      )}
+    <div className="dash-insights">
+      {insights.slice(0, 5).map((ins) => (
+        <div key={ins.id} className={`dash-insight dash-insight--${ins.kind}`}>
+          <span className="dash-insight-icon">
+            <i className={`fa-solid ${ins.icon}`} />
+          </span>
+          <div className="dash-insight-text">
+            <span className="dash-insight-title">{ins.title}</span>
+            <span className="dash-insight-detail">{ins.detail}</span>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
 
 function MonthlyTrend({ transactions, theme }) {
   const data = useMemo(() => getMonthlyTrend(transactions), [transactions]);
+  const avgExpense = useMemo(
+    () =>
+      data.length
+        ? data.reduce((s, d) => s + (d.expense || 0), 0) / data.length
+        : 0,
+    [data],
+  );
   const c = chartColors(theme);
   return (
     <div className="dash-section">
@@ -287,6 +306,14 @@ function MonthlyTrend({ transactions, theme }) {
               radius={[3, 3, 0, 0]}
               name="Expense"
             />
+            {avgExpense > 0 && (
+              <ReferenceLine
+                y={avgExpense}
+                stroke={c.label}
+                strokeDasharray="4 4"
+                strokeOpacity={0.55}
+              />
+            )}
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -294,69 +321,198 @@ function MonthlyTrend({ transactions, theme }) {
   );
 }
 
-function CategoryBreakdown({ transactions }) {
-  const data = useMemo(
-    () => getCategoryBreakdown(transactions),
-    [transactions],
+function SpendForecast({ allTransactions, budgets }) {
+  const now = new Date();
+  const day = now.getDate();
+  const daysInMonth = new Date(
+    now.getFullYear(),
+    now.getMonth() + 1,
+    0,
+  ).getDate();
+  const daysLeft = daysInMonth - day;
+
+  const md = useMemo(() => getMonthDelta(allTransactions), [allTransactions]);
+  const spent = md?.thisTotal || 0;
+  if (spent <= 0) return null;
+
+  const dailyPace = spent / Math.max(1, day);
+  const projected = Math.round(dailyPace * daysInMonth);
+  const totalBudget = Object.values(budgets).reduce(
+    (s, v) => s + (parseFloat(v) || 0),
+    0,
   );
+  const ref = totalBudget > 0 ? totalBudget : md?.lastTotal || 0;
+  const refLabel = totalBudget > 0 ? "budget" : "last month";
+  const overRef = ref > 0 && projected > ref;
+
+  const scale = Math.max(projected, ref, spent, 1);
+  const spentW = (spent / scale) * 100;
+  const projW = (projected / scale) * 100;
+  const refL = ref > 0 ? (ref / scale) * 100 : null;
+  const accent = overRef ? "var(--amount-expense)" : "var(--amount-income)";
+  const safeDaily =
+    ref > 0 && daysLeft > 0 ? Math.max(0, Math.round((ref - spent) / daysLeft)) : null;
+
   return (
     <div className="dash-section">
-      <SectionTitle>Spending by Category</SectionTitle>
-      {data.length === 0 ? (
-        <p className="dash-section-empty">No expense data yet</p>
-      ) : (
-        <div className="cat-list">
-          {data.map(({ category, amount, pct }) => (
-            <div key={category}>
-              <div className="cat-row-header">
-                <span className="cat-name">{category}</span>
-                <span className="cat-meta">
-                  {INR.format(amount)} · {pct}%
-                </span>
-              </div>
-              <div className="bar-track">
-                <div
-                  className="bar-fill bar-fill--expense"
-                  style={{ width: `${pct}%` }}
-                />
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
+      <SectionTitle>Month-end forecast</SectionTitle>
+      <div className="dash-fc-lead">
+        <span className="dash-fc-eyebrow">On pace to spend</span>
+        <span
+          className="dash-fc-value"
+          style={{ color: overRef ? "var(--amount-expense)" : "var(--text-primary)" }}
+        >
+          {INR.format(projected)}
+        </span>
+        <span className="dash-fc-sub">
+          by {now.toLocaleDateString("en-IN", { month: "short" })} {daysInMonth} ·{" "}
+          {INR.format(Math.round(dailyPace))}/day so far
+        </span>
+      </div>
+      <div className="dash-fc-bar">
+        <div
+          className="dash-fc-bar-proj"
+          style={{
+            width: `${Math.min(100, projW)}%`,
+            background: `color-mix(in srgb, ${accent} 26%, transparent)`,
+          }}
+        />
+        <div
+          className="dash-fc-bar-spent"
+          style={{ width: `${Math.min(100, spentW)}%`, background: accent }}
+        />
+        {refL != null && (
+          <div
+            className="dash-fc-bar-ref"
+            style={{ left: `${Math.min(100, refL)}%` }}
+            title={`${refLabel}: ${INR.format(ref)}`}
+          />
+        )}
+      </div>
+      <p className="dash-fc-note">
+        {ref > 0
+          ? overRef
+            ? `Projected ${INR.format(projected - ref)} over your ${refLabel}.`
+            : `On track — ${INR.format(ref - projected)} under your ${refLabel}.`
+          : `${INR.format(spent)} spent so far this month.`}
+        {safeDaily != null &&
+          daysLeft > 0 &&
+          ` Safe to spend ~${INR.format(safeDaily)}/day for ${daysLeft} more days.`}
+      </p>
     </div>
   );
 }
 
-function PaymentSplit({ transactions }) {
-  const data = useMemo(() => getPaymentSplit(transactions), [transactions]);
+const RING_PALETTE = [
+  "#5b8dee",
+  "#16a34a",
+  "#f59e0b",
+  "#8b5cf6",
+  "#ec4899",
+  "#0ea5e9",
+  "#ef4444",
+  "#14b8a6",
+];
+
+function SpendRing({ title, data }) {
+  const [selected, setSelected] = useState(null);
+  if (data.length === 0) {
+    return (
+      <div className="dash-section">
+        <SectionTitle>{title}</SectionTitle>
+        <p className="dash-section-empty">No expense data yet</p>
+      </div>
+    );
+  }
+  const total = data.reduce((s, d) => s + d.amount, 0);
+  const active = selected ? data.find((d) => d.label === selected) : null;
   return (
     <div className="dash-section">
-      <SectionTitle>Payment Mode Split</SectionTitle>
-      {data.length === 0 ? (
-        <p className="dash-section-empty">No expense data yet</p>
-      ) : (
-        <div className="cat-list">
-          {data.map(({ mode, amount, pct }) => (
-            <div key={mode}>
-              <div className="cat-row-header">
-                <span className="cat-name">{mode}</span>
-                <span className="cat-meta">
-                  {INR.format(amount)} · {pct}%
-                </span>
-              </div>
-              <div className="bar-track">
-                <div
-                  className="bar-fill bar-fill--income"
-                  style={{ width: `${pct}%` }}
-                />
-              </div>
-            </div>
+      <SectionTitle>{title}</SectionTitle>
+      <div className="dash-ring">
+        <div className="dash-ring-chart">
+          <ResponsiveContainer width="100%" height={172}>
+            <PieChart>
+              <Pie
+                data={data}
+                dataKey="amount"
+                nameKey="label"
+                innerRadius={55}
+                outerRadius={80}
+                paddingAngle={2}
+                stroke="none"
+                onClick={(_, i) =>
+                  setSelected(data[i].label === selected ? null : data[i].label)
+                }
+              >
+                {data.map((d) => (
+                  <Cell
+                    key={d.label}
+                    fill={d.color}
+                    opacity={selected && selected !== d.label ? 0.32 : 1}
+                    cursor="pointer"
+                  />
+                ))}
+              </Pie>
+            </PieChart>
+          </ResponsiveContainer>
+          <div className="dash-ring-center">
+            <span className="dash-ring-val">
+              {INR.format(active ? active.amount : total)}
+            </span>
+            <span className="dash-ring-lbl">
+              {active ? active.label : "total"}
+            </span>
+          </div>
+        </div>
+        <div className="dash-ring-legend">
+          {data.map((d) => (
+            <button
+              key={d.label}
+              type="button"
+              className={`dash-ring-leg${selected === d.label ? " dash-ring-leg--active" : ""}`}
+              onClick={() => setSelected(d.label === selected ? null : d.label)}
+            >
+              <span
+                className="dash-ring-leg-dot"
+                style={{ background: d.color }}
+              />
+              <span className="dash-ring-leg-name">{d.label}</span>
+              <span className="dash-ring-leg-pct">{d.pct}%</span>
+            </button>
           ))}
         </div>
-      )}
+      </div>
     </div>
   );
+}
+
+function CategoryBreakdown({ transactions }) {
+  const data = useMemo(
+    () =>
+      getCategoryBreakdown(transactions).map((d) => ({
+        label: d.category,
+        amount: d.amount,
+        pct: d.pct,
+        color: categoryVisual(d.category).color,
+      })),
+    [transactions],
+  );
+  return <SpendRing title="Spending by Category" data={data} />;
+}
+
+function PaymentSplit({ transactions }) {
+  const data = useMemo(
+    () =>
+      getPaymentSplit(transactions).map((d, i) => ({
+        label: d.mode,
+        amount: d.amount,
+        pct: d.pct,
+        color: RING_PALETTE[i % RING_PALETTE.length],
+      })),
+    [transactions],
+  );
+  return <SpendRing title="Payment Mode Split" data={data} />;
 }
 
 function BudgetTracker({ transactions, budgets, dispatch }) {
@@ -390,12 +546,68 @@ function BudgetTracker({ transactions, budgets, dispatch }) {
       {!anyBudgetSet && (
         <p className="budget-hint">Tap a category to set a monthly budget.</p>
       )}
+      {anyBudgetSet &&
+        (() => {
+          const totalBudget = Object.values(budgets).reduce(
+            (s, v) => s + (parseFloat(v) || 0),
+            0,
+          );
+          const totalSpent = Object.keys(budgets).reduce(
+            (s, cat) => s + (thisMonthSpend[cat] || 0),
+            0,
+          );
+          if (totalBudget <= 0) return null;
+          const left = totalBudget - totalSpent;
+          const bpct = Math.min(100, (totalSpent / totalBudget) * 100);
+          const bover = totalSpent > totalBudget;
+          const barColor = bover
+            ? "var(--amount-expense)"
+            : bpct >= 80
+              ? "#f59e0b"
+              : "var(--amount-income)";
+          return (
+            <div className="budget-summary">
+              <div className="budget-summary-head">
+                <span className="budget-summary-val">
+                  {INR.format(totalSpent)}{" "}
+                  <span className="budget-summary-of">
+                    of {INR.format(totalBudget)}
+                  </span>
+                </span>
+                <span
+                  className="budget-summary-left"
+                  style={{
+                    color: bover
+                      ? "var(--amount-expense)"
+                      : "var(--text-secondary)",
+                  }}
+                >
+                  {bover
+                    ? `${INR.format(-left)} over`
+                    : `${INR.format(left)} left`}
+                </span>
+              </div>
+              <div className="bar-track budget-summary-bar">
+                <div
+                  className="bar-fill"
+                  style={{ width: `${bpct}%`, background: barColor }}
+                />
+              </div>
+            </div>
+          );
+        })()}
       <div className="budget-list">
         {CATEGORIES.map((cat) => {
           const spent = thisMonthSpend[cat] || 0;
           const budget = budgets[cat] || 0;
-          const pct = budget > 0 ? Math.min(100, (spent / budget) * 100) : 0;
+          const rawPct = budget > 0 ? (spent / budget) * 100 : 0;
+          const pct = Math.min(100, rawPct);
           const over = budget > 0 && spent > budget;
+          const rowColor = over
+            ? "var(--amount-expense)"
+            : rawPct >= 80
+              ? "#f59e0b"
+              : "var(--amount-income)";
 
           return (
             <div key={cat}>
@@ -429,8 +641,8 @@ function BudgetTracker({ transactions, budgets, dispatch }) {
               {budget > 0 && (
                 <div className="bar-track">
                   <div
-                    className={`bar-fill ${over ? "bar-fill--over" : "bar-fill--income"}`}
-                    style={{ width: `${pct}%` }}
+                    className="bar-fill"
+                    style={{ width: `${pct}%`, background: rowColor }}
                   />
                 </div>
               )}
@@ -607,7 +819,13 @@ function RecurringSpend({ transactions }) {
 }
 
 function RecentTransactions({ transactions }) {
-  const recent = useMemo(() => transactions.slice(0, 5), [transactions]);
+  const recent = useMemo(
+    () =>
+      [...transactions]
+        .sort((a, b) => new Date(b.occurredAt) - new Date(a.occurredAt))
+        .slice(0, 5),
+    [transactions],
+  );
   const fmt = new Intl.DateTimeFormat("en-IN", {
     day: "numeric",
     month: "short",
@@ -654,6 +872,7 @@ function RecentTransactions({ transactions }) {
 const Dashboard = () => {
   const dispatch = useDispatch();
   const theme = useCurrentTheme();
+  useInvestments();
   const allTransactions = useSelector(
     (state) => state.transactions.transactionData?.transactions ?? [],
   );
@@ -682,6 +901,39 @@ const Dashboard = () => {
     [transactions, insights],
   );
 
+  const subscriptions = useSelector(
+    (state) => state.transactions.transactionData?.subscriptions ?? [],
+  );
+  const incomeType = useSelector(
+    (state) =>
+      state.transactions.transactionData?.preferences?.incomeType ?? "auto",
+  );
+  const excludeCategories = useSelector(
+    (state) =>
+      state.transactions.transactionData?.preferences
+        ?.incomeExcludeCategories ?? [],
+  );
+  const balance = useSelector(
+    (state) => state.transactions.transactionData?.insights?.balance ?? 0,
+  );
+  const upcomingIncome = useMemo(
+    () =>
+      projectUpcomingIncome(allTransactions, { incomeType, excludeCategories }),
+    [allTransactions, incomeType, excludeCategories],
+  );
+  const dashInsights = useMemo(
+    () =>
+      dashboardInsights({
+        summary,
+        allTransactions,
+        budgets,
+        subscriptions,
+        upcomingIncome,
+        balance,
+      }),
+    [summary, allTransactions, budgets, subscriptions, upcomingIncome, balance],
+  );
+
   if (allTransactions.length === 0) {
     return (
       <>
@@ -703,43 +955,69 @@ const Dashboard = () => {
             aggregate-only view when multi-bank tracking is off. */}
         <BalanceCarousel variant="hero" />
         {/* Filter-aware: totals reflect selected period */}
-        <SummaryStrip summary={summary} />
-        {/* Money flow Sankey — only renders when multi-bank tracking is on
-            and the current month has at least one tagged inflow or outflow. */}
-        <MoneyFlowSankey />
-      <InsightGrid
-        transactions={transactions}
-        allTransactions={allTransactions}
-      />
+        <CashFlowHero summary={summary} />
+        {/* Spending-by-bank breakdown — only renders when multi-bank tracking
+            is on and the current month has at least one tagged expense. */}
+        <Reveal>
+          <MoneyFlowBreakdown />
+        </Reveal>
+        {/* Pinned notes — renders only when the user has pinned something. */}
+        <Reveal>
+          <PinnedNotesCard />
+        </Reveal>
+        <Reveal>
+          <SmartInsights insights={dashInsights} />
+        </Reveal>
 
-      {/* Filter-independent: always show full 6-month picture */}
-      <MonthlyTrend transactions={allTransactions} theme={theme} />
+        {/* Filter-independent: always show full 6-month picture */}
+        <Reveal>
+          <MonthlyTrend transactions={allTransactions} theme={theme} />
+        </Reveal>
 
-      {/* Filter-aware: breakdown of the selected period */}
-      <div className="dash-two-col">
-        <CategoryBreakdown transactions={transactions} />
-        <PaymentSplit transactions={transactions} />
-      </div>
+        {/* Filter-independent: this-month pace projection */}
+        <Reveal>
+          <SpendForecast allTransactions={allTransactions} budgets={budgets} />
+        </Reveal>
 
-      {/* Filter-independent: budget is always vs current month */}
-      <BudgetTracker
-        transactions={allTransactions}
-        budgets={budgets}
-        dispatch={dispatch}
-      />
+        {/* Filter-aware: breakdown of the selected period */}
+        <Reveal className="dash-two-col">
+          <CategoryBreakdown transactions={transactions} />
+          <PaymentSplit transactions={transactions} />
+        </Reveal>
 
-      {/* Filter-aware: heatmap of selected period */}
-      <DayHeatmap transactions={transactions} />
+        {/* Filter-independent: budget is always vs current month */}
+        <Reveal>
+          <BudgetTracker
+            transactions={allTransactions}
+            budgets={budgets}
+            dispatch={dispatch}
+          />
+        </Reveal>
 
-      {/* Filter-independent: month comparison has its own time context */}
-      <div className="dash-two-col">
-        <MonthDelta transactions={allTransactions} />
-        <RecurringSpend transactions={transactions} />
-      </div>
+        {/* Filter-aware: heatmap of selected period */}
+        <Reveal>
+          <DayHeatmap transactions={transactions} />
+        </Reveal>
 
-      {investments.length > 0 && <PortfolioSnapshot investments={investments} />}
-      {statementImportEnabled && <StatementImportButton variant="card" />}
-      <RecentTransactions transactions={transactions} />
+        {/* Filter-independent: month comparison has its own time context */}
+        <Reveal className="dash-two-col">
+          <MonthDelta transactions={allTransactions} />
+          <RecurringSpend transactions={transactions} />
+        </Reveal>
+
+        {investments.length > 0 && (
+          <Reveal>
+            <PortfolioSnapshot investments={investments} />
+          </Reveal>
+        )}
+        {statementImportEnabled && (
+          <Reveal>
+            <StatementImportButton variant="card" />
+          </Reveal>
+        )}
+        <Reveal>
+          <RecentTransactions transactions={transactions} />
+        </Reveal>
       </div>
     </>
   );

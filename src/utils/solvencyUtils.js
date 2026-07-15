@@ -1,5 +1,10 @@
 import { nextRenewal as subscriptionNextRenewal } from "./subscriptionUtils";
 
+// A card/commitment balance below half a rupee is treated as settled. Card
+// bills are whole rupees, so anything smaller is a floating-point residual
+// from summing charges against equal repayments — not a real due.
+const SETTLED_EPS = 0.5;
+
 export function calcPrincipalFromEMI(emi, annualRate, tenureMonths) {
   if (!emi || !tenureMonths) return 0;
   if (!annualRate) return emi * tenureMonths;
@@ -48,6 +53,20 @@ export function cardUtilization(card) {
   return Math.min(1, outstanding / limit);
 }
 
+// ── Card-funded EMI: the single source of truth ──────────────────────────
+// A commitment is funded on a credit card iff it carries a `cardId`. The
+// commitment form only sets `cardId` when "Credit Card" is chosen and clears it
+// otherwise, so `cardId` alone is authoritative. `paymentMedium` is legacy and
+// can drift out of sync — keying every path (billing total, the card ledger,
+// and the due lists) off `cardId` guarantees they agree: a card EMI is always
+// routed through its card's statement, never shown twice or on its raw due day.
+export function emiCardId(commitment) {
+  return commitment?.cardId || null;
+}
+export function isCardFundedEmi(commitment) {
+  return !!commitment?.cardId;
+}
+
 // Live outstanding for a card — cumulative pre-today charges + EMI
 // instalments billed up to now, minus all repayments tagged for this
 // card. Same recipe used inside getUpcomingDues; extracted so the
@@ -66,7 +85,12 @@ export function computeCardOutstanding(
   const repayments = allTransactions
     .filter((t) => t.repaymentFor === card.id)
     .reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
-  const billedEmis = getBilledCardEmiTotal(card.id, commitments, today);
+  const billedEmis = getBilledCardEmiTotal(
+    card.id,
+    commitments,
+    today,
+    card.statementDay,
+  );
   return Math.max(0, txOutstanding + billedEmis - repayments);
 }
 
@@ -159,7 +183,7 @@ export function getCardDue(card, allTransactions = [], commitments = [], now = n
       allTransactions
         .filter((t) => t.cardId === card.id && new Date(t.occurredAt) <= dayEnd)
         .reduce((s, t) => s + (parseFloat(t.amount) || 0), 0) +
-      getBilledCardEmiTotal(card.id, commitments, dayEnd) -
+      getBilledCardEmiTotal(card.id, commitments, dayEnd, stmtDay) -
       repayments
     );
   };
@@ -175,14 +199,14 @@ export function getCardDue(card, allTransactions = [], commitments = [], now = n
     // Legacy fallback (no statement day): bill = everything owed now, due on
     // this month's dueDay, anchored until settled, else rolling to next month.
     const total = unpaidAsOf(now);
-    if (!(total > 0)) return null;
+    if (!(total > SETTLED_EPS)) return null;
     const y = now.getFullYear();
     const m = now.getMonth();
     const clamp = (yy, mm) => Math.min(dueDay, new Date(yy, mm + 1, 0).getDate());
     const thisMonthDue = new Date(y, m, clamp(y, m));
     let due;
     if (thisMonthDue >= now) due = thisMonthDue;
-    else if (unpaidAsOf(thisMonthDue) > 0) due = thisMonthDue;
+    else if (unpaidAsOf(thisMonthDue) > SETTLED_EPS) due = thisMonthDue;
     else due = new Date(y, m + 1, clamp(y, m + 1));
     return result(Math.max(0, total), due);
   }
@@ -192,7 +216,7 @@ export function getCardDue(card, allTransactions = [], commitments = [], now = n
   for (let i = -14; i <= 2; i++) {
     const s = statementOn(stmtDay, cur.getFullYear(), cur.getMonth() + i);
     const bal = unpaidAsOf(s);
-    if (bal > 0) return result(bal, dueDateForStatement(s, dueDay));
+    if (bal > SETTLED_EPS) return result(bal, dueDateForStatement(s, dueDay));
   }
   return null;
 }
@@ -388,38 +412,55 @@ function isEmiBilledNow(c) {
   return isEmiBilledByMonth(c, now.getFullYear(), now.getMonth());
 }
 
+// ── Installments billed: the single source of truth ──────────────────────
+// How many EMI instalments have actually posted by `asOf`. Each instalment
+// lands on the commitment's BILLING day (its own billingDay, else the card's
+// statementDay, else the payment due day, else the start day-of-month),
+// starting from getEmiFirstPaymentDate and capped at tenure. Billing-DAY aware,
+// so the current month's instalment does NOT count until its bill is generated.
+// Both the card bill total and the loan-progress bar route through this, so
+// "how far along is this loan" can never disagree between the two views.
+export function emiInstallmentsBilled(c, asOf = new Date(), statementDay) {
+  const amt = parseFloat(c?.emiAmount) || 0;
+  if (amt <= 0) return 0;
+  const first = getEmiFirstPaymentDate(c);
+  if (!first) return 0;
+  const billingDay =
+    parseInt(c.billingDay) ||
+    parseInt(statementDay) ||
+    parseInt(c.dueDay) ||
+    (c.startDate ? new Date(c.startDate).getDate() : 1) ||
+    1;
+  const tenure = parseInt(c.tenureMonths) || 0;
+  const cap = tenure > 0 ? tenure : 240; // safety cap for open-ended recurring
+  let count = 0;
+  for (let i = 0; i < cap; i++) {
+    const y = first.getFullYear();
+    const m = first.getMonth() + i;
+    const lastDay = new Date(y, m + 1, 0).getDate();
+    const day = Math.min(billingDay, lastDay);
+    if (new Date(y, m, day) > asOf) break;
+    count += 1;
+  }
+  return count;
+}
+
 // Total of EMI installments billed by `today` across all credit-card-paid
-// commitments routed to the given card. Each installment posts to the card on
-// the commitment's BILLING day (the statement date — mirrors the card's
-// statementDay), not its payment due day: an EMI lands on the statement when
-// the statement generates, and only becomes payable on the later due date.
-// This represents the cumulative EMI portion that the card has been charged.
-export function getBilledCardEmiTotal(cardId, commitments, today = new Date()) {
+// commitments routed to the given card — the cumulative EMI portion the card
+// has been charged. Uses the shared instalment count so it agrees with the
+// loan-progress bar and the card ledger.
+export function getBilledCardEmiTotal(
+  cardId,
+  commitments,
+  today = new Date(),
+  statementDay,
+) {
   let total = 0;
   for (const c of commitments) {
-    if (c?.paymentMedium !== "credit_card") continue;
-    if (c?.cardId !== cardId) continue;
+    if (emiCardId(c) !== cardId) continue;
     if (!commitmentIsActive(c)) continue;
     const amt = parseFloat(c.emiAmount) || 0;
-    if (amt <= 0) continue;
-    const first = getEmiFirstPaymentDate(c);
-    if (!first) continue;
-    const billingDay =
-      parseInt(c.billingDay) ||
-      parseInt(c.dueDay) ||
-      (c.startDate ? new Date(c.startDate).getDate() : 1) ||
-      1;
-    const tenure = parseInt(c.tenureMonths) || 0;
-    const cap = tenure > 0 ? tenure : 240; // safety cap for open-ended recurring
-    for (let i = 0; i < cap; i++) {
-      const y = first.getFullYear();
-      const m = first.getMonth() + i;
-      const lastDay = new Date(y, m + 1, 0).getDate();
-      const day = Math.min(billingDay, lastDay);
-      const d = new Date(y, m, day);
-      if (d > today) break;
-      total += amt;
-    }
+    total += emiInstallmentsBilled(c, today, statementDay) * amt;
   }
   return total;
 }
@@ -485,7 +526,7 @@ export function getUpcomingDues(
     // roll to the next cycle), and the due date follows that statement. See
     // getCardDue for the full model.
     const info = getCardDue(card, allTransactions, commitments, now);
-    if (!info || !(info.amount > 0)) return;
+    if (!info || !(info.amount > SETTLED_EPS)) return;
     if (info.diffDays <= days)
       result.push({
         type: "card",
@@ -499,10 +540,11 @@ export function getUpcomingDues(
 
   commitments.forEach((c) => {
     if (!commitmentIsActive(c) || !c.dueDay) return;
-    // Credit-card-paid commitments are already folded into the card row above.
-    // Listing them separately would mean the user sees two due dates for the
-    // same money (and on the wrong calendar day).
-    if (c.paymentMedium === "credit_card" && c.cardId) return;
+    // Credit-card-paid commitments are already folded into the card row above
+    // (statement-aware — they only appear once the bill is generated). Listing
+    // them separately would mean two due dates for the same money, on the wrong
+    // calendar day, and bypass the statement gate.
+    if (isCardFundedEmi(c)) return;
     const dueDay = parseInt(c.dueDay);
     const thisMonthDue = new Date(yr, mo, dueDay);
     const paid = paidThisMonth(c.id, c.cardId);
@@ -563,41 +605,6 @@ export function getUpcomingDues(
   });
 
   return result.sort((a, b) => a.dueDate - b.dueDate);
-}
-
-// Returns array[31] where index i = day (i+1), each with an items array
-export function getDueCalendar(cards, commitments) {
-  const calendar = Array.from({ length: 31 }, (_, i) => ({
-    day: i + 1,
-    items: [],
-  }));
-
-  cards.forEach((card) => {
-    const day = parseInt(card.dueDay);
-    if (day >= 1 && day <= 31 && parseFloat(card.outstanding) > 0)
-      calendar[day - 1].items.push({
-        type: "card",
-        name: card.name,
-        amount: parseFloat(card.outstanding),
-        color: card.color || "#4a90d9",
-      });
-  });
-
-  commitments.forEach((c) => {
-    // Credit-card-paid commitments are part of the card's bill — already
-    // represented by the card item above. Don't mark them on their own day.
-    if (c.paymentMedium === "credit_card" && c.cardId) return;
-    const day = parseInt(c.dueDay);
-    if (day >= 1 && day <= 31 && commitmentIsActive(c))
-      calendar[day - 1].items.push({
-        type: "commitment",
-        name: c.name,
-        amount: parseFloat(c.emiAmount) || 0,
-        color: COMMITMENT_TYPES.find((t) => t.key === c.type)?.color ?? "#808080",
-      });
-  });
-
-  return calendar;
 }
 
 export const COMMITMENT_TYPES = [

@@ -1,6 +1,8 @@
 import { useMemo } from "react";
 import { useSelector } from "react-redux";
 import { deriveNotifications } from "../utils/notificationEngine";
+import { useNotificationFeedQuery } from "../redux/api";
+import { dbEnabled, currentEmail } from "../utils/storage/allowlist";
 
 // The single source of truth for the bell badge and the modal. Derives the
 // live notification list from the user's data and subtracts anything they've
@@ -12,10 +14,15 @@ import { deriveNotifications } from "../utils/notificationEngine";
 export default function useNotifications() {
   const data = useSelector((s) => s.transactions.transactionData);
   const prefs = data?.preferences;
+  const useDb = dbEnabled(currentEmail());
+  const { data: feed } = useNotificationFeedQuery(undefined, { skip: !useDb });
 
   return useMemo(() => {
     if (!prefs?.notificationsEnabled) return { items: [], count: 0 };
-    const all = deriveNotifications(data, prefs);
+    const source = useDb
+      ? { ...data, investments: feed?.investments ?? data?.investments ?? [] }
+      : data;
+    const all = deriveNotifications(source, prefs);
     const dismissals = data?.notificationDismissals ?? {};
     const now = Date.now();
     const items = all.filter((n) => {
@@ -28,5 +35,5 @@ export default function useNotifications() {
       return new Date(expiry).getTime() <= now;
     });
     return { items, count: items.length };
-  }, [data, prefs]);
+  }, [data, prefs, feed, useDb]);
 }

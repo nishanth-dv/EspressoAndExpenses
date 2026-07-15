@@ -1,4 +1,4 @@
-import { memo, useState, useMemo } from "react";
+import { memo, useState, useMemo, useEffect } from "react";
 import PropTypes from "prop-types";
 import { useDispatch, useSelector } from "react-redux";
 import { CATEGORIES, PAYMENT_MODES, INVESTMENT_TYPES } from "../utils/constants";
@@ -13,7 +13,7 @@ import FormError from "../components/FormError";
 import SmartFillBar from "../components/SmartFillBar";
 import { predictEntry, normalizeName } from "../utils/smartFill";
 import { NoteBulletHint } from "../components/NoteText";
-import { computeCardOutstanding } from "../utils/solvencyUtils";
+import { getCardDue, isCardFundedEmi } from "../utils/solvencyUtils";
 
 const EMPTY = {
   name: "",
@@ -303,9 +303,10 @@ const ExpenseForm = ({
           id: crypto.randomUUID(),
         };
 
-    // Strip empty optional fields
-    if (!transaction.cardId) delete transaction.cardId;
-    if (!transaction.repaymentFor) delete transaction.repaymentFor;
+    // Strip optional fields that don't apply — a stale cardId/repaymentFor must
+    // never ride along on an expense that isn't card-paid / a repayment.
+    if (!paidByCard || !transaction.cardId) delete transaction.cardId;
+    if (!isRepayment || !transaction.repaymentFor) delete transaction.repaymentFor;
     // Card-paid expenses don't touch a bank account directly — the bank
     // only moves when the card bill is repaid. Drop accountId so the
     // per-bank balance math stays correct.
@@ -329,20 +330,24 @@ const ExpenseForm = ({
   //   • Commitments that are NOT funded by a credit card. Card-funded
   //     EMIs are already covered by the card's bill above, so showing
   //     them separately would double-tag the same money.
-  // Each entry carries the auto-populate amount: the card's outstanding
-  // or the EMI's per-period amount. When the user picks a target, the
-  // expense amount input gets prefilled with this value (overridable).
+  // Each entry carries the auto-populate amount: the card's current
+  // statement due or the EMI's per-period amount. When the user picks a
+  // target, the expense amount input gets prefilled with this value
+  // (overridable). Cards use getCardDue — the statement-cycle-aware bill
+  // (billed charges + billed EMIs − repayments), the same figure the
+  // Solvency page shows — so unbilled/post-statement purchases aren't
+  // prefilled as if they were already due.
   const repaymentTargets = useMemo(() => {
     const now = new Date();
     const cardTargets = cards
       .map((c) => ({
         id: c.id,
         label: c.name,
-        amount: computeCardOutstanding(c, allTransactions, commitments, now),
+        amount: getCardDue(c, allTransactions, commitments, now)?.amount ?? 0,
       }))
       .filter((t) => t.amount > 0);
     const emiTargets = commitments
-      .filter((c) => c.paymentMedium !== "credit_card")
+      .filter((c) => !isCardFundedEmi(c))
       .map((c) => ({
         id: c.id,
         label: c.name,
@@ -350,6 +355,27 @@ const ExpenseForm = ({
       }));
     return [...cardTargets, ...emiTargets];
   }, [cards, commitments, allTransactions]);
+
+  // These single-choice fields no longer offer a "None" — a card-paid expense
+  // is always on some card, and a repayment always settles something. Keep them
+  // on a valid selection by defaulting to the first sensible option when shown
+  // and nothing is chosen yet; existing (edited) values are left untouched.
+  useEffect(() => {
+    if (paidByCard && cards.length > 0 && !form.cardId) {
+      setForm((f) => ({ ...f, cardId: cards[0].id }));
+    }
+  }, [paidByCard, cards, form.cardId]);
+
+  useEffect(() => {
+    if (isRepayment && repaymentTargets.length > 0 && !form.repaymentFor) {
+      const first = repaymentTargets[0];
+      setForm((f) => ({
+        ...f,
+        repaymentFor: first.id,
+        amount: !f.amount && first.amount > 0 ? String(first.amount) : f.amount,
+      }));
+    }
+  }, [isRepayment, repaymentTargets, form.repaymentFor]);
 
   return (
     <form className="expense-form" onSubmit={handleSubmit} noValidate>
@@ -600,13 +626,10 @@ const ExpenseForm = ({
               value={form.repaymentFor}
               onChange={handleChange}
               label="Repayment for"
-              options={[
-                { value: "", label: "None" },
-                ...repaymentTargets.map((t) => ({
-                  value: t.id,
-                  label: t.label,
-                })),
-              ]}
+              options={repaymentTargets.map((t) => ({
+                value: t.id,
+                label: t.label,
+              }))}
             />
           )}
 
@@ -627,13 +650,12 @@ const ExpenseForm = ({
               value={form.cardId}
               onChange={handleChange}
               label="Credit card used"
-              options={[
-                { value: "", label: "None" },
-                ...cards.map((c) => ({
-                  value: c.id,
-                  label: `${c.name} (${c.bank})`,
-                })),
-              ]}
+              options={cards.map((c) => ({
+                value: c.id,
+                label: `${c.name} (${c.bank})`,
+                bank: c.bank,
+                color: c.color,
+              }))}
             />
           )}
 

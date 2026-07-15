@@ -1,7 +1,7 @@
 import { memo, useState, useRef, useCallback, useLayoutEffect } from "react";
 import { createPortal } from "react-dom";
 import { useSelector } from "react-redux";
-import { useNavigate } from "react-router-dom";
+import { useDeepLinkNav } from "../hooks/useDeepLinkNav";
 import PropTypes from "prop-types";
 
 function DropdownPortal({ anchorRef, children }) {
@@ -32,6 +32,8 @@ import "../styles/investment.css";
 import BankChipSelector from "../components/BankChipSelector";
 import OptionField from "../components/OptionField";
 import DateField from "../components/DateField";
+import LoggingModeSelector from "../components/LoggingModeSelector";
+import { recommendedLogMode } from "../utils/loggingMode";
 import { INVESTMENT_TYPES, EQUITY_SECTORS, MF_CATEGORIES } from "../utils/constants";
 import {
   getTypeInfo,
@@ -86,6 +88,7 @@ const EMPTY_FORM = {
   penaltyEnabled: false,
   penaltyMode: "flat",
   penaltyAmount: "",
+  logMode: "",
 };
 
 function formFromInvestment(inv) {
@@ -150,6 +153,7 @@ function formFromInvestment(inv) {
     penaltyMode: inv.latePenalty?.mode ?? "flat",
     penaltyAmount:
       inv.latePenalty?.amount != null ? String(inv.latePenalty.amount) : "",
+    logMode: inv.autoDeduct?.mode ?? "",
   };
 }
 
@@ -208,7 +212,7 @@ const InvestmentForm = ({ onSubmit, onCancel, existing, prefillAmount, prefillTy
   const isBuiltInKey = (key) =>
     INVESTMENT_TYPES.some((t) => t.key === key);
   const userOnlyTypes = userTypes.filter((t) => !isBuiltInKey(t.key));
-  const navigate = useNavigate();
+  const deepNav = useDeepLinkNav();
   // Universe of types the user could potentially enable: built-ins + the
   // Discover catalog + anything already in their user-types catalog.
   const enabledSet = new Set(enabledTypeKeys);
@@ -291,6 +295,10 @@ const InvestmentForm = ({ onSubmit, onCancel, existing, prefillAmount, prefillTy
   const subtype = typeInfo?.subtype;
   const isMF = form.type === "mf" || form.type === "sip";
   const isStockSearch = form.type === "stock" || form.type === "etf";
+  // Unit holdings (stock/ETF/gold) are multi-lot: picking an existing one in
+  // the chooser means "buy more" → a new lot, so units accumulate with a
+  // weighted average and a fresh purchase transaction. (MF/SIP stay single-record.)
+  const isLotBuyMore = subtype === "unit" && !isMF;
 
   const categoryOptions =
     form.type === "stock" || form.type === "etf" ? EQUITY_SECTORS :
@@ -395,6 +403,21 @@ const InvestmentForm = ({ onSubmit, onCancel, existing, prefillAmount, prefillTy
   // ── Submit ──────────────────────────────────────────
   function handleSubmit(e) {
     e.preventDefault();
+
+    // A self-logging SIP must debit a real account when multi-bank is on,
+    // otherwise the auto-posted instalment would never touch a balance.
+    const mode = form.logMode || recommendedLogMode("sip").mode;
+    if (
+      form.type === "sip" &&
+      (mode === "auto" || mode === "manual") &&
+      multiBankEnabled &&
+      accounts.length > 0 &&
+      !form.accountId
+    ) {
+      setFetchMsg({ ok: false, text: "Choose the bank this SIP debits" });
+      return;
+    }
+
     const createdAt = editTarget?.createdAt ?? new Date().toISOString();
     // MF has no Start date field — fall back to createdAt so date filters
     // and the ledger's "since" line still have something to anchor on.
@@ -428,6 +451,11 @@ const InvestmentForm = ({ onSubmit, onCancel, existing, prefillAmount, prefillTy
       if (form.type === "sip") {
         payload.monthlyAmount = parseFloat(form.monthlyAmount) || 0;
         if (form.sipDay) payload.sipDay = parseInt(form.sipDay);
+        const mode = form.logMode || recommendedLogMode("sip").mode;
+        payload.autoDeduct = { ...(editTarget?.autoDeduct || {}), mode };
+        // A SIP always debits a real account, so tag the auto-logged
+        // instalment to the linked bank when multi-bank is on.
+        payload.accountId = form.accountId || undefined;
       }
       if (form.ticker) payload.priceUpdatedAt = editTarget?.priceUpdatedAt;
     } else if (subtype === "fixed") {
@@ -525,6 +553,47 @@ const InvestmentForm = ({ onSubmit, onCancel, existing, prefillAmount, prefillTy
     form.type === "gold" ? "Buy price per gram (₹)"
     : form.type === "sip" ? "Avg purchase NAV (₹)"
     : "Buy price per unit (₹)";
+
+  // Weighted average buy price across every lot of this same holding (matched
+  // by ticker, or type|name when there's no ticker), folding in the values
+  // currently typed into the form. Surfaced read-only for multi-lot stock
+  // positions so the user sees their blended cost basis as they add a lot.
+  // Returns null for single-lot / non-stock cases where it'd just echo the
+  // Buy price field.
+  const avgBuyAcrossLots = (() => {
+    if (typeInfo?.subtype !== "unit" || form.type === "sip" || form.type === "mf") {
+      return null;
+    }
+    const key = form.ticker
+      ? form.ticker.toUpperCase()
+      : `${form.type}|${form.name}`;
+    let totQty = 0;
+    let totCost = 0;
+    let lots = 0;
+    for (const lot of existingInvestments) {
+      if (getTypeInfo(lot.type).subtype !== "unit") continue;
+      if (existing && lot.id === existing.id) continue;
+      const lotKey = lot.ticker
+        ? lot.ticker.toUpperCase()
+        : `${lot.type}|${lot.name}`;
+      if (lotKey !== key) continue;
+      const lq = parseFloat(lot.quantity) || 0;
+      const lp = parseFloat(lot.buyPrice) || 0;
+      if (lq <= 0) continue;
+      totQty += lq;
+      totCost += lq * lp;
+      lots += 1;
+    }
+    const q = parseFloat(form.quantity) || 0;
+    const p = parseFloat(form.buyPrice) || 0;
+    if (q > 0) {
+      totQty += q;
+      totCost += q * p;
+      lots += 1;
+    }
+    if (lots < 2 || totQty <= 0) return null;
+    return totCost / totQty;
+  })();
   const curLabel =
     form.type === "gold" ? "Current price per gram (₹)"
     : form.type === "sip" ? "Current NAV (₹)"
@@ -555,6 +624,16 @@ const InvestmentForm = ({ onSubmit, onCancel, existing, prefillAmount, prefillTy
       />
     );
   }
+
+  // A SIP that logs itself (Auto / Remind me) always moves money out of a real
+  // account, so — when multi-bank is on and accounts exist — it must be tagged
+  // to one. "I'll log it myself" tags each entry at log time, so no link here.
+  const sipMode = form.logMode || recommendedLogMode("sip").mode;
+  const sipNeedsAccount =
+    form.type === "sip" &&
+    (sipMode === "auto" || sipMode === "manual") &&
+    multiBankEnabled &&
+    accounts.length > 0;
 
   return (
     <form className="expense-form" onSubmit={handleSubmit}>
@@ -631,7 +710,7 @@ const InvestmentForm = ({ onSubmit, onCancel, existing, prefillAmount, prefillTy
                 onClick={() => {
                   onCancel();
                   setTimeout(
-                    () => navigate("/Preferences#investmentTypes"),
+                    () => deepNav("/Preferences#investmentTypes"),
                     200,
                   );
                 }}
@@ -693,6 +772,25 @@ const InvestmentForm = ({ onSubmit, onCancel, existing, prefillAmount, prefillTy
                   onPayExisting(inv);
                   return;
                 }
+                if (isLotBuyMore) {
+                  // New lot prefilled from this holding (same name/ticker/type/
+                  // account) but a fresh id and blank quantity/price — the user
+                  // enters just the new purchase. Editing a specific lot is done
+                  // from the holdings list.
+                  setForceCreate(true);
+                  setEditTarget(null);
+                  setForm({
+                    ...formFromInvestment(inv),
+                    quantity: "",
+                    buyPrice: "",
+                    investedAmount: "",
+                    // Blank the old lot's date/value so this purchase dates to
+                    // now (or a date the user picks), not the original lot's.
+                    startDate: "",
+                    currentValue: "",
+                  });
+                  return;
+                }
                 setEditTarget(inv);
                 setForm(formFromInvestment(inv));
               }}
@@ -701,7 +799,9 @@ const InvestmentForm = ({ onSubmit, onCancel, existing, prefillAmount, prefillTy
               <span className="inv-existing-row-cta">
                 {form.type === "lic" && onPayExisting
                   ? "Pay premium"
-                  : "Add / update"}
+                  : isLotBuyMore
+                    ? "Buy more"
+                    : "Add / update"}
                 <i className="fa-solid fa-arrow-right" />
               </span>
             </button>
@@ -902,6 +1002,20 @@ const InvestmentForm = ({ onSubmit, onCancel, existing, prefillAmount, prefillTy
                     label="SIP start date"
                     required
                   />
+                  <LoggingModeSelector
+                    typeKey="sip"
+                    value={form.logMode || recommendedLogMode("sip").mode}
+                    onChange={(m) => set("logMode", m)}
+                  />
+                  {sipNeedsAccount && (
+                    <BankChipSelector
+                      accounts={accounts}
+                      value={form.accountId}
+                      onChange={(id) => set("accountId", id)}
+                      label="Debited from"
+                      allowUntagged={false}
+                    />
+                  )}
                 </>
               ) : form.type === "mf" ? (
                 <>
@@ -962,6 +1076,18 @@ const InvestmentForm = ({ onSubmit, onCancel, existing, prefillAmount, prefillTy
                     />
                     <label>{buyLabel}</label>
                   </div>
+                  {avgBuyAcrossLots !== null && (
+                    <div className="field">
+                      <input
+                        value={`₹ ${avgBuyAcrossLots.toLocaleString("en-IN", {
+                          maximumFractionDigits: 2,
+                        })}`}
+                        readOnly
+                        placeholder=" "
+                      />
+                      <label>Avg buy across all lots</label>
+                    </div>
+                  )}
                 </>
               )}
 

@@ -310,6 +310,8 @@ const IncomeForm = ({ onSubmit, onCancel, existing }) => {
                 allTransactions,
                 commitments,
               ).toLocaleString("en-IN")} due`,
+              bank: c.bank,
+              color: c.color,
             })),
             { value: "", label: "Other" },
           ]}

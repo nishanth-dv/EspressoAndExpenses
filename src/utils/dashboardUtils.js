@@ -1,3 +1,5 @@
+import { resolveMonthlyIncome } from "./incomeUtils";
+
 export const INR = new Intl.NumberFormat("en-IN", {
   style: "currency",
   currency: "INR",
@@ -231,11 +233,18 @@ export function getSpendingVelocity(transactions) {
   return { projected, vsLastMonth, daysElapsed, daysInMonth };
 }
 
-export function getIncomeCoverage(transactions) {
+// `expenses` is this month's actual spend (respects the caller's filter).
+// `income` is a stable monthly baseline when `baselineTransactions` (full,
+// unfiltered history) is supplied — so a month-end salary doesn't zero it; it
+// falls back to this month's actual income otherwise (keeps old callers intact).
+export function getIncomeCoverage(
+  transactions,
+  { incomeType = "auto", excludeCategories = [], baselineTransactions } = {},
+) {
   const now = new Date();
   const cy = now.getFullYear(),
     cm = now.getMonth();
-  const income = transactions
+  const actualIncome = transactions
     .filter(
       (t) => t.transactionType === "income" && isInMonth(t.occurredAt, cy, cm),
     )
@@ -245,6 +254,13 @@ export function getIncomeCoverage(transactions) {
       (t) => t.transactionType === "expense" && isInMonth(t.occurredAt, cy, cm),
     )
     .reduce((s, t) => s + parseFloat(t.amount), 0);
+  const income = baselineTransactions
+    ? resolveMonthlyIncome(baselineTransactions, {
+        now,
+        incomeType,
+        excludeCategories,
+      }).monthly
+    : actualIncome;
   return {
     income,
     expenses,

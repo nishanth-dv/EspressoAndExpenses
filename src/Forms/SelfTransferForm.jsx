@@ -79,7 +79,12 @@ const SelfTransferForm = ({ onSubmit, onCancel, existing }) => {
           label="From"
           required
           placeholder=""
-          options={accounts.map((a) => ({ value: a.id, label: a.bank }))}
+          options={accounts.map((a) => ({
+            value: a.id,
+            label: a.bank,
+            bank: a.bank,
+            color: a.color,
+          }))}
         />
         <i className="fa-solid fa-arrow-right self-transfer-arrow" />
         <OptionField
@@ -89,7 +94,12 @@ const SelfTransferForm = ({ onSubmit, onCancel, existing }) => {
           label="To"
           required
           placeholder=""
-          options={accounts.map((a) => ({ value: a.id, label: a.bank }))}
+          options={accounts.map((a) => ({
+            value: a.id,
+            label: a.bank,
+            bank: a.bank,
+            color: a.color,
+          }))}
         />
       </div>
 

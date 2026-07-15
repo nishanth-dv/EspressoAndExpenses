@@ -5,9 +5,10 @@ import { useSelector, useDispatch } from "react-redux";
 import {
   computeAccountBalance,
   computeAggregateBalance,
-  getAccountMonthlyDelta,
   getReconciliationDelta,
+  balanceAsOf,
 } from "../utils/accountUtils";
+import BankLogo from "./BankLogo";
 import {
   persistRecomputeBalance,
   persistVerifyAccountBalance,
@@ -79,7 +80,6 @@ const BalanceCarousel = ({ variant = "compact", syncTransactionFilter = false })
           account: a,
           title: a.bank,
           balance: computeAccountBalance(a, allTransactions),
-          monthlyDelta: getAccountMonthlyDelta(a, allTransactions),
           reconciliation: getReconciliationDelta(a, allTransactions),
         });
       }
@@ -230,7 +230,7 @@ const BalanceCarousel = ({ variant = "compact", syncTransactionFilter = false })
         >
           <VerifyBalanceForm
             account={verifyTarget}
-            computed={computeAccountBalance(verifyTarget, allTransactions)}
+            transactions={allTransactions}
             onClose={() => setVerifyTarget(null)}
             onConfirm={async ({ balance, asOf }) => {
               await dispatch(
@@ -265,10 +265,11 @@ function BalanceSlide({ slide, variant }) {
   return (
     <div className={`balance-slide balance-slide--${variant}`}>
       <p className="balance-slide-label">
-        {slide.kind === "account" && slide.account.color && (
-          <span
-            className="balance-slide-dot"
-            style={{ background: slide.account.color }}
+        {slide.kind === "account" && (
+          <BankLogo
+            bank={slide.account.bank}
+            color={slide.account.color}
+            size={20}
           />
         )}
         {slide.title}
@@ -300,29 +301,18 @@ function BalanceMetaRow({ slide, onRecompute, recomputeBusy, onVerify }) {
             onClick={onRecompute}
             disabled={recomputeBusy}
             title="Recompute balance from all transactions"
+            aria-label="Recompute balance from all transactions"
           >
             <i
               className={`fa-solid ${recomputeBusy ? "fa-spinner fa-spin" : "fa-rotate"}`}
             />
-            Recompute balance
           </button>
         )}
       </div>
     );
   }
-  const positive = (slide.monthlyDelta ?? 0) >= 0;
   return (
     <div className="balance-meta-row">
-      {slide.monthlyDelta !== 0 && (
-        <span
-          className={`balance-slide-delta ${positive ? "balance-slide-delta--up" : "balance-slide-delta--down"}`}
-        >
-          <i
-            className={`fa-solid ${positive ? "fa-arrow-up" : "fa-arrow-down"}`}
-          />
-          {INR.format(Math.abs(slide.monthlyDelta))} this month
-        </span>
-      )}
       <ReconciliationChip
         recon={slide.reconciliation}
         onVerify={() => onVerify(slide.account)}
@@ -387,12 +377,16 @@ ReconciliationChip.propTypes = {
 
 // ── Verify modal body ─────────────────────────────────
 
-function VerifyBalanceForm({ account, computed, onConfirm, onClose }) {
-  const [balanceDraft, setBalanceDraft] = useState(
-    String(account.verifiedBalance ?? computed.toFixed(2)),
-  );
+function VerifyBalanceForm({ account, transactions, onConfirm, onClose }) {
   const [asOf, setAsOf] = useState(() =>
     new Date().toISOString().slice(0, 10),
+  );
+  const computed = useMemo(
+    () => balanceAsOf(account, transactions, asOf),
+    [account, transactions, asOf],
+  );
+  const [balanceDraft, setBalanceDraft] = useState(
+    String(account.verifiedBalance ?? computed.toFixed(2)),
   );
   const parsed = parseFloat(balanceDraft);
   const valid = Number.isFinite(parsed) && parsed >= 0;
@@ -400,6 +394,10 @@ function VerifyBalanceForm({ account, computed, onConfirm, onClose }) {
 
   return (
     <div className="balance-verify-form">
+      <div className="balance-verify-bank">
+        <BankLogo bank={account.bank} color={account.color} size={22} />
+        <span>{account.bank}</span>
+      </div>
       <p className="balance-verify-hint">
         Enter the balance shown in your <strong>{account.bank}</strong>{" "}
         statement / app. We&apos;ll compare it with what your transactions
@@ -473,7 +471,7 @@ function VerifyBalanceForm({ account, computed, onConfirm, onClose }) {
 
 VerifyBalanceForm.propTypes = {
   account: PropTypes.object.isRequired,
-  computed: PropTypes.number.isRequired,
+  transactions: PropTypes.array.isRequired,
   onConfirm: PropTypes.func.isRequired,
   onClose: PropTypes.func.isRequired,
 };

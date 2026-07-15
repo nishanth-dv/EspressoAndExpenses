@@ -1,5 +1,161 @@
 import { createSlice, createAsyncThunk } from "@reduxjs/toolkit";
-import { createOrFetchFile, updateFile } from "../../utils/googleDrive";
+import { createOrFetchFile, updateFile } from "../../utils/storage";
+import {
+  uploadFile as uploadDriveFile,
+  deleteFile as deleteDriveFile,
+  listFiles as listDriveFiles,
+  downloadFile as downloadDriveFile,
+} from "../../utils/googleDrive";
+import { gql } from "../../utils/graphql";
+import { dbEnabled, currentEmail } from "../../utils/storage/allowlist";
+
+const ADD_TRANSACTION_MUTATION = `mutation AddTransaction($tx: JSON!) {
+  addTransaction(transaction: $tx) { id updatedAt }
+}`;
+const UPDATE_TRANSACTION_MUTATION = `mutation UpdateTransaction($tx: JSON!) {
+  updateTransaction(transaction: $tx) { id updatedAt }
+}`;
+const DELETE_TRANSACTION_MUTATION = `mutation DeleteTransaction($id: ID!) {
+  deleteTransaction(id: $id) { id updatedAt }
+}`;
+const UPSERT_ENTITY_MUTATION = `mutation UpsertEntity($collection: String!, $entity: JSON!) {
+  upsertEntity(collection: $collection, entity: $entity) { id updatedAt }
+}`;
+const DELETE_ENTITY_MUTATION = `mutation DeleteEntity($collection: String!, $id: ID!) {
+  deleteEntity(collection: $collection, id: $id) { id updatedAt }
+}`;
+const UPDATE_SETTINGS_MUTATION = `mutation UpdateSettings($data: JSON!) {
+  updateSettings(data: $data) { id updatedAt }
+}`;
+
+const SETTINGS_STRIP_KEYS = [
+  "transactions",
+  "investments",
+  "accounts",
+  "subscriptions",
+  "cards",
+  "commitments",
+  "lendings",
+  "goals",
+  "notes",
+];
+
+export async function persistSettings(getState) {
+  const { fileID, transactionData } = getState().transactions;
+  if (!dbEnabled(currentEmail())) {
+    await updateFile(fileID, transactionData);
+    return;
+  }
+  const data = { ...transactionData };
+  for (const k of SETTINGS_STRIP_KEYS) delete data[k];
+  await gql(UPDATE_SETTINGS_MUTATION, { data });
+}
+
+const BULK_UPSERT_TRANSACTIONS_MUTATION = `mutation BulkUpsertTransactions($transactions: JSON!) {
+  bulkUpsertTransactions(transactions: $transactions) { id updatedAt }
+}`;
+
+const DELTA_ENTITY_SPECS = [
+  "investments",
+  "accounts",
+  "cards",
+  "subscriptions",
+  "commitments",
+  "lendings",
+  "goals",
+  "notes",
+];
+
+function diffById(prevArr, nextArr) {
+  const prev = new Map((prevArr ?? []).map((x) => [x.id, x]));
+  const next = new Map((nextArr ?? []).map((x) => [x.id, x]));
+  const upserts = [];
+  const deletes = [];
+  for (const [id, item] of next) {
+    const old = prev.get(id);
+    if (!old || old !== item) upserts.push(item);
+  }
+  for (const id of prev.keys()) if (!next.has(id)) deletes.push(id);
+  return { upserts, deletes };
+}
+
+export async function persistDelta(getState, before) {
+  const { fileID, transactionData: after } = getState().transactions;
+  if (!dbEnabled(currentEmail())) {
+    await updateFile(fileID, after);
+    return;
+  }
+
+  const txUpserts = diffById(before?.transactions, after?.transactions).upserts;
+
+  await persistSettings(getState);
+
+  if (txUpserts.length) {
+    await gql(BULK_UPSERT_TRANSACTIONS_MUTATION, { transactions: txUpserts });
+  }
+  for (const key of DELTA_ENTITY_SPECS) {
+    const upserts = diffById(before?.[key], after?.[key]).upserts;
+    for (const entity of upserts) {
+      await gql(UPSERT_ENTITY_MUTATION, { collection: key, entity });
+    }
+  }
+}
+
+async function entityWrite(getState, mutationFn) {
+  let saved = false;
+  if (dbEnabled(currentEmail())) {
+    try {
+      await mutationFn();
+      saved = true;
+    } catch {
+      saved = false;
+    }
+  }
+  if (!saved) {
+    const { fileID, transactionData } = getState().transactions;
+    await updateFile(fileID, transactionData);
+  }
+}
+
+export async function persistEntityUpsert(getState, collection, entity) {
+  await entityWrite(getState, async () => {
+    await gql(UPSERT_ENTITY_MUTATION, { collection, entity });
+  });
+}
+
+export async function persistEntityDelete(getState, collection, id) {
+  await entityWrite(getState, async () => {
+    await gql(DELETE_ENTITY_MUTATION, { collection, id });
+  });
+}
+
+// Persist a mixed batch of granular changes (entities + ledger transactions) in
+// one pass for DB users, so a thunk that touches several rows doesn't fall back
+// to a whole-blob syncAll. Falls back to a whole-blob write for Drive users, or
+// if any granular op fails (entityWrite). Ops:
+//   upserts:       [{ collection, entity }]
+//   entityDeletes: [{ collection, id }]
+//   txAdds/txUpdates: [tx]      txDeletes: [id]
+export async function persistBatch(getState, ops = {}) {
+  const {
+    upserts = [],
+    entityDeletes = [],
+    txAdds = [],
+    txUpdates = [],
+    txDeletes = [],
+  } = ops;
+  await entityWrite(getState, async () => {
+    for (const { collection, entity } of upserts) {
+      await gql(UPSERT_ENTITY_MUTATION, { collection, entity });
+    }
+    for (const { collection, id } of entityDeletes) {
+      await gql(DELETE_ENTITY_MUTATION, { collection, id });
+    }
+    for (const tx of txAdds) await gql(ADD_TRANSACTION_MUTATION, { tx });
+    for (const tx of txUpdates) await gql(UPDATE_TRANSACTION_MUTATION, { tx });
+    for (const id of txDeletes) await gql(DELETE_TRANSACTION_MUTATION, { id });
+  });
+}
 import {
   findAutoDeductAmount,
   getInvestmentMathProfile,
@@ -71,6 +227,9 @@ function expenseDelta(tx) {
 import { showToast } from "./toastSlice";
 import {
   computeAggregateBalance,
+  computeAccountBalance,
+  balanceAsOf,
+  getReconciliationDelta,
 } from "../../utils/accountUtils";
 
 export const initializeDrive = createAsyncThunk(
@@ -80,6 +239,7 @@ export const initializeDrive = createAsyncThunk(
       "espresso-expenses.json",
       DEFAULT_DATA,
     );
+    const preMigration = JSON.stringify(data);
     // Migrate older files that predate preferences/categories/lists
     let migrated = false;
     if (!data.preferences) {
@@ -263,8 +423,14 @@ export const initializeDrive = createAsyncThunk(
       };
       migrated = true;
     }
-    if (migrated) await updateFile(fileId, data);
+    const dataChanged = JSON.stringify(data) !== preMigration;
+    if (migrated && dataChanged) await updateFile(fileId, data);
     return { fileId, data };
+  },
+  {
+    condition: (_arg, { getState }) => {
+      if (getState().transactions.status === "loading") return false;
+    },
   },
 );
 
@@ -280,6 +446,59 @@ function pruneDismissals(map) {
   return out;
 }
 
+// Account ids a transaction touches (tagged account + either leg of a self
+// transfer). Used to target which verified checkpoints to roll after a change.
+function txnAccountIds(t) {
+  const s = new Set();
+  if (t?.accountId) s.add(t.accountId);
+  if (t?.fromAccountId) s.add(t.fromAccountId);
+  if (t?.toAccountId) s.add(t.toAccountId);
+  return s;
+}
+
+// Auto-roll verified reconciliation checkpoints forward (Immer-mutating).
+// For each affected verified account we recompute the checkpoint while KEEPING
+// its exact drift: verifiedBalance := computedNow − driftAtCheckpoint, verifiedAt
+// := now. When the account balance moved because of new (post-checkpoint)
+// activity, this advances the checkpoint so recorded spending never shows as
+// drift. When the change was backdated/edited BEFORE the checkpoint, computedNow
+// and the drift move together so verifiedBalance lands back on its stored value
+// — we then leave the checkpoint untouched, letting the genuine drift surface.
+function rollVerifiedCheckpoints(state, ids) {
+  const data = state.transactionData;
+  const accounts = data?.accounts;
+  if (!accounts?.length) return;
+  const txns = data.transactions ?? [];
+  const now = new Date().toISOString();
+  for (const a of accounts) {
+    if (ids && !ids.has(a.id)) continue;
+    if (a.verifiedBalance == null || !a.verifiedAt) continue;
+    const stored = parseFloat(a.verifiedBalance) || 0;
+    const drift = balanceAsOf(a, txns, a.verifiedAt) - stored;
+    const rolled = computeAccountBalance(a, txns) - drift;
+    if (Math.abs(rolled - stored) < 0.005) continue; // backdated / no real move
+    a.verifiedBalance = rolled;
+    a.verifiedAt = now;
+  }
+}
+
+// After a ledger mutation persists on the DB backend (granular mutations don't
+// carry account rows), push any checkpoint the reducer rolled. The Drive path
+// writes the whole blob, so it already covers this.
+async function persistRolledAccounts(getState, before) {
+  if (!dbEnabled(currentEmail())) return;
+  const after = getState().transactions.transactionData.accounts ?? [];
+  for (const a of after) {
+    const b = before.find((x) => x.id === a.id);
+    if (
+      b &&
+      (b.verifiedBalance !== a.verifiedBalance || b.verifiedAt !== a.verifiedAt)
+    ) {
+      await persistEntityUpsert(getState, "accounts", a);
+    }
+  }
+}
+
 const transactionSlice = createSlice({
   name: "transactions",
   initialState: {
@@ -293,6 +512,19 @@ const transactionSlice = createSlice({
       state.transactionData = action.payload.data;
     },
     reset: () => ({ fileID: "", transactionData: {}, status: "idle" }),
+    // Seed the ledger from the page-wise API (DB users) into the blob so every
+    // consumer keeps reading one source; optimistic writes below then reflect
+    // instantly with no cache refetch. Mirrors setInvestments.
+    setTransactions: (state, action) => {
+      state.transactionData.transactions = action.payload;
+    },
+    // Seed settings + small bounded collections from the coreData bootstrap.
+    // Merges (Object.assign) so it never clobbers the lazily-loaded large
+    // collections (transactions/investments) already in the blob.
+    setCoreData: (state, action) => {
+      if (!state.transactionData) state.transactionData = {};
+      Object.assign(state.transactionData, action.payload);
+    },
     addTransaction: (state, action) => {
       if (!state.transactionData.insights) return;
       const transaction = action.payload;
@@ -303,6 +535,7 @@ const transactionSlice = createSlice({
         (a, b) => b.occurredAt.localeCompare(a.occurredAt),
       );
       state.transactionData.transactions = updated;
+      rollVerifiedCheckpoints(state, txnAccountIds(transaction));
     },
     // Bulk insert — used by the statement importer. Same delta arithmetic
     // as addTransaction, but applied once for the whole batch so a single
@@ -354,6 +587,9 @@ const transactionSlice = createSlice({
       state.transactionData.transactions.sort((a, b) =>
         b.occurredAt.localeCompare(a.occurredAt),
       );
+      const ids = txnAccountIds(oldTx);
+      for (const id of txnAccountIds(newTx)) ids.add(id);
+      rollVerifiedCheckpoints(state, ids);
     },
     deleteTransaction: (state, action) => {
       if (!state.transactionData.transactions) return;
@@ -368,8 +604,15 @@ const transactionSlice = createSlice({
 
       state.transactionData.transactions =
         state.transactionData.transactions.filter((t) => t.id !== id);
+      rollVerifiedCheckpoints(state, txnAccountIds(transaction));
     },
     // ── Investments ──────────────────────────────────────
+    // Seed the holdings from the page-wise API (DB users) into the blob so the
+    // rest of the app keeps reading one source. Optimistic writes below then
+    // reflect instantly — no cache refetch, no write-on-read loop.
+    setInvestments: (state, action) => {
+      state.transactionData.investments = action.payload;
+    },
     addInvestment: (state, action) => {
       if (!state.transactionData.investments)
         state.transactionData.investments = [];
@@ -761,6 +1004,41 @@ const transactionSlice = createSlice({
         (g) => g.id !== action.payload,
       );
     },
+    addTally: (state, action) => {
+      if (!state.transactionData.tallies) state.transactionData.tallies = [];
+      state.transactionData.tallies.push(action.payload);
+    },
+    updateTally: (state, action) => {
+      if (!state.transactionData.tallies) return;
+      const idx = state.transactionData.tallies.findIndex(
+        (t) => t.id === action.payload.id,
+      );
+      if (idx !== -1) state.transactionData.tallies[idx] = action.payload;
+    },
+    deleteTally: (state, action) => {
+      if (!state.transactionData.tallies) return;
+      state.transactionData.tallies = state.transactionData.tallies.filter(
+        (t) => t.id !== action.payload,
+      );
+    },
+    // ── Notes ────────────────────────────────────────────
+    addNote: (state, action) => {
+      if (!state.transactionData.notes) state.transactionData.notes = [];
+      state.transactionData.notes.push(action.payload);
+    },
+    updateNote: (state, action) => {
+      if (!state.transactionData.notes) return;
+      const idx = state.transactionData.notes.findIndex(
+        (n) => n.id === action.payload.id,
+      );
+      if (idx !== -1) state.transactionData.notes[idx] = action.payload;
+    },
+    deleteNote: (state, action) => {
+      if (!state.transactionData.notes) return;
+      state.transactionData.notes = state.transactionData.notes.filter(
+        (n) => n.id !== action.payload,
+      );
+    },
   },
   extraReducers: (builder) => {
     builder
@@ -769,7 +1047,17 @@ const transactionSlice = createSlice({
       })
       .addCase(initializeDrive.fulfilled, (state, action) => {
         state.fileID = action.payload.fileId;
-        state.transactionData = action.payload.data;
+        const incoming = action.payload.data;
+        const prev = state.transactionData || {};
+        state.transactionData = {
+          ...incoming,
+          transactions: incoming.transactions?.length
+            ? incoming.transactions
+            : prev.transactions ?? incoming.transactions ?? [],
+          investments: incoming.investments?.length
+            ? incoming.investments
+            : prev.investments ?? incoming.investments ?? [],
+        };
         state.status = "ready";
       })
       .addCase(initializeDrive.rejected, (state, action) => {
@@ -793,12 +1081,21 @@ export const {
   addInboxItem,
   removeInboxItem,
   setAutoRead,
+  setTransactions,
+  setCoreData,
+  setInvestments,
   addInvestment,
   updateInvestment,
   deleteInvestment,
   addGoal,
   updateGoal,
   deleteGoal,
+  addTally,
+  updateTally,
+  deleteTally,
+  addNote,
+  updateNote,
+  deleteNote,
   addCard,
   updateCard,
   deleteCard,
@@ -842,17 +1139,39 @@ export const {
 
 export const persistTransaction =
   (transaction) => async (dispatch, getState) => {
+    const before = getState().transactions.transactionData.accounts ?? [];
     dispatch(addTransaction(transaction));
+    const toast = () =>
+      dispatch(
+        showToast({
+          message:
+            transaction.transactionType === "income"
+              ? "Income added"
+              : "Expense added",
+          action: {
+            label: "View",
+            href: `/Transactions?highlight=${transaction.id}`,
+          },
+        }),
+      );
+
+    if (dbEnabled(currentEmail())) {
+      try {
+        await gql(ADD_TRANSACTION_MUTATION, { tx: transaction });
+        await persistRolledAccounts(getState, before);
+        toast();
+        return;
+      } catch {
+        const { fileID, transactionData } = getState().transactions;
+        await updateFile(fileID, transactionData);
+        toast();
+        return;
+      }
+    }
+
     const { fileID, transactionData } = getState().transactions;
     await updateFile(fileID, transactionData);
-    dispatch(
-      showToast({
-        message:
-          transaction.transactionType === "income"
-            ? "Income added"
-            : "Expense added",
-      }),
-    );
+    toast();
   };
 
 // ── Auto-capture (review-inbox) thunks ───────────────
@@ -892,8 +1211,7 @@ export const persistQueueAlert =
       capturedAt: at,
     }),
   );
-  const { fileID, transactionData } = getState().transactions;
-  await updateFile(fileID, transactionData);
+  await persistSettings(getState);
   return { ok: true };
 };
 
@@ -915,15 +1233,13 @@ export const persistAcceptInboxItem =
 
     dispatch(addTransaction(tx));
     dispatch(removeInboxItem(id));
-    const { fileID, transactionData } = getState().transactions;
-    await updateFile(fileID, transactionData);
+    await persistDelta(getState, data);
     dispatch(showToast({ message: "Captured transaction added" }));
   };
 
 export const persistRejectInboxItem = (id) => async (dispatch, getState) => {
   dispatch(removeInboxItem(id));
-  const { fileID, transactionData } = getState().transactions;
-  await updateFile(fileID, transactionData);
+  await persistSettings(getState);
 };
 
 // Pulls recent bank/UPI alert mails from Gmail and queues new ones into the
@@ -991,6 +1307,9 @@ export const persistSyncGmail = () => async (dispatch, getState) => {
     added += 1;
   }
 
+  if (added === 0 && maxDate === (cfg.cursor ?? 0)) {
+    return { ok: true, added: 0 };
+  }
   dispatch(
     setAutoRead({
       source: "gmail",
@@ -998,23 +1317,20 @@ export const persistSyncGmail = () => async (dispatch, getState) => {
       processedIds: Array.from(processed).slice(-300),
     }),
   );
-  const { fileID, transactionData } = getState().transactions;
-  await updateFile(fileID, transactionData);
+  await persistSettings(getState);
   return { ok: true, added };
 };
 
 export const persistAutoReadEnabled =
   (enabled) => async (dispatch, getState) => {
     dispatch(setAutoRead({ enabled }));
-    const { fileID, transactionData } = getState().transactions;
-    await updateFile(fileID, transactionData);
+    await persistSettings(getState);
   };
 
 export const persistBudget =
   (category, amount) => async (dispatch, getState) => {
     dispatch(setBudget({ category, amount }));
-    const { fileID, transactionData } = getState().transactions;
-    await updateFile(fileID, transactionData);
+    await persistSettings(getState);
   };
 
 // Bulk import — used by the statement importer. Dispatches a single
@@ -1024,9 +1340,9 @@ export const persistBudget =
 export const persistBulkImport =
   (transactions) => async (dispatch, getState) => {
     if (!transactions?.length) return 0;
+    const before = getState().transactions.transactionData;
     dispatch(bulkAddTransactions(transactions));
-    const { fileID, transactionData } = getState().transactions;
-    await updateFile(fileID, transactionData);
+    await persistDelta(getState, before);
     dispatch(
       showToast({
         message: `Imported ${transactions.length} transaction${transactions.length === 1 ? "" : "s"}`,
@@ -1041,11 +1357,11 @@ export const persistBulkImport =
 export const persistBulkUpdateTransactions =
   (pairs) => async (dispatch, getState) => {
     if (!pairs?.length) return 0;
+    const before = getState().transactions.transactionData;
     for (const { oldTx, newTx } of pairs) {
       dispatch(updateTransaction({ oldTx, newTx }));
     }
-    const { fileID, transactionData } = getState().transactions;
-    await updateFile(fileID, transactionData);
+    await persistDelta(getState, before);
     return pairs.length;
   };
 
@@ -1055,10 +1371,17 @@ export const persistBulkUpdateTransactions =
 export const persistMergeAsSelfTransfer =
   ({ removeIds, transfer }) => async (dispatch, getState) => {
     if (!removeIds?.length || !transfer) return;
+    const before = getState().transactions.transactionData;
     for (const id of removeIds) dispatch(deleteTransaction(id));
     dispatch(addTransaction(transfer));
-    const { fileID, transactionData } = getState().transactions;
-    await updateFile(fileID, transactionData);
+    await persistDelta(getState, before);
+    if (dbEnabled(currentEmail())) {
+      for (const id of removeIds) {
+        try {
+          await gql(DELETE_TRANSACTION_MUTATION, { id });
+        } catch {}
+      }
+    }
   };
 
 // Persist learned merchant aliases. The importer batches its learnings
@@ -1069,48 +1392,59 @@ export const persistMerchantAliases =
   (aliases) => async (dispatch, getState) => {
     if (!aliases?.length) return;
     dispatch(bulkUpsertMerchantAliases(aliases));
-    const { fileID, transactionData } = getState().transactions;
-    await updateFile(fileID, transactionData);
+    await persistSettings(getState);
   };
 
 // Single-alias upsert (Preferences UI). Same flow, one entry.
 export const persistUpsertMerchantAlias =
   (alias) => async (dispatch, getState) => {
     dispatch(upsertMerchantAlias(alias));
-    const { fileID, transactionData } = getState().transactions;
-    await updateFile(fileID, transactionData);
+    await persistSettings(getState);
   };
 
 export const persistUpdateMerchantAlias =
   (alias) => async (dispatch, getState) => {
     dispatch(updateMerchantAlias(alias));
-    const { fileID, transactionData } = getState().transactions;
-    await updateFile(fileID, transactionData);
+    await persistSettings(getState);
   };
 
 export const persistRemoveMerchantAlias =
   (key) => async (dispatch, getState) => {
     dispatch(removeMerchantAlias(key));
-    const { fileID, transactionData } = getState().transactions;
-    await updateFile(fileID, transactionData);
+    await persistSettings(getState);
   };
 
 export const persistUpdateTransaction =
   (oldTx, newTx) => async (dispatch, getState) => {
-    dispatch(updateTransaction({ oldTx, newTx }));
+    // Stamp the edit time so the ledger can show "Last updated". Lives on the
+    // transaction JSON (round-trips via `raw`), so no backend/schema change.
+    const stamped = { ...newTx, updatedAt: new Date().toISOString() };
+    const before = getState().transactions.transactionData.accounts ?? [];
+    dispatch(updateTransaction({ oldTx, newTx: stamped }));
+    const done = () => dispatch(showToast({ message: "Transaction updated" }));
+    if (dbEnabled(currentEmail())) {
+      try {
+        await gql(UPDATE_TRANSACTION_MUTATION, { tx: stamped });
+        await persistRolledAccounts(getState, before);
+        done();
+        return;
+      } catch {
+        const { fileID, transactionData } = getState().transactions;
+        await updateFile(fileID, transactionData);
+        done();
+        return;
+      }
+    }
     const { fileID, transactionData } = getState().transactions;
     await updateFile(fileID, transactionData);
-    dispatch(showToast({ message: "Transaction updated" }));
+    done();
   };
 
 export const persistDeleteTransaction = (id) => async (dispatch, getState) => {
   const { transactionData } = getState().transactions;
   const tx = transactionData.transactions?.find((t) => t.id === id);
+  const before = transactionData.accounts ?? [];
   dispatch(deleteTransaction(id));
-  // SIP instalment (sipInvestmentId) and LIC premium (licPolicyId) transactions
-  // are payment records — deleting one record should not remove the parent
-  // SIP enrollment / LIC policy. Regular investment transactions share their
-  // id with the investment record, so cleaning up both is desirable.
   if (
     tx?.transactionType === "investment" &&
     !tx.sipInvestmentId &&
@@ -1118,10 +1452,60 @@ export const persistDeleteTransaction = (id) => async (dispatch, getState) => {
   ) {
     dispatch(deleteInvestment(id));
   }
+  // Undo is offered for plain transactions — restoring the row fully reverses
+  // the delete. Investment-type rows have cascades (linked investment), so they
+  // skip Undo.
+  const canUndo = !!tx && tx.transactionType !== "investment";
+  const done = () =>
+    dispatch(
+      showToast({
+        message: "Transaction deleted",
+        duration: canUndo ? 6000 : 3500,
+        action: canUndo ? { label: "Undo", restoreTx: tx } : null,
+      }),
+    );
+  if (dbEnabled(currentEmail())) {
+    try {
+      await gql(DELETE_TRANSACTION_MUTATION, { id });
+      await persistRolledAccounts(getState, before);
+      done();
+      return;
+    } catch {
+      const { fileID, transactionData: updated } = getState().transactions;
+      await updateFile(fileID, updated);
+      done();
+      return;
+    }
+  }
   const { fileID, transactionData: updated } = getState().transactions;
   await updateFile(fileID, updated);
-  dispatch(showToast({ message: "Transaction deleted" }));
+  done();
 };
+
+export const persistRestoreTransaction =
+  (tx) => async (dispatch, getState) => {
+    if (!tx) return;
+    const before = getState().transactions.transactionData.accounts ?? [];
+    dispatch(addTransaction(tx));
+    const done = () =>
+      dispatch(showToast({ message: "Transaction restored" }));
+    if (dbEnabled(currentEmail())) {
+      try {
+        await gql(ADD_TRANSACTION_MUTATION, { tx });
+        await persistRolledAccounts(getState, before);
+        done();
+        return;
+      } catch {
+        const { fileID, transactionData } = getState().transactions;
+        await updateFile(fileID, transactionData);
+        done();
+        return;
+      }
+    }
+    const { fileID, transactionData } = getState().transactions;
+    await updateFile(fileID, transactionData);
+    done();
+  };
 
 // Past premium months for an LIC policy, exclusive of the current month.
 function pastPremiumDates(startDate, premiumMonths) {
@@ -1189,6 +1573,7 @@ function isCashflowType(investment, userTypes) {
 
 export const persistAddInvestment =
   (investment) => async (dispatch, getState) => {
+    const before = getState().transactions.transactionData;
     dispatch(addInvestment(investment));
     // LIC: skip the standard "single linked transaction" path. Instead,
     // generate one payment-ledger entry per past premium month plus
@@ -1217,9 +1602,8 @@ export const persistAddInvestment =
           }
         }
       }
-      const { fileID, transactionData } = getState().transactions;
       try {
-        await updateFile(fileID, transactionData);
+        await persistDelta(getState, before);
         dispatch(showToast({ message: "Policy added" }));
       } catch {
         dispatch(
@@ -1260,9 +1644,8 @@ export const persistAddInvestment =
         );
       }
     }
-    const { fileID, transactionData } = getState().transactions;
     try {
-      await updateFile(fileID, transactionData);
+      await persistDelta(getState, before);
       dispatch(showToast({ message: "Investment added" }));
     } catch {
       dispatch(
@@ -1282,12 +1665,14 @@ export const persistUpdateInvestment =
       (t) => t.id === investment.id && t.transactionType === "investment",
     );
     dispatch(updateInvestment(investment));
+    const txDeletes = [];
 
     if (investment.type === "lic") {
       // Remove any stale lump-sum transaction created by old code (id ===
       // investment.id, no licPolicyId). LIC uses a per-premium ledger instead.
       if (linkedTx && !linkedTx.licPolicyId) {
         dispatch(deleteTransaction(linkedTx.id));
+        txDeletes.push(linkedTx.id);
       }
 
       const wantsBalance = investment.affectsBalance !== false;
@@ -1320,23 +1705,36 @@ export const persistUpdateInvestment =
           );
         } else if (!wantsPaid && currentMonthTx) {
           dispatch(deleteTransaction(currentMonthTx.id));
+          txDeletes.push(currentMonthTx.id);
         }
       } else {
         // affectsBalance toggled off — delete all per-premium transactions.
         const allLicTxs = (before.transactions ?? []).filter(
           (t) => t.licPolicyId === investment.id,
         );
-        allLicTxs.forEach((t) => dispatch(deleteTransaction(t.id)));
+        allLicTxs.forEach((t) => {
+          dispatch(deleteTransaction(t.id));
+          txDeletes.push(t.id);
+        });
       }
 
-      const { fileID, transactionData } = getState().transactions;
-      await updateFile(fileID, transactionData);
+      await persistDelta(getState, before);
+      if (dbEnabled(currentEmail())) {
+        for (const tid of txDeletes) {
+          try {
+            await gql(DELETE_TRANSACTION_MUTATION, { id: tid });
+          } catch {}
+        }
+      }
       return;
     }
 
     if (investment.type === "sip") {
       // SIP: remove legacy lump-sum linked tx if present; balance comes from monthly instalments only.
-      if (linkedTx) dispatch(deleteTransaction(investment.id));
+      if (linkedTx) {
+        dispatch(deleteTransaction(investment.id));
+        txDeletes.push(investment.id);
+      }
     } else {
       const userTypes =
         getState().transactions.transactionData?.investmentTypes ?? [];
@@ -1349,6 +1747,7 @@ export const persistUpdateInvestment =
       if (linkedTx && !wantsBalance) {
         // User turned off balance impact — remove the linked transaction.
         dispatch(deleteTransaction(investment.id));
+        txDeletes.push(investment.id);
       } else if (!linkedTx && wantsBalance && oldInv) {
         // User turned on balance impact — create a new linked transaction.
         dispatch(
@@ -1380,8 +1779,14 @@ export const persistUpdateInvestment =
         );
       }
     }
-    const { fileID, transactionData } = getState().transactions;
-    await updateFile(fileID, transactionData);
+    await persistDelta(getState, before);
+    if (dbEnabled(currentEmail())) {
+      for (const tid of txDeletes) {
+        try {
+          await gql(DELETE_TRANSACTION_MUTATION, { id: tid });
+        } catch {}
+      }
+    }
   };
 
 export const persistPayLicArrears =
@@ -1430,8 +1835,7 @@ export const persistPayLicArrears =
       }),
     );
 
-    const { fileID, transactionData } = getState().transactions;
-    await updateFile(fileID, transactionData);
+    await persistDelta(getState, data);
     dispatch(
       showToast({
         message: `Recorded ${periods.length} overdue premium${periods.length === 1 ? "" : "s"}`,
@@ -1439,27 +1843,49 @@ export const persistPayLicArrears =
     );
   };
 
-export const persistDeleteInvestment = (id) => async (dispatch, getState) => {
-  // SIP and LIC soft-delete (move to History). Past payment transactions
-  // stay because they reflect real money that already moved.
-  // For other types, hard delete + clean up the linked transaction.
-  const { transactionData } = getState().transactions;
-  const inv = transactionData.investments?.find((i) => i.id === id);
-  if (inv?.type === "sip") {
-    dispatch(updateInvestment({ ...inv, inHistory: true, paused: true }));
-  } else if (inv?.type === "lic") {
-    dispatch(updateInvestment({ ...inv, inHistory: true }));
-  } else {
-    dispatch(deleteInvestment(id));
-    const linked = (transactionData.transactions ?? []).filter(
-      (t) =>
-        t.id === id || t.sipInvestmentId === id || t.licPolicyId === id,
-    );
-    linked.forEach((t) => dispatch(deleteTransaction(t.id)));
-  }
-  const { fileID, transactionData: updated } = getState().transactions;
-  await updateFile(fileID, updated);
-};
+export const persistDeleteInvestment =
+  (id, { returnToBalance = false, accountId } = {}) =>
+  async (dispatch, getState) => {
+    // SIP and LIC soft-delete (move to History). Past payment transactions
+    // stay because they reflect real money that already moved.
+    const { transactionData } = getState().transactions;
+    const inv = transactionData.investments?.find((i) => i.id === id);
+    if (inv?.type === "sip") {
+      dispatch(updateInvestment({ ...inv, inHistory: true, paused: true }));
+    } else if (inv?.type === "lic") {
+      dispatch(updateInvestment({ ...inv, inHistory: true }));
+    } else {
+      dispatch(deleteInvestment(id));
+      // The original purchase transaction is intentionally KEPT so deleting an
+      // investment no longer silently reverses the bank balance (money stays
+      // spent by default). If the user chose to recover the funds, post an
+      // explicit, visible credit to the chosen bank instead.
+      if (returnToBalance && inv) {
+        const amount = investedValue(inv);
+        if (amount > 0) {
+          const now = new Date().toISOString();
+          dispatch(
+            addTransaction({
+              id: crypto.randomUUID(),
+              createdAt: now,
+              occurredAt: now,
+              transactionType: "income",
+              amount: String(Math.round(amount * 100) / 100),
+              name: `Closed: ${inv.name}`,
+              category: "Investment",
+              accountId: accountId || inv.accountId || undefined,
+            }),
+          );
+        }
+      }
+    }
+    await persistDelta(getState, transactionData);
+    if (dbEnabled(currentEmail()) && inv && inv.type !== "sip" && inv.type !== "lic") {
+      try {
+        await gql(DELETE_ENTITY_MUTATION, { collection: "investments", id });
+      } catch {}
+    }
+  };
 
 // Permanently deletes a soft-deleted investment from History (and its
 // linked tx / SIP / LIC payment ledger). Used by the History tab's
@@ -1473,8 +1899,17 @@ export const persistHardDeleteInvestment =
         t.id === id || t.sipInvestmentId === id || t.licPolicyId === id,
     );
     linked.forEach((t) => dispatch(deleteTransaction(t.id)));
-    const { fileID, transactionData: updated } = getState().transactions;
-    await updateFile(fileID, updated);
+    await persistDelta(getState, transactionData);
+    if (dbEnabled(currentEmail())) {
+      try {
+        await gql(DELETE_ENTITY_MUTATION, { collection: "investments", id });
+      } catch {}
+      for (const t of linked) {
+        try {
+          await gql(DELETE_TRANSACTION_MUTATION, { id: t.id });
+        } catch {}
+      }
+    }
   };
 
 // Surrender (early exit) an LIC policy. Records the surrender proceeds as
@@ -1509,8 +1944,7 @@ export const persistSurrenderLicPolicy =
         }),
       );
     }
-    const { fileID, transactionData: updated } = getState().transactions;
-    await updateFile(fileID, updated);
+    await persistDelta(getState, transactionData);
     dispatch(showToast({ message: `${inv.name} surrendered` }));
   };
 
@@ -1545,8 +1979,7 @@ export const persistMatureLicPolicy =
         }),
       );
     }
-    const { fileID, transactionData: updated } = getState().transactions;
-    await updateFile(fileID, updated);
+    await persistDelta(getState, transactionData);
     dispatch(showToast({ message: `${inv.name} matured 🎉` }));
   };
 
@@ -1561,7 +1994,7 @@ export const persistPauseInvestment = (id) => async (dispatch, getState) => {
       pausedAt: new Date().toISOString(),
     }),
   );
-  await updateFile(getState().transactions.fileID, getState().transactions.transactionData);
+  await persistDelta(getState, transactionData);
   dispatch(showToast({ message: `${inv.name} paused — auto-deductions stopped` }));
 };
 
@@ -1603,7 +2036,7 @@ export const persistResumeInvestment =
       );
     }
 
-    await updateFile(getState().transactions.fileID, getState().transactions.transactionData);
+    await persistDelta(getState, transactionData);
     dispatch(showToast({ message: `${inv.name} resumed` }));
   };
 
@@ -1613,6 +2046,7 @@ export const persistResumeInvestment =
 export const persistSellInvestment =
   ({ lots, qtyToSell, sellPrice, addToBalance, accountId, invName }) =>
   async (dispatch, getState) => {
+    const before = getState().transactions.transactionData;
     let remaining = qtyToSell;
     for (const lot of lots) {
       if (remaining <= 0) break;
@@ -1648,8 +2082,7 @@ export const persistSellInvestment =
       );
     }
 
-    const { fileID, transactionData } = getState().transactions;
-    await updateFile(fileID, transactionData);
+    await persistDelta(getState, before);
   };
 
 // Logs the current month's SIP instalment as an investment transaction that
@@ -1674,6 +2107,14 @@ export const persistSIPInstalment = (inv) => async (dispatch, getState) => {
   const sipDay = parseInt(inv.sipDay) || new Date(inv.startDate).getDate();
   const occurredAt = new Date(yr, mo, sipDay).toISOString();
 
+  const inheritedAccount =
+    inv.accountId ||
+    allTx
+      .filter((t) => t.sipInvestmentId === inv.id && t.accountId)
+      .sort((a, b) => new Date(b.occurredAt) - new Date(a.occurredAt))[0]
+      ?.accountId ||
+    undefined;
+
   dispatch(
     addTransaction({
       id: crypto.randomUUID(),
@@ -1684,12 +2125,41 @@ export const persistSIPInstalment = (inv) => async (dispatch, getState) => {
       name: inv.name,
       category: "SIP",
       sipInvestmentId: inv.id,
+      accountId: inheritedAccount,
     }),
   );
 
-  const { fileID, transactionData: updated } = getState().transactions;
-  await updateFile(fileID, updated);
+  await persistDelta(getState, transactionData);
 };
+
+// Retroactively tag a SIP's already-posted, untagged instalments to the
+// account now linked on the investment. Called when a SIP is saved with a
+// bank, so instalments that were auto-logged before the link existed start
+// debiting the right account too — including the current month's row, which
+// persistSIPInstalment's monthly idempotency would otherwise leave untagged.
+// Only untagged rows are touched (bulkTagAccounts skips tagged ones). Returns
+// the number of instalments tagged.
+export const persistBackfillSipAccount =
+  (inv) => async (dispatch, getState) => {
+    if (!inv?.id || !inv.accountId) return 0;
+    const before = getState().transactions.transactionData;
+    const allTx = before.transactions ?? [];
+    const assignments = allTx
+      .filter((t) => t.sipInvestmentId === inv.id && !t.accountId)
+      .map((t) => [t.id, inv.accountId]);
+    if (!assignments.length) return 0;
+
+    dispatch(bulkTagAccounts({ assignments }));
+    await persistDelta(getState, before);
+    dispatch(
+      showToast({
+        message: `Tagged ${assignments.length} past SIP instalment${
+          assignments.length === 1 ? "" : "s"
+        } to this account`,
+      }),
+    );
+    return assignments.length;
+  };
 
 // ── Generic auto-deduct scheduler ─────────────────────────────
 //
@@ -1707,11 +2177,38 @@ function autoDeductPeriodMatcher(frequency, now) {
   const yr = now.getFullYear();
   const mo = now.getMonth();
   if (frequency === "yearly") return (d) => d.getFullYear() === yr;
+  if (frequency === "halfyearly") {
+    const h = Math.floor(mo / 6);
+    return (d) => d.getFullYear() === yr && Math.floor(d.getMonth() / 6) === h;
+  }
   if (frequency === "quarterly") {
     const q = Math.floor(mo / 3);
     return (d) => d.getFullYear() === yr && Math.floor(d.getMonth() / 3) === q;
   }
   return (d) => d.getFullYear() === yr && d.getMonth() === mo;
+}
+
+// The date this period's instalment falls due. For quarterly/yearly the month
+// is anchored to the investment's startDate (the debit recurs from there at the
+// frequency interval); monthly / no-startDate falls back to the current month.
+function autoDeductDueDate(inv, now) {
+  const ad = inv.autoDeduct || {};
+  const freq = ad.frequency || "monthly";
+  const start = inv.startDate ? new Date(inv.startDate) : null;
+  const dayPref = parseInt(ad.dayOfMonth) || (start ? start.getDate() : 1);
+  const y = now.getFullYear();
+  const at = (m) => new Date(y, m, Math.min(dayPref, new Date(y, m + 1, 0).getDate()));
+
+  if (freq === "monthly" || !start) return at(now.getMonth());
+  if (freq === "yearly") return at(start.getMonth());
+
+  const anchor = start.getMonth();
+  const interval = freq === "halfyearly" ? 6 : 3;
+  const pStart = Math.floor(now.getMonth() / interval) * interval;
+  for (let m = pStart; m < pStart + interval; m++) {
+    if ((((m - anchor) % interval) + interval) % interval === 0) return at(m);
+  }
+  return at(now.getMonth());
 }
 
 // User-confirmed manual log of an auto-deduct payment. Unlike
@@ -1761,8 +2258,7 @@ export const persistLogAutoDeductPayment =
       }),
     );
 
-    const { fileID, transactionData: updated } = getState().transactions;
-    await updateFile(fileID, updated);
+    await persistDelta(getState, state.transactionData);
     return true;
   };
 
@@ -1770,7 +2266,7 @@ export const persistAutoDeductInstalment =
   (inv) => async (dispatch, getState) => {
     if (inv.paused || inv.inHistory) return;
     if (!inv.autoDeduct?.enabled) return;
-    if (!inv.startDate) return;
+    if (inv.startDate && new Date(inv.startDate) > new Date()) return;
 
     const state = getState().transactions;
     const userTypes = state.transactionData?.investmentTypes ?? [];
@@ -1781,8 +2277,9 @@ export const persistAutoDeductInstalment =
     if (amount <= 0) return;
 
     const frequency = inv.autoDeduct.frequency || "monthly";
-    const day = parseInt(inv.autoDeduct.dayOfMonth) || 1;
     const now = new Date();
+    const due = autoDeductDueDate(inv, now);
+    if (due > now) return; // this period's debit day hasn't arrived yet
     const matchesPeriod = autoDeductPeriodMatcher(frequency, now);
 
     const allTx = state.transactionData?.transactions ?? [];
@@ -1793,11 +2290,7 @@ export const persistAutoDeductInstalment =
     );
     if (alreadyLogged) return;
 
-    const occurredAt = new Date(
-      now.getFullYear(),
-      now.getMonth(),
-      day,
-    ).toISOString();
+    const occurredAt = due.toISOString();
 
     dispatch(
       addTransaction({
@@ -1813,26 +2306,57 @@ export const persistAutoDeductInstalment =
       }),
     );
 
-    const { fileID, transactionData: updated } = getState().transactions;
-    await updateFile(fileID, updated);
+    await persistDelta(getState, state.transactionData);
   };
 
 export const persistAddGoal = (goal) => async (dispatch, getState) => {
   dispatch(addGoal(goal));
-  const { fileID, transactionData } = getState().transactions;
-  await updateFile(fileID, transactionData);
+  await persistEntityUpsert(getState, "goals", goal);
+};
+
+export const persistSaveTally = (tally) => async (dispatch, getState) => {
+  dispatch(addTally(tally));
+  await persistSettings(getState);
+};
+
+export const persistUpdateTally = (tally) => async (dispatch, getState) => {
+  dispatch(updateTally(tally));
+  await persistSettings(getState);
+};
+
+export const persistDeleteTally = (id) => async (dispatch, getState) => {
+  dispatch(deleteTally(id));
+  await persistSettings(getState);
 };
 
 export const persistUpdateGoal = (goal) => async (dispatch, getState) => {
   dispatch(updateGoal(goal));
-  const { fileID, transactionData } = getState().transactions;
-  await updateFile(fileID, transactionData);
+  await persistEntityUpsert(getState, "goals", goal);
 };
 
 export const persistDeleteGoal = (id) => async (dispatch, getState) => {
   dispatch(deleteGoal(id));
-  const { fileID, transactionData } = getState().transactions;
-  await updateFile(fileID, transactionData);
+  await persistEntityDelete(getState, "goals", id);
+};
+
+// ── Notes ─────────────────────────────────────────────
+// Notes are a first-class collection (transactionData.notes), so they ride
+// the generic entity-persist rails: DB users get a granular upsertEntity /
+// deleteEntity mutation, Drive users fall back to a whole-blob write. Both
+// paths are handled inside persistEntityUpsert / persistEntityDelete.
+export const persistAddNote = (note) => async (dispatch, getState) => {
+  dispatch(addNote(note));
+  await persistEntityUpsert(getState, "notes", note);
+};
+
+export const persistUpdateNote = (note) => async (dispatch, getState) => {
+  dispatch(updateNote(note));
+  await persistEntityUpsert(getState, "notes", note);
+};
+
+export const persistDeleteNote = (id) => async (dispatch, getState) => {
+  dispatch(deleteNote(id));
+  await persistEntityDelete(getState, "notes", id);
 };
 
 // Recomputes insights.balance from scratch by walking every transaction:
@@ -1842,8 +2366,7 @@ export const persistDeleteGoal = (id) => async (dispatch, getState) => {
 export const persistSetPreference =
   (key, value) => async (dispatch, getState) => {
     dispatch(setPreference({ key, value }));
-    const { fileID, transactionData } = getState().transactions;
-    await updateFile(fileID, transactionData);
+    await persistSettings(getState);
   };
 
 // Dismiss a single notification early. `expiresAt` is the event's own expiry
@@ -1852,8 +2375,7 @@ export const persistSetPreference =
 export const persistDismissNotification =
   ({ key, expiresAt }) => async (dispatch, getState) => {
     dispatch(dismissNotification({ key, expiresAt }));
-    const { fileID, transactionData } = getState().transactions;
-    await updateFile(fileID, transactionData);
+    await persistSettings(getState);
   };
 
 // Clear-all: dismiss every currently-visible notification in one write.
@@ -1861,70 +2383,61 @@ export const persistDismissNotification =
 export const persistClearNotifications =
   (entries) => async (dispatch, getState) => {
     dispatch(clearNotifications(entries));
-    const { fileID, transactionData } = getState().transactions;
-    await updateFile(fileID, transactionData);
+    await persistSettings(getState);
   };
 
 export const persistAddCategory =
   (scope, name) => async (dispatch, getState) => {
     dispatch(addCategory({ scope, name }));
-    const { fileID, transactionData } = getState().transactions;
-    await updateFile(fileID, transactionData);
+    await persistSettings(getState);
   };
 
 export const persistRenameCategory =
   (scope, oldName, newName) => async (dispatch, getState) => {
+    const before = getState().transactions.transactionData;
     dispatch(renameCategory({ scope, oldName, newName }));
-    const { fileID, transactionData } = getState().transactions;
-    await updateFile(fileID, transactionData);
+    await persistDelta(getState, before);
   };
 
 export const persistRemoveCategory =
   (scope, name) => async (dispatch, getState) => {
     dispatch(removeCategory({ scope, name }));
-    const { fileID, transactionData } = getState().transactions;
-    await updateFile(fileID, transactionData);
+    await persistSettings(getState);
   };
 
 export const persistMoveCategory =
   (scope, name, direction) => async (dispatch, getState) => {
     dispatch(moveCategory({ scope, name, direction }));
-    const { fileID, transactionData } = getState().transactions;
-    await updateFile(fileID, transactionData);
+    await persistSettings(getState);
   };
 
 export const persistReorderCategory =
   (scope, fromIndex, toIndex) => async (dispatch, getState) => {
     dispatch(reorderCategory({ scope, fromIndex, toIndex }));
-    const { fileID, transactionData } = getState().transactions;
-    await updateFile(fileID, transactionData);
+    await persistSettings(getState);
   };
 
 export const persistSetList = (key, value) => async (dispatch, getState) => {
   dispatch(setList({ key, value }));
-  const { fileID, transactionData } = getState().transactions;
-  await updateFile(fileID, transactionData);
+  await persistSettings(getState);
 };
 
 export const persistAddAutoCategoryRule =
   (rule) => async (dispatch, getState) => {
     dispatch(addAutoCategoryRule(rule));
-    const { fileID, transactionData } = getState().transactions;
-    await updateFile(fileID, transactionData);
+    await persistSettings(getState);
   };
 
 export const persistUpdateAutoCategoryRule =
   (rule) => async (dispatch, getState) => {
     dispatch(updateAutoCategoryRule(rule));
-    const { fileID, transactionData } = getState().transactions;
-    await updateFile(fileID, transactionData);
+    await persistSettings(getState);
   };
 
 export const persistRemoveAutoCategoryRule =
   (id) => async (dispatch, getState) => {
     dispatch(removeAutoCategoryRule(id));
-    const { fileID, transactionData } = getState().transactions;
-    await updateFile(fileID, transactionData);
+    await persistSettings(getState);
   };
 
 // Walks every existing transaction, applies the first matching auto-category
@@ -1969,8 +2482,7 @@ export const persistApplyRulesToPast =
       }
     }
     if (updated > 0) {
-      const { fileID, transactionData } = getState().transactions;
-      await updateFile(fileID, transactionData);
+      await persistDelta(getState, data);
     }
     dispatch(
       showToast({
@@ -2002,7 +2514,7 @@ export const persistRecomputeBalance = () => async (dispatch, getState) => {
   const diff = stored - computed;
   if (Math.abs(diff) > 0.005) {
     dispatch(setInsightsBalance(computed));
-    await updateFile(fileID, getState().transactions.transactionData);
+    await persistSettings(getState);
   }
   dispatch(
     showToast({
@@ -2020,16 +2532,14 @@ export const persistRecomputeBalance = () => async (dispatch, getState) => {
 export const persistAddAccount =
   (account) => async (dispatch, getState) => {
     dispatch(addAccount(account));
-    const { fileID, transactionData } = getState().transactions;
-    await updateFile(fileID, transactionData);
+    await persistEntityUpsert(getState, "accounts", account);
     dispatch(showToast({ message: `${account.bank} added` }));
   };
 
 export const persistUpdateAccount =
   (account) => async (dispatch, getState) => {
     dispatch(updateAccount(account));
-    const { fileID, transactionData } = getState().transactions;
-    await updateFile(fileID, transactionData);
+    await persistEntityUpsert(getState, "accounts", account);
   };
 
 export const persistSetOpeningBalance =
@@ -2044,6 +2554,7 @@ export const persistSetOpeningBalance =
     const existing = before.transactions?.find(
       (t) => t.openingForAccount === accountId,
     );
+    let deletedOpeningId = null;
     if (existing) {
       if (value > 0) {
         dispatch(
@@ -2054,6 +2565,7 @@ export const persistSetOpeningBalance =
         );
       } else {
         dispatch(deleteTransaction(existing.id));
+        deletedOpeningId = existing.id;
       }
     } else if (value > 0) {
       const now = new Date().toISOString();
@@ -2072,17 +2584,56 @@ export const persistSetOpeningBalance =
       );
     }
 
-    const { fileID, transactionData } = getState().transactions;
-    await updateFile(fileID, transactionData);
+    await persistDelta(getState, before);
+    if (deletedOpeningId && dbEnabled(currentEmail())) {
+      try {
+        await gql(DELETE_TRANSACTION_MUTATION, { id: deletedOpeningId });
+      } catch {}
+    }
+  };
+
+// Repair a corrupted opening ("Current Balance") entry: shift it by the current
+// reconciliation drift so the computed balance lines up with the last verified
+// balance, clearing the drift. Only the opening entry is touched — real
+// transactions are untouched. (The auto-roll then re-anchors the checkpoint to
+// the now-correct balance.) No-op when the account isn't verified / has no drift.
+export const persistResetOpeningBalance =
+  (accountId) => async (dispatch, getState) => {
+    const data = getState().transactions.transactionData;
+    const acc = data.accounts?.find((a) => a.id === accountId);
+    if (!acc) return;
+    const txns = data.transactions ?? [];
+    const recon = getReconciliationDelta(acc, txns);
+    const drift = recon ? recon.delta : 0;
+    if (Math.abs(drift) < 0.5) return;
+    const openingTx = txns.find((t) => t.openingForAccount === accountId);
+    const currentOpening = openingTx
+      ? parseFloat(openingTx.amount) || 0
+      : parseFloat(acc.openingBalance) || 0;
+    const corrected = Math.max(0, currentOpening - drift);
+    await dispatch(persistSetOpeningBalance({ accountId, amount: corrected }));
+    dispatch(showToast({ message: `${acc.bank} balance corrected` }));
   };
 
 export const persistDeleteAccount =
   (id) => async (dispatch, getState) => {
     const before = getState().transactions.transactionData;
     const acc = before.accounts?.find((a) => a.id === id);
+    const openingTxIds = (before.transactions ?? [])
+      .filter((t) => t.openingForAccount === id)
+      .map((t) => t.id);
     dispatch(deleteAccount(id));
-    const { fileID, transactionData } = getState().transactions;
-    await updateFile(fileID, transactionData);
+    await persistDelta(getState, before);
+    if (dbEnabled(currentEmail())) {
+      try {
+        await gql(DELETE_ENTITY_MUTATION, { collection: "accounts", id });
+      } catch {}
+      for (const tid of openingTxIds) {
+        try {
+          await gql(DELETE_TRANSACTION_MUTATION, { id: tid });
+        } catch {}
+      }
+    }
     if (acc) dispatch(showToast({ message: `${acc.bank} removed` }));
   };
 
@@ -2101,8 +2652,7 @@ export const persistVerifyAccountBalance =
         verifiedAt: asOf ?? new Date().toISOString(),
       }),
     );
-    const { fileID, transactionData } = getState().transactions;
-    await updateFile(fileID, transactionData);
+    await persistDelta(getState, before);
     dispatch(showToast({ message: `${acc.bank} balance verified` }));
   };
 
@@ -2113,6 +2663,7 @@ export const persistVerifyAccountBalance =
 export const persistSelfTransfer =
   ({ fromAccountId, toAccountId, amount, occurredAt, description }) =>
   async (dispatch, getState) => {
+    const before = getState().transactions.transactionData;
     const now = new Date().toISOString();
     const tx = {
       id: crypto.randomUUID(),
@@ -2126,8 +2677,7 @@ export const persistSelfTransfer =
       ...(description ? { description } : {}),
     };
     dispatch(addTransaction(tx));
-    const { fileID, transactionData } = getState().transactions;
-    await updateFile(fileID, transactionData);
+    await persistDelta(getState, before);
     dispatch(showToast({ message: "Transfer recorded" }));
   };
 
@@ -2136,9 +2686,9 @@ export const persistSelfTransfer =
 export const persistBulkTagAccounts =
   (assignments) => async (dispatch, getState) => {
     if (!assignments?.length) return;
+    const before = getState().transactions.transactionData;
     dispatch(bulkTagAccounts({ assignments }));
-    const { fileID, transactionData } = getState().transactions;
-    await updateFile(fileID, transactionData);
+    await persistDelta(getState, before);
     dispatch(
       showToast({
         message: `Tagged ${assignments.length} transaction${assignments.length === 1 ? "" : "s"}`,
@@ -2151,8 +2701,7 @@ export const persistBulkTagAccounts =
 export const persistAddInvestmentType =
   (type) => async (dispatch, getState) => {
     dispatch(addInvestmentType(type));
-    const { fileID, transactionData } = getState().transactions;
-    await updateFile(fileID, transactionData);
+    await persistSettings(getState);
     dispatch(showToast({ message: `${type.label} added` }));
   };
 
@@ -2165,6 +2714,7 @@ export const persistUpdateInvestmentType =
       (oldType.affectsBalance ?? true) !== (type.affectsBalance ?? true);
 
     dispatch(updateInvestmentType(type));
+    const txDeletes = [];
 
     if (balanceToggled) {
       const investments = before.investments ?? [];
@@ -2181,6 +2731,7 @@ export const persistUpdateInvestmentType =
         );
         if (!wantsBalance && linkedTx) {
           dispatch(deleteTransaction(inv.id));
+          txDeletes.push(inv.id);
         } else if (wantsBalance && !linkedTx) {
           dispatch(
             addTransaction({
@@ -2209,15 +2760,119 @@ export const persistUpdateInvestmentType =
       }
     }
 
-    const { fileID, transactionData } = getState().transactions;
-    await updateFile(fileID, transactionData);
+    await persistDelta(getState, before);
+    if (dbEnabled(currentEmail())) {
+      for (const tid of txDeletes) {
+        try {
+          await gql(DELETE_TRANSACTION_MUTATION, { id: tid });
+        } catch {}
+      }
+    }
   };
 
 export const persistDeleteInvestmentType =
   (key) => async (dispatch, getState) => {
     dispatch(deleteInvestmentType(key));
-    const { fileID, transactionData } = getState().transactions;
-    await updateFile(fileID, transactionData);
+    await persistSettings(getState);
   };
+
+const LOAD_ALL_QUERY = `query LoadAll { loadAll }`;
+const UPSERT_ALL_MUTATION = `mutation UpsertAll($data: JSON!) { upsertAll(data: $data) { id updatedAt } }`;
+const BACKUP_QUERY = "name contains 'espresso-expenses-backup'";
+
+export const persistDailyBackup =
+  ({ force = false } = {}) =>
+  async (dispatch, getState) => {
+    if (!dbEnabled(currentEmail())) return false;
+
+    const prefs = getState().transactions.transactionData?.preferences ?? {};
+    const last = prefs.driveBackup;
+    const now = new Date();
+    if (!force && last?.at) {
+      const prev = new Date(last.at);
+      if (
+        prev.getFullYear() === now.getFullYear() &&
+        prev.getMonth() === now.getMonth() &&
+        prev.getDate() === now.getDate()
+      ) {
+        return false;
+      }
+    }
+
+    let snapshot;
+    try {
+      const res = await gql(LOAD_ALL_QUERY);
+      snapshot = res.loadAll;
+    } catch {
+      return false;
+    }
+    if (!snapshot || snapshot.preferences == null) return false;
+
+    const payload = {
+      _backup: {
+        app: "espresso-and-expenses",
+        exportedAt: now.toISOString(),
+        email: currentEmail(),
+        version: 1,
+      },
+      data: snapshot,
+    };
+    const name = `espresso-expenses-backup-${now.toISOString().slice(0, 10)}.json`;
+
+    let newId;
+    try {
+      newId = await uploadDriveFile(name, payload);
+    } catch {
+      return false;
+    }
+
+    try {
+      const existing = await listDriveFiles(BACKUP_QUERY);
+      for (const f of existing) {
+        if (f.id !== newId) {
+          try {
+            await deleteDriveFile(f.id);
+          } catch {}
+        }
+      }
+    } catch {
+      if (last?.fileId && last.fileId !== newId) {
+        try {
+          await deleteDriveFile(last.fileId);
+        } catch {}
+      }
+    }
+
+    dispatch(
+      setPreference({
+        key: "driveBackup",
+        value: { at: now.toISOString(), fileId: newId },
+      }),
+    );
+    await persistSettings(getState);
+    return true;
+  };
+
+export async function listBackups() {
+  if (!dbEnabled(currentEmail())) return [];
+  const files = await listDriveFiles(BACKUP_QUERY);
+  return files.map((f) => ({
+    id: f.id,
+    name: f.name,
+    modifiedTime: f.modifiedTime,
+    size: f.size ? Number(f.size) : null,
+  }));
+}
+
+export const persistRestoreFromBackup = (fileId) => async () => {
+  if (!dbEnabled(currentEmail())) throw new Error("not a database account");
+  const file = await downloadDriveFile(fileId);
+  const data = file?.data ?? file;
+  if (!data || typeof data !== "object" || data.preferences == null) {
+    throw new Error("not a valid backup file");
+  }
+  await gql(UPSERT_ALL_MUTATION, { data });
+  window.location.reload();
+};
 
 export default transactionSlice.reducer;

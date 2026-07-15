@@ -10,6 +10,7 @@
 export const APP_PAGES = [
   {
     key: "dashboard",
+    open: true,
     label: "Dashboard",
     route: "/Dashboard",
     icon: "fa-chart-pie",
@@ -18,6 +19,7 @@ export const APP_PAGES = [
   },
   {
     key: "transactions",
+    open: true,
     label: "Transactions",
     route: "/Transactions",
     icon: "fa-receipt",
@@ -26,6 +28,7 @@ export const APP_PAGES = [
   },
   {
     key: "investments",
+    open: true,
     label: "Investments",
     route: "/Invest",
     icon: "fa-seedling",
@@ -34,6 +37,7 @@ export const APP_PAGES = [
   },
   {
     key: "subscriptions",
+    open: true,
     label: "Subscriptions",
     route: "/Subscriptions",
     icon: "fa-rotate",
@@ -42,16 +46,47 @@ export const APP_PAGES = [
   },
   {
     key: "solvency",
+    open: true,
     label: "Solvency",
     route: "/Solvency",
     icon: "fa-scale-balanced",
     mandatory: false,
     blurb: "Cards, EMIs, dues and obligations.",
   },
+  {
+    key: "advisory",
+    label: "Advisory",
+    route: "/Advisory",
+    icon: "fa-lightbulb",
+    mandatory: false,
+    hideFromNav: true,
+    blurb: "Investment insights and recommendations.",
+  },
 ];
 
 export function getPage(key) {
   return APP_PAGES.find((p) => p.key === key) ?? null;
+}
+
+// Human label for a routed path (e.g. "/Solvency?highlight=x" → "Solvency"),
+// matched on the first path segment against the page registry.
+export function labelForPath(path) {
+  const seg = "/" + (path || "").split("?")[0].split("/").filter(Boolean)[0];
+  const page = APP_PAGES.find((p) => p.route.toLowerCase() === seg.toLowerCase());
+  return page?.label ?? "where you were";
+}
+
+// Server-controlled access. Pages are GATED BY DEFAULT — a page is public only
+// when explicitly marked `open: true`. Every other page (including any added in
+// future) needs a per-user DB grant for its key.
+export function isPageGated(pageKey) {
+  const page = getPage(pageKey);
+  return page ? !page.open : true;
+}
+
+export function isPageAccessible(pageKey, accessPages) {
+  if (!isPageGated(pageKey)) return true;
+  return Array.isArray(accessPages) && accessPages.includes(pageKey);
 }
 
 // Optional (toggleable) page keys, in registry order.
@@ -67,6 +102,9 @@ export function isPageEnabled(pageKey, preferences) {
   const page = getPage(pageKey);
   if (!page) return false;
   if (page.mandatory) return true;
+  // Gated pages aren't user-toggleable — server access controls them, so they
+  // never go through the enable/disable preference.
+  if (!page.open) return true;
   const enabled = preferences?.enabledPages;
   if (!Array.isArray(enabled)) return true;
   return enabled.includes(pageKey);

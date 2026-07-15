@@ -121,6 +121,8 @@
 }
 
 .sol-tab {
+  position: relative;
+  z-index: 0;
   flex: 1;
   padding: 9px 10px;
   border: none;
@@ -131,26 +133,339 @@
   font-weight: 600;
   border-radius: 8px;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition: color 0.15s;
   white-space: nowrap;
 }
 
-.sol-tab:hover {
-  background: var(--surface-active);
+.sol-tab:hover:not(.sol-tab--active) {
+  color: var(--text-primary);
+}
+
+.sol-tab-pill {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: 8px;
+  background: var(--bar-bg);
+  box-shadow: 0 2px 8px -3px rgba(0, 0, 0, 0.35);
 }
 
 .sol-tab--active {
-  background: var(--bar-bg);
   color: var(--bar-text);
 }
 
 /* ── Health score ─────────────────────────────────────── */
+
+/* ── Living solvency hero ──────────────────────────────── */
+.sol-lead {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 18px;
+  padding: 16px 18px;
+  margin-bottom: 14px;
+  box-shadow: var(--card-shadow);
+}
+
+.sol-lead-eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-label);
+}
+
+.sol-lead-value {
+  margin-top: 4px;
+  font-size: 34px;
+  font-weight: 800;
+  line-height: 1.05;
+  letter-spacing: -0.02em;
+  color: var(--text-primary);
+}
+
+.sol-lead-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 10px;
+}
+
+.sol-lead-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  background: var(--surface-active);
+}
+
+.sol-lead-chip--good {
+  color: var(--amount-income);
+  background: color-mix(in srgb, var(--amount-income) 12%, transparent);
+}
+
+.sol-lead-strip {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--surface-border);
+}
+
+.sol-lead-stat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.sol-lead-stat-lbl {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-label);
+}
+
+.sol-lead-stat-val {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+
+/* ── Smart insight cards ───────────────────────────────── */
+.sol-insights {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.sol-insight {
+  --ins-accent: var(--amount-investment);
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 11px 13px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-left: 3px solid var(--ins-accent);
+  border-radius: 12px;
+  box-shadow: var(--card-shadow);
+}
+
+.sol-insight--overdue {
+  --ins-accent: var(--amount-expense);
+}
+.sol-insight--due {
+  --ins-accent: #f59e0b;
+}
+.sol-insight--util {
+  --ins-accent: var(--amount-investment);
+}
+.sol-insight--avalanche {
+  --ins-accent: #ef6c3c;
+}
+.sol-insight--snowball {
+  --ins-accent: var(--amount-income);
+}
+.sol-insight--stale {
+  --ins-accent: var(--amount-repayment);
+}
+
+.sol-insight-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: 9px;
+  font-size: 13px;
+  color: var(--ins-accent);
+  background: color-mix(in srgb, var(--ins-accent) 14%, transparent);
+}
+
+.sol-insight-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.sol-insight-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.sol-insight-detail {
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+html[data-skin="glass"] .sol-insight {
+  background: var(--surface-bg);
+  box-shadow: 0 8px 24px -14px var(--glass-ambient, rgba(0, 0, 0, 0.4));
+  -webkit-backdrop-filter: blur(var(--glass-blur, 20px)) saturate(1.4);
+  backdrop-filter: blur(var(--glass-blur, 20px)) saturate(1.4);
+}
+
+/* ── Road to debt-free ─────────────────────────────────── */
+.sol-df {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 16px;
+  padding: 14px 16px 12px;
+  margin-bottom: 14px;
+  box-shadow: var(--card-shadow);
+}
+
+.sol-df-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.sol-df-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.sol-df-target {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--amount-income);
+}
+
+.sol-df-track {
+  position: relative;
+  width: 100%;
+}
+
+.sol-df-grid {
+  position: absolute;
+  top: 0;
+  bottom: 14px;
+  width: 1px;
+  background: var(--surface-border);
+}
+
+.sol-df-grid-label {
+  position: absolute;
+  bottom: -14px;
+  left: 0;
+  transform: translateX(-50%);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-label);
+  white-space: nowrap;
+}
+
+.sol-df-marker {
+  position: absolute;
+  transform: translateX(-50%);
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--accent, #5b8dee) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent, #5b8dee) 30%, transparent);
+  box-shadow: 0 4px 12px -4px
+    color-mix(in srgb, var(--accent, #5b8dee) 42%, transparent);
+  color: var(--accent, #5b8dee);
+  font-size: 11px;
+  z-index: 1;
+}
+
+.sol-df-flag {
+  position: absolute;
+  right: 0;
+  top: 2px;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--amount-income) 18%, transparent);
+  border: 1px solid color-mix(in srgb, var(--amount-income) 34%, transparent);
+  color: var(--amount-income);
+  font-size: 12px;
+  z-index: 2;
+}
+
+html[data-skin="glass"] .sol-df {
+  background: var(--surface-bg);
+  box-shadow: 0 8px 24px -14px var(--glass-ambient, rgba(0, 0, 0, 0.4));
+  -webkit-backdrop-filter: blur(var(--glass-blur, 20px)) saturate(1.4);
+  backdrop-filter: blur(var(--glass-blur, 20px)) saturate(1.4);
+}
+
+/* ── Smarter item bits ─────────────────────────────────── */
+.sol-util-ring {
+  position: relative;
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+}
+
+.sol-util-ring svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.sol-util-ring-pct {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.sol-commit-progress-cap {
+  margin-top: 5px;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-label);
+}
+
+.sol-lending-age {
+  margin-top: 3px;
+  font-size: 11.5px;
+  color: var(--text-label);
+}
+
+html[data-skin="glass"] .sol-lead,
+html[data-skin="glass"] .sol-overview-hero {
+  background: var(--surface-bg);
+  box-shadow: 0 8px 24px -14px var(--glass-ambient, rgba(0, 0, 0, 0.4));
+  -webkit-backdrop-filter: blur(var(--glass-blur, 20px)) saturate(1.4);
+  backdrop-filter: blur(var(--glass-blur, 20px)) saturate(1.4);
+}
 
 .sol-overview-hero {
   display: flex;
   gap: 20px;
   align-items: center;
   flex-wrap: wrap;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: 16px;
+  padding: 16px 18px;
+  margin-bottom: 14px;
+  box-shadow: var(--card-shadow);
 }
 
 .sol-score-wrap {
@@ -249,10 +564,18 @@
 }
 
 .sol-stat-card {
-  background: var(--surface-bg);
-  border: 1px solid var(--surface-border);
-  border-radius: 12px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  box-shadow: var(--card-shadow);
+  border-radius: var(--card-radius);
   padding: 14px 16px;
+}
+html[data-skin="glass"] .sol-stat-card,
+html[data-skin="glass"] .sol-hero-card {
+  background: var(--surface-bg);
+  box-shadow: 0 8px 24px -14px var(--glass-ambient, rgba(0, 0, 0, 0.4));
+  -webkit-backdrop-filter: blur(var(--glass-blur, 20px)) saturate(1.4);
+  backdrop-filter: blur(var(--glass-blur, 20px)) saturate(1.4);
 }
 
 .sol-stat-label {
@@ -278,55 +601,13 @@
   letter-spacing: 0.02em;
 }
 
-/* ── Due calendar ────────────────────────────────────── */
-
-.sol-calendar-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-
-.sol-calendar-strip {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(28px, 1fr));
-  gap: 4px;
-}
-
-.sol-cal-cell {
-  width: 22px;
-  height: 22px;
-  margin: auto;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--text-label);
-  border: 1px solid transparent;
-  box-sizing: border-box;
-  cursor: default;
-}
-
-.sol-cal-cell--has {
-  font-weight: 700;
-  color: var(--text-primary);
-}
-
-.sol-cal-cell--today {
-  outline: 2px solid var(--text-primary);
-  outline-offset: 1px;
-  color: var(--text-primary);
-  font-weight: 700;
-}
-
 /* ── This Month Hero ────────────────────────────────── */
 
 .sol-hero-card {
-  background: var(--surface-bg);
-  border: 1px solid var(--surface-border);
-  border-radius: 16px;
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  box-shadow: var(--card-shadow);
+  border-radius: var(--card-radius);
   padding: 18px 20px;
   display: flex;
   flex-direction: column;
@@ -510,6 +791,100 @@
   margin: 0;
 }
 
+.sol-cashflow-payday {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 10px 0 0;
+  padding: 8px 11px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--amount-income) 10%, transparent);
+  color: var(--text-secondary);
+  font-size: 12.5px;
+}
+
+.sol-cashflow-payday i {
+  color: var(--amount-income);
+}
+
+/* ── Income breakdown (per-stream, per-month) ── */
+.sol-cashflow-bd-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 10px;
+  padding: 2px 0;
+  background: none;
+  border: none;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-label);
+  cursor: pointer;
+}
+.sol-cashflow-bd-toggle:hover {
+  color: var(--text-secondary);
+}
+.sol-cashflow-bd-toggle i {
+  font-size: 10px;
+  width: 10px;
+}
+.sol-cashflow-breakdown {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--surface-bg);
+  border: 1px solid var(--surface-border);
+}
+.sol-cashflow-bd-stream + .sol-cashflow-bd-stream {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--surface-border);
+}
+.sol-cashflow-bd-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+.sol-cashflow-bd-cat {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.sol-cashflow-bd-val {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.sol-cashflow-bd-months {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.sol-cashflow-bd-month {
+  padding: 2px 8px;
+  border-radius: 6px;
+  background: var(--surface-active);
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.sol-cashflow-bd-month--flag {
+  background: color-mix(in srgb, var(--amount-expense) 16%, transparent);
+  color: var(--amount-expense);
+}
+.sol-cashflow-bd-note {
+  margin: 10px 0 0;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-label);
+}
+
 /* ── Obligations Breakdown ───────────────────────────── */
 
 .sol-section-aside {
@@ -686,6 +1061,26 @@
   gap: 8px;
 }
 
+.sol-due-separator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  padding: 2px 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-label);
+}
+
+.sol-due-separator::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--surface-border);
+}
+
 .sol-due-item {
   display: flex;
   align-items: center;
@@ -695,6 +1090,11 @@
   background: var(--surface-bg);
   border: 1px solid var(--surface-border);
   border-radius: 10px;
+  box-shadow: var(--card-shadow);
+}
+
+html[data-skin="glass"] .sol-due-item {
+  box-shadow: 0 8px 24px -14px var(--glass-ambient, rgba(0, 0, 0, 0.4));
 }
 
 .sol-due-item--tappable {
@@ -901,35 +1301,17 @@
 }
 
 .sol-card-bank {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   font-size: 12px;
   color: var(--text-secondary);
 }
 
-.sol-card-util-row {
-  display: flex;
+.sol-paid-via {
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  margin-top: 6px;
-}
-
-.sol-util-bar-bg {
-  flex: 1;
-  height: 5px;
-  border-radius: 3px;
-  background: var(--surface-border);
-  overflow: hidden;
-}
-
-.sol-util-bar-fill {
-  height: 100%;
-  border-radius: 3px;
-  transition: width 0.4s ease;
-}
-
-.sol-util-pct {
-  font-size: 11px;
-  font-weight: 700;
-  white-space: nowrap;
+  gap: 6px;
 }
 
 .sol-card-meta {
@@ -1105,6 +1487,113 @@
   font-size: 11px;
   font-weight: 500;
   color: var(--text-secondary);
+}
+
+/* ── Card rewards & fees (optional section in CardForm) ── */
+.card-rewards {
+  border-top: 1px solid var(--surface-border);
+  padding-top: 12px;
+  margin-top: 4px;
+}
+.card-rewards-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 2px 0;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.card-rewards-toggle i {
+  font-size: 11px;
+  width: 12px;
+  color: var(--text-label);
+}
+.card-rewards-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 12px;
+}
+.card-rewards-hint {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-secondary);
+}
+.card-reward-cats {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.card-reward-cats-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-label);
+}
+.card-reward-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.card-reward-select {
+  flex: 1;
+  min-width: 0;
+  padding: 9px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--surface-border);
+  background: var(--surface-bg);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 13px;
+}
+.card-reward-rate {
+  width: 72px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--surface-border);
+  background: var(--surface-bg);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 13px;
+  text-align: right;
+}
+.card-reward-remove {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  border: none;
+  background: var(--surface-active);
+  color: var(--text-label);
+  cursor: pointer;
+}
+.card-reward-remove:hover {
+  color: var(--amount-expense);
+}
+.card-reward-add {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: none;
+  border: 1px dashed var(--surface-border-open);
+  border-radius: 8px;
+  padding: 7px 12px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.card-reward-add:hover {
+  color: var(--text-primary);
+  border-color: var(--text-label);
 }
 
 .lending-repay-form {
@@ -1539,6 +2028,8 @@
 }
 
 .sol-lend-dir-btn {
+  position: relative;
+  z-index: 0;
   flex: 1;
   padding: 8px 12px;
   border: none;
@@ -1553,11 +2044,19 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  transition: background 0.15s, color 0.15s;
+  transition: color 0.15s;
+}
+
+.sol-lend-dir-pill {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: 7px;
+  background: var(--bar-bg);
+  box-shadow: 0 2px 8px -3px rgba(0, 0, 0, 0.35);
 }
 
 .sol-lend-dir-btn--active {
-  background: var(--bar-bg);
   color: var(--bar-text);
 }
 
@@ -1766,4 +2265,19 @@
 .sol-empty-sub {
   font-size: 13px;
   opacity: 0.75;
+}
+
+/* ── Unified card surface: darkened, subtle border, levitating shadow ── */
+.sol-card-item,
+.sol-commitment-item,
+.sol-lending-item {
+  background: var(--card-bg);
+  border-color: var(--card-border);
+  box-shadow: var(--card-shadow);
+}
+html[data-skin="glass"] :is(.sol-card-item, .sol-commitment-item, .sol-lending-item) {
+  background: var(--surface-bg);
+  box-shadow: 0 8px 24px -14px var(--glass-ambient, rgba(0, 0, 0, 0.4));
+  -webkit-backdrop-filter: blur(var(--glass-blur, 20px)) saturate(1.4);
+  backdrop-filter: blur(var(--glass-blur, 20px)) saturate(1.4);
 }

@@ -1,4 +1,4 @@
-import { updateFile } from "../../utils/googleDrive";
+import { isCardFundedEmi } from "../../utils/solvencyUtils";
 import { showToast } from "./toastSlice";
 import {
   addCard, updateCard, deleteCard,
@@ -7,24 +7,19 @@ import {
   addSubscription, updateSubscription, deleteSubscription,
   addSubscriptionType, deleteSubscriptionType,
   addTransaction, updateTransaction, deleteTransaction,
+  persistEntityUpsert,
+  persistEntityDelete,
+  persistBatch,
+  persistSettings,
 } from "./transactionSlice";
 import {
   previousRenewal,
   nextRenewal,
   isCurrentCyclePosted,
+  isBilling,
 } from "../../utils/subscriptionUtils";
 
 const INR = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 });
-
-async function persist(dispatch, getState) {
-  const { fileID, transactionData } = getState().transactions;
-  try {
-    await updateFile(fileID, transactionData);
-  } catch (e) {
-    dispatch(showToast({ message: "Save failed — changes may not persist on reload.", type: "error" }));
-    throw e;
-  }
-}
 
 // ── Card thunks ────────────────────────────────────────
 
@@ -34,14 +29,16 @@ function stripGroupId(card) {
   return rest;
 }
 
-// Apply group-membership changes (combining or leaving) and dispatch the add/update.
-// Wrapped in one thunk so siblings update together with a single Drive write.
+// Apply group-membership changes (combining or leaving) and dispatch the
+// add/update. Collects every card that actually changed so they can be persisted
+// granularly (one upsert each for DB users) instead of a whole-blob sync.
 function applyGroupAndSave(card, mode, combineBank) {
   return async (dispatch, getState) => {
     const state = getState().transactions.transactionData;
     const cards = state.cards ?? [];
     let cardToSave = card;
     let toastMessage;
+    const changed = []; // cards mutated here → each gets a granular upsert
 
     if (combineBank) {
       const siblings = cards.filter(
@@ -52,7 +49,9 @@ function applyGroupAndSave(card, mode, combineBank) {
       // Pull all same-bank siblings without this groupId into the pool.
       siblings.forEach((s) => {
         if (s.creditGroupId !== groupId) {
-          dispatch(updateCard({ ...s, creditGroupId: groupId }));
+          const updated = { ...s, creditGroupId: groupId };
+          dispatch(updateCard(updated));
+          changed.push(updated);
         }
       });
       cardToSave = { ...card, creditGroupId: groupId };
@@ -71,7 +70,9 @@ function applyGroupAndSave(card, mode, combineBank) {
           (c) => c.creditGroupId === oldGroupId && c.id !== card.id,
         );
         if (remaining.length === 1) {
-          dispatch(updateCard(stripGroupId(remaining[0])));
+          const stripped = stripGroupId(remaining[0]);
+          dispatch(updateCard(stripped));
+          changed.push(stripped);
         }
       }
       toastMessage = `${card.name} ${mode === "add" ? "added" : "updated"}`;
@@ -79,8 +80,11 @@ function applyGroupAndSave(card, mode, combineBank) {
 
     if (mode === "add") dispatch(addCard(cardToSave));
     else dispatch(updateCard(cardToSave));
+    changed.push(cardToSave);
 
-    await persist(dispatch, getState);
+    for (const c of changed) {
+      await persistEntityUpsert(getState, "cards", c);
+    }
     dispatch(showToast({ message: toastMessage }));
   };
 }
@@ -95,6 +99,7 @@ export const persistDeleteCard = (id) => async (dispatch, getState) => {
   const state = getState().transactions.transactionData;
   const card = state.cards?.find((c) => c.id === id);
   const groupId = card?.creditGroupId;
+  let orphan = null;
 
   dispatch(deleteCard(id));
 
@@ -103,11 +108,13 @@ export const persistDeleteCard = (id) => async (dispatch, getState) => {
       (c) => c.creditGroupId === groupId && c.id !== id,
     );
     if (remaining.length === 1) {
-      dispatch(updateCard(stripGroupId(remaining[0])));
+      orphan = stripGroupId(remaining[0]);
+      dispatch(updateCard(orphan));
     }
   }
 
-  await persist(dispatch, getState);
+  await persistEntityDelete(getState, "cards", id);
+  if (orphan) await persistEntityUpsert(getState, "cards", orphan);
   dispatch(showToast({ message: "Card removed" }));
 };
 
@@ -115,19 +122,19 @@ export const persistDeleteCard = (id) => async (dispatch, getState) => {
 
 export const persistAddCommitment = (c) => async (dispatch, getState) => {
   dispatch(addCommitment(c));
-  await persist(dispatch, getState);
+  await persistEntityUpsert(getState, "commitments", c);
   dispatch(showToast({ message: `${c.name} added` }));
 };
 
 export const persistUpdateCommitment = (c) => async (dispatch, getState) => {
   dispatch(updateCommitment(c));
-  await persist(dispatch, getState);
+  await persistEntityUpsert(getState, "commitments", c);
   dispatch(showToast({ message: "Commitment updated" }));
 };
 
 export const persistDeleteCommitment = (id) => async (dispatch, getState) => {
   dispatch(deleteCommitment(id));
-  await persist(dispatch, getState);
+  await persistEntityDelete(getState, "commitments", id);
   dispatch(showToast({ message: "Commitment removed" }));
 };
 
@@ -147,34 +154,34 @@ export const persistPrecloseCommitment =
     if (!commitment?.id) return;
     const now = new Date().toISOString();
     const settled = parseFloat(amount) || 0;
-    dispatch(
-      updateCommitment({
-        ...commitment,
-        currentOutstanding: 0,
-        currentOutstandingDate: occurredAt || now,
-        preclosedAt: now,
-        preclosedAmount: settled,
-      }),
-    );
+    const updatedCommitment = {
+      ...commitment,
+      currentOutstanding: 0,
+      currentOutstandingDate: occurredAt || now,
+      preclosedAt: now,
+      preclosedAmount: settled,
+    };
+    dispatch(updateCommitment(updatedCommitment));
+    const txAdds = [];
     if (postLedger && settled > 0) {
-      dispatch(
-        addTransaction({
-          id: crypto.randomUUID(),
-          createdAt: now,
-          occurredAt: occurredAt || now,
-          transactionType: "expense",
-          name: `Preclose: ${commitment.name}`,
-          amount: String(settled),
-          category: "Repayment",
-          paymentMode: "Other",
-          // Tag against the commitment id so it shows up under the
-          // commitment in any history view; the EMI itself is closed
-          // so this is a one-off settlement, not a recurring payment.
-          repaymentFor: commitment.id,
-        }),
-      );
+      const tx = {
+        id: crypto.randomUUID(),
+        createdAt: now,
+        occurredAt: occurredAt || now,
+        transactionType: "expense",
+        name: `Preclose: ${commitment.name}`,
+        amount: String(settled),
+        category: "Repayment",
+        paymentMode: "Other",
+        repaymentFor: commitment.id,
+      };
+      dispatch(addTransaction(tx));
+      txAdds.push(tx);
     }
-    await persist(dispatch, getState);
+    await persistBatch(getState, {
+      upserts: [{ collection: "commitments", entity: updatedCommitment }],
+      txAdds,
+    });
     dispatch(
       showToast({
         message: `${commitment.name} ${settled > 0 ? `preclosed for ${INR.format(settled)}` : "preclosed"}`,
@@ -189,22 +196,28 @@ export const persistPayCommitmentEMI = (commitment) => async (dispatch, getState
   if (emiAmount <= 0) return;
 
   // Reduce commitment outstanding (for loan types)
+  const upserts = [];
+
   if (commitment.type === "emi" && (parseFloat(commitment.outstanding) || 0) > 0) {
     const newOutstanding = Math.max(0, (parseFloat(commitment.outstanding) || 0) - emiAmount);
-    dispatch(updateCommitment({ ...commitment, outstanding: newOutstanding }));
+    const updated = { ...commitment, outstanding: newOutstanding };
+    dispatch(updateCommitment(updated));
+    upserts.push({ collection: "commitments", entity: updated });
   }
 
   // If paid via credit card, increase card outstanding
-  if (commitment.paymentMedium === "credit_card" && commitment.cardId) {
+  if (isCardFundedEmi(commitment)) {
     const cards = getState().transactions.transactionData?.cards ?? [];
     const card = cards.find((c) => c.id === commitment.cardId);
     if (card) {
       const newCardOutstanding = (parseFloat(card.outstanding) || 0) + emiAmount;
-      dispatch(updateCard({ ...card, outstanding: newCardOutstanding }));
+      const updatedCard = { ...card, outstanding: newCardOutstanding };
+      dispatch(updateCard(updatedCard));
+      upserts.push({ collection: "cards", entity: updatedCard });
     }
   }
 
-  await persist(dispatch, getState);
+  await persistBatch(getState, { upserts });
   dispatch(showToast({ message: `Payment of ${INR.format(emiAmount)} recorded` }));
 };
 
@@ -239,8 +252,16 @@ function findLendingInitialTx(getState, lendingId) {
 
 export const persistAddLending = (l) => async (dispatch, getState) => {
   dispatch(addLending(l));
-  if (l.affectBalance) dispatch(addTransaction(buildLendingInitialTx(l)));
-  await persist(dispatch, getState);
+  const txAdds = [];
+  if (l.affectBalance) {
+    const tx = buildLendingInitialTx(l);
+    dispatch(addTransaction(tx));
+    txAdds.push(tx);
+  }
+  await persistBatch(getState, {
+    upserts: [{ collection: "lendings", entity: l }],
+    txAdds,
+  });
   dispatch(showToast({ message: `${l.name} added` }));
 };
 
@@ -249,22 +270,43 @@ export const persistUpdateLending = (l) => async (dispatch, getState) => {
   // Reconcile the initial balance transaction to match the latest toggle,
   // amount, account and date.
   const existingTx = findLendingInitialTx(getState, l.id);
+  const txAdds = [];
+  const txUpdates = [];
+  const txDeletes = [];
   if (l.affectBalance) {
     const newTx = buildLendingInitialTx(l, existingTx);
-    if (existingTx) dispatch(updateTransaction({ oldTx: existingTx, newTx }));
-    else dispatch(addTransaction(newTx));
+    if (existingTx) {
+      dispatch(updateTransaction({ oldTx: existingTx, newTx }));
+      txUpdates.push(newTx);
+    } else {
+      dispatch(addTransaction(newTx));
+      txAdds.push(newTx);
+    }
   } else if (existingTx) {
     dispatch(deleteTransaction(existingTx.id));
+    txDeletes.push(existingTx.id);
   }
-  await persist(dispatch, getState);
+  await persistBatch(getState, {
+    upserts: [{ collection: "lendings", entity: l }],
+    txAdds,
+    txUpdates,
+    txDeletes,
+  });
   dispatch(showToast({ message: "Entry updated" }));
 };
 
 export const persistDeleteLending = (id) => async (dispatch, getState) => {
   const existingTx = findLendingInitialTx(getState, id);
   dispatch(deleteLending(id));
-  if (existingTx) dispatch(deleteTransaction(existingTx.id));
-  await persist(dispatch, getState);
+  const txDeletes = [];
+  if (existingTx) {
+    dispatch(deleteTransaction(existingTx.id));
+    txDeletes.push(existingTx.id);
+  }
+  await persistBatch(getState, {
+    entityDeletes: [{ collection: "lendings", id }],
+    txDeletes,
+  });
   dispatch(showToast({ message: "Entry removed" }));
 };
 
@@ -278,25 +320,30 @@ export const persistRepayLending =
       0,
       (parseFloat(lending.outstanding) || 0) - amount,
     );
-    dispatch(updateLending({ ...lending, outstanding: remaining }));
+    const updatedLending = { ...lending, outstanding: remaining };
+    dispatch(updateLending(updatedLending));
 
+    const txAdds = [];
     if (affectBalance) {
-      dispatch(
-        addTransaction({
-          id: crypto.randomUUID(),
-          transactionType: isLent ? "income" : "expense",
-          name: isLent ? `Received from ${lending.name}` : lending.name,
-          amount: String(amount),
-          category: isLent ? "Other" : "Repayment",
-          occurredAt,
-          createdAt: new Date().toISOString(),
-          lendingId: lending.id,
-          ...(accountId ? { accountId } : {}),
-        }),
-      );
+      const tx = {
+        id: crypto.randomUUID(),
+        transactionType: isLent ? "income" : "expense",
+        name: isLent ? `Received from ${lending.name}` : lending.name,
+        amount: String(amount),
+        category: isLent ? "Other" : "Repayment",
+        occurredAt,
+        createdAt: new Date().toISOString(),
+        lendingId: lending.id,
+        ...(accountId ? { accountId } : {}),
+      };
+      dispatch(addTransaction(tx));
+      txAdds.push(tx);
     }
 
-    await persist(dispatch, getState);
+    await persistBatch(getState, {
+      upserts: [{ collection: "lendings", entity: updatedLending }],
+      txAdds,
+    });
     dispatch(
       showToast({
         message: `${INR.format(amount)} ${isLent ? "received from" : "repaid to"} ${lending.name}`,
@@ -329,13 +376,13 @@ function buildSubscriptionChargeTx(sub, occurredAt) {
 
 export const persistAddSubscription = (sub) => async (dispatch, getState) => {
   dispatch(addSubscription(sub));
-  await persist(dispatch, getState);
+  await persistEntityUpsert(getState, "subscriptions", sub);
   dispatch(showToast({ message: `${sub.name} added` }));
 };
 
 export const persistUpdateSubscription = (sub) => async (dispatch, getState) => {
   dispatch(updateSubscription(sub));
-  await persist(dispatch, getState);
+  await persistEntityUpsert(getState, "subscriptions", sub);
   dispatch(showToast({ message: "Subscription updated" }));
 };
 
@@ -344,14 +391,19 @@ export const persistUpdateSubscription = (sub) => async (dispatch, getState) => 
 // expenses (and stop counting toward this subscription's history).
 export const persistDeleteSubscription = (id) => async (dispatch, getState) => {
   const txns = getState().transactions.transactionData?.transactions ?? [];
+  const txUpdates = [];
   txns
     .filter((t) => t.subscriptionId === id)
     .forEach((t) => {
       const { subscriptionId: _drop, ...rest } = t;
       dispatch(updateTransaction({ oldTx: t, newTx: rest }));
+      txUpdates.push(rest);
     });
   dispatch(deleteSubscription(id));
-  await persist(dispatch, getState);
+  await persistBatch(getState, {
+    entityDeletes: [{ collection: "subscriptions", id }],
+    txUpdates,
+  });
   dispatch(showToast({ message: "Subscription removed" }));
 };
 
@@ -364,12 +416,34 @@ export const persistLogSubscriptionCharge =
     if (isCurrentCyclePosted(sub, txns)) return false;
     const billDate =
       occurredAt || previousRenewal(sub) || nextRenewal(sub) || new Date();
-    dispatch(addTransaction(buildSubscriptionChargeTx(sub, billDate)));
-    await persist(dispatch, getState);
+    const tx = buildSubscriptionChargeTx(sub, billDate);
+    dispatch(addTransaction(tx));
+    await persistBatch(getState, { txAdds: [tx] });
     dispatch(
       showToast({ message: `${sub.name} charge logged` }),
     );
     return true;
+  };
+
+// Auto-post sweep for every active subscription whose autoPost is on: posts the
+// current cycle's charge if it's due and hasn't landed yet. Mirrors the SIP /
+// auto-deduct scheduler so it runs globally on app load, not only when the user
+// visits the Subscriptions page. Each post is idempotent (the thunk's own
+// isCurrentCyclePosted guard), so re-running is a no-op.
+export const persistSubscriptionAutoPost =
+  () => async (dispatch, getState) => {
+    const data = getState().transactions.transactionData;
+    const subs = data?.subscriptions ?? [];
+    const txns = data?.transactions ?? [];
+    const now = new Date();
+    for (const s of subs) {
+      if (!s.autoPost || !isBilling(s)) continue;
+      const prev = previousRenewal(s, now);
+      if (!prev || prev > now) continue;
+      if (s.anchorDate && prev < new Date(s.anchorDate)) continue;
+      if (isCurrentCyclePosted(s, txns, now)) continue;
+      dispatch(persistLogSubscriptionCharge(s, prev));
+    }
   };
 
 // ── Subscription type thunks ──────────────────────────
@@ -377,14 +451,14 @@ export const persistLogSubscriptionCharge =
 export const persistAddSubscriptionType =
   (type) => async (dispatch, getState) => {
     dispatch(addSubscriptionType(type));
-    await persist(dispatch, getState);
+    await persistSettings(getState);
     dispatch(showToast({ message: `${type.label} type added` }));
   };
 
 export const persistDeleteSubscriptionType =
   (key) => async (dispatch, getState) => {
     dispatch(deleteSubscriptionType(key));
-    await persist(dispatch, getState);
+    await persistSettings(getState);
     dispatch(showToast({ message: "Subscription type removed" }));
   };
 
@@ -400,32 +474,35 @@ export const persistMigrateSubscriptionCommitments =
     );
     if (targets.length === 0) return 0;
     const now = new Date();
+    const upserts = [];
+    const entityDeletes = [];
     for (const c of targets) {
       // Anchor the renewal on this month's due day so the countdown is
       // immediately meaningful.
       const dueDay = parseInt(c.dueDay) || now.getDate();
       const anchor = new Date(now.getFullYear(), now.getMonth(), dueDay);
-      dispatch(
-        addSubscription({
-          id: crypto.randomUUID(),
-          createdAt: new Date().toISOString(),
-          name: c.name,
-          brandKey: null,
-          amount: parseFloat(c.emiAmount) || 0,
-          cycle: "monthly",
-          anchorDate: anchor.toISOString().slice(0, 10),
-          category: "Entertainment",
-          paymentMethod: c.paymentMedium === "credit_card" ? "credit_card" : "bank",
-          ...(c.cardId ? { cardId: c.cardId } : {}),
-          status: "active",
-          autoPost: false,
-          notes: c.notes || "",
-          migratedFromCommitment: c.id,
-        }),
-      );
+      const sub = {
+        id: crypto.randomUUID(),
+        createdAt: new Date().toISOString(),
+        name: c.name,
+        brandKey: null,
+        amount: parseFloat(c.emiAmount) || 0,
+        cycle: "monthly",
+        anchorDate: anchor.toISOString().slice(0, 10),
+        category: "Entertainment",
+        paymentMethod: isCardFundedEmi(c) ? "credit_card" : "bank",
+        ...(c.cardId ? { cardId: c.cardId } : {}),
+        status: "active",
+        autoPost: false,
+        notes: c.notes || "",
+        migratedFromCommitment: c.id,
+      };
+      dispatch(addSubscription(sub));
       dispatch(deleteCommitment(c.id));
+      upserts.push({ collection: "subscriptions", entity: sub });
+      entityDeletes.push({ collection: "commitments", id: c.id });
     }
-    await persist(dispatch, getState);
+    await persistBatch(getState, { upserts, entityDeletes });
     dispatch(
       showToast({
         message: `Migrated ${targets.length} subscription${targets.length === 1 ? "" : "s"}`,

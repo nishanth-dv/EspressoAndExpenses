@@ -1,9 +1,27 @@
 import { memo, useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { createPortal } from "react-dom";
 import { useSelector, useDispatch } from "react-redux";
-import { useSearchParams } from "react-router-dom";
+import { useSearchParams, useNavigate } from "react-router-dom";
+import { isPageAccessible } from "../utils/pages";
+import { useInvestments, useInvestmentsLoading } from "../hooks/useInvestments";
+import { useLedgerLoading } from "../hooks/useLedger";
+import Skeleton from "../components/Skeleton";
+import Scroller from "../components/Scroller";
+import useCountUp from "../hooks/useCountUp";
 import { motion } from "framer-motion";
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from "recharts";
+import {
+  PieChart,
+  Pie,
+  Cell,
+  Tooltip,
+  ResponsiveContainer,
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  ReferenceDot,
+  Sector,
+} from "recharts";
 import Modal from "../preStyledElements/modal/Modal";
 import InvestmentForm from "../Forms/InvestmentForm";
 import LiquidGlassCard from "../components/LiquidGlassCard";
@@ -36,6 +54,8 @@ import {
   persistDeleteInvestment,
   persistDeleteTransaction,
   persistSIPInstalment,
+  persistBackfillSipAccount,
+  persistAutoDeductInstalment,
   persistLogAutoDeductPayment,
   persistSellInvestment,
   persistPauseInvestment,
@@ -44,6 +64,7 @@ import {
   persistSurrenderLicPolicy,
   persistMatureLicPolicy,
 } from "../redux/slices/transactionSlice";
+import { resolveLogMode } from "../utils/loggingMode";
 import { fetchCurrentPrice, fetchSIPData } from "../utils/priceService";
 import { filterInvestmentsByDate, getFilterLabel } from "../utils/filterUtils";
 import { showToast } from "../redux/slices/toastSlice";
@@ -214,44 +235,181 @@ function useCurrentTheme() {
   return theme;
 }
 
+function Reveal({ children }) {
+  return (
+    <motion.div
+      className="inv-reveal"
+      initial={{ opacity: 0, y: 18 }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: "-40px 0px" }}
+      transition={{ duration: 0.5, ease: [0.16, 1, 0.3, 1] }}
+    >
+      {children}
+    </motion.div>
+  );
+}
+
 // ── Portfolio Hero ────────────────────────────────────
 
+const HERO_PERIODS = [
+  { key: "1M", days: 30 },
+  { key: "6M", days: 182 },
+  { key: "1Y", days: 365 },
+  { key: "ALL", days: Infinity },
+];
+
 function PortfolioHero({ investments }) {
+  const allTransactions = useSelector(
+    (s) => s.transactions.transactionData?.transactions ?? [],
+  );
   const { totalInvested, totalCurrent, totalReturn, returnPct } = useMemo(
     () => getPortfolioSummary(investments),
     [investments],
   );
+  const [period, setPeriod] = useState("ALL");
   const pos = totalReturn >= 0;
-  const retColor = pos ? "var(--amount-income)" : "var(--amount-expense)";
+  const accent = pos ? "var(--amount-income)" : "var(--amount-expense)";
+  const animatedValue = useCountUp(totalCurrent);
+
+  const fullSeries = useMemo(() => {
+    const rows = allTransactions
+      .filter((t) => t.transactionType === "investment")
+      .map((t) => ({
+        t: new Date(t.occurredAt || t.createdAt).getTime(),
+        amt: parseFloat(t.amount) || 0,
+      }))
+      .filter((r) => !Number.isNaN(r.t))
+      .sort((a, b) => a.t - b.t);
+    let cum = 0;
+    return rows.map((r) => ({ t: r.t, invested: (cum += r.amt) }));
+  }, [allTransactions]);
+
+  const series = useMemo(() => {
+    const p = HERO_PERIODS.find((x) => x.key === period);
+    if (!p || p.days === Infinity) return fullSeries;
+    const cutoff = Date.now() - p.days * 86_400_000;
+    const filtered = fullSeries.filter((r) => r.t >= cutoff);
+    return filtered.length >= 2 ? filtered : fullSeries.slice(-2);
+  }, [fullSeries, period]);
 
   if (investments.length === 0) return null;
 
+  const hasChart = series.length >= 2;
+  const lastT = hasChart ? series[series.length - 1].t : Date.now();
+  const investedMax = series.reduce((m, r) => Math.max(m, r.invested), 0);
+  const investedMin = series.reduce(
+    (m, r) => Math.min(m, r.invested),
+    Number.POSITIVE_INFINITY,
+  );
+  const yMax = Math.max(investedMax, totalCurrent) * 1.08;
+  const safeMin = Number.isFinite(investedMin) ? investedMin : 0;
+  const yMin = Math.max(0, Math.min(safeMin, totalCurrent) * 0.9);
+
   return (
-    <div className="inv-hero">
-      <LiquidGlassCard className="inv-hero-card">
-        <p className="inv-hero-label">Total Invested</p>
-        <p className="inv-hero-value">{INR.format(totalInvested)}</p>
-      </LiquidGlassCard>
-      <LiquidGlassCard className="inv-hero-card">
-        <p className="inv-hero-label">Current Value</p>
-        <p className="inv-hero-value" style={{ color: retColor }}>
-          {INR.format(totalCurrent)}
-        </p>
-      </LiquidGlassCard>
-      <LiquidGlassCard className="inv-hero-card">
-        <p className="inv-hero-label">Total Returns</p>
-        <p className="inv-hero-value" style={{ color: retColor }}>
+    <div className="inv-value-hero">
+      <div className="inv-vh-glow" style={{ "--vh-accent": accent }} />
+      <div className="inv-vh-top">
+        <div className="inv-vh-headline">
+          <p className="inv-vh-eyebrow">Portfolio value</p>
+          <p className="inv-vh-value">{INR.format(Math.round(animatedValue))}</p>
+        </div>
+        <span
+          className={`inv-vh-change inv-vh-change--${pos ? "up" : "down"}`}
+        >
+          <i
+            className={`fa-solid ${pos ? "fa-arrow-trend-up" : "fa-arrow-trend-down"}`}
+          />
           {pos ? "+" : ""}
           {INR.format(totalReturn)}
-        </p>
-      </LiquidGlassCard>
-      <LiquidGlassCard className="inv-hero-card">
-        <p className="inv-hero-label">Return %</p>
-        <p className="inv-hero-value" style={{ color: retColor }}>
-          {pos ? "+" : ""}
-          {returnPct.toFixed(2)}%
-        </p>
-      </LiquidGlassCard>
+          <span className="inv-vh-change-pct">
+            {" "}
+            ({pos ? "+" : ""}
+            {returnPct.toFixed(1)}%)
+          </span>
+        </span>
+      </div>
+
+      {hasChart && (
+        <div className="inv-vh-chart">
+          <ResponsiveContainer width="100%" height={132}>
+            <AreaChart
+              data={series}
+              margin={{ top: 10, right: 14, bottom: 0, left: 14 }}
+            >
+              <defs>
+                <linearGradient id="invHeroGrad" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={accent} stopOpacity={0.34} />
+                  <stop offset="100%" stopColor={accent} stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <XAxis dataKey="t" type="number" domain={["dataMin", "dataMax"]} hide />
+              <YAxis hide domain={[yMin, yMax]} />
+              <Area
+                type="monotone"
+                dataKey="invested"
+                stroke={accent}
+                strokeWidth={2.5}
+                fill="url(#invHeroGrad)"
+                isAnimationActive
+                animationDuration={1150}
+                animationEasing="ease-out"
+                dot={false}
+              />
+              <ReferenceDot
+                x={lastT}
+                y={totalCurrent}
+                r={5}
+                fill={accent}
+                stroke="var(--card-bg)"
+                strokeWidth={2.5}
+                isFront
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+          <span className="inv-vh-chart-tag">Invested over time · now worth</span>
+        </div>
+      )}
+
+      <div className="inv-vh-periods">
+        {HERO_PERIODS.map((p) => (
+          <button
+            key={p.key}
+            type="button"
+            className={`inv-vh-period${period === p.key ? " inv-vh-period--active" : ""}`}
+            onClick={() => setPeriod(p.key)}
+          >
+            {period === p.key && (
+              <motion.span
+                layoutId="invHeroPeriodPill"
+                className="inv-vh-period-pill"
+                transition={{ type: "spring", stiffness: 480, damping: 38 }}
+              />
+            )}
+            <span>{p.key === "ALL" ? "All" : p.key}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="inv-vh-stats">
+        <div className="inv-vh-stat">
+          <span className="inv-vh-stat-label">Invested</span>
+          <span className="inv-vh-stat-value">{INR.format(totalInvested)}</span>
+        </div>
+        <div className="inv-vh-stat">
+          <span className="inv-vh-stat-label">Returns</span>
+          <span className="inv-vh-stat-value" style={{ color: accent }}>
+            {pos ? "+" : ""}
+            {INR.format(totalReturn)}
+          </span>
+        </div>
+        <div className="inv-vh-stat">
+          <span className="inv-vh-stat-label">Return</span>
+          <span className="inv-vh-stat-value" style={{ color: accent }}>
+            {pos ? "+" : ""}
+            {returnPct.toFixed(1)}%
+          </span>
+        </div>
+      </div>
     </div>
   );
 }
@@ -269,9 +427,7 @@ function PortfolioHighlights() {
   // page's date filter shouldn't be allowed to slice out one half of a
   // grouped position (e.g. a legacy MF started years ago paired with a
   // brand-new SIP) and skew the top-performer math.
-  const rawInvestments = useSelector(
-    (state) => state.transactions.transactionData?.investments ?? [],
-  );
+  const rawInvestments = useInvestments();
   const allTransactions = useSelector(
     (state) => state.transactions.transactionData?.transactions ?? [],
   );
@@ -507,9 +663,7 @@ function compute80C(investments, transactions) {
 }
 
 function Section80CTracker() {
-  const investments = useSelector(
-    (state) => state.transactions.transactionData?.investments ?? [],
-  );
+  const investments = useInvestments();
   const allTransactions = useSelector(
     (state) => state.transactions.transactionData?.transactions ?? [],
   );
@@ -615,9 +769,7 @@ function getNextSipDebit(inv) {
 }
 
 function ReminderSection() {
-  const investments = useSelector(
-    (state) => state.transactions.transactionData?.investments ?? [],
-  );
+  const investments = useInvestments();
   const allTransactions = useSelector(
     (state) => state.transactions.transactionData?.transactions ?? [],
   );
@@ -872,6 +1024,146 @@ function SellModal({ inv, onConfirm, onClose }) {
         </button>
       </div>
     </div>
+  );
+}
+
+// Delete confirmation with an opt-in "return the invested amount to my balance"
+// choice + bank picker. By default deleting does NOT touch the balance (the
+// original purchase stays); opting in posts a visible credit to the chosen bank.
+function DeleteInvestmentModal({
+  deleteConfirm,
+  userTypes,
+  allTransactions,
+  onConfirm,
+  onClose,
+}) {
+  const inv = deleteConfirm.inv;
+  const info = inv ? getTypeInfo(inv.type) : null;
+  const { investedAmount, currentValue, absoluteReturn, returnPct } = inv
+    ? calcReturns(inv, userTypes, allTransactions)
+    : {};
+  const pos = absoluteReturn >= 0;
+  const retColor = pos ? "var(--amount-income)" : "var(--amount-expense)";
+
+  const [returnToBalance, setReturnToBalance] = useState(false);
+  const { multiBankEnabled, accounts, accountId, setAccountId } =
+    useBalanceBankPicker();
+
+  // Only investments that were funded from the balance can return money to it.
+  const canReturn = !!inv && inv.affectsBalance !== false && investedAmount > 0;
+
+  return (
+    <Modal open onClose={onClose} title="Remove Investment">
+      <div className="inv-delete-confirm">
+        {inv && (
+          <div className="inv-delete-asset-preview">
+            <span
+              className="inv-type-badge"
+              style={{ background: info.color + "22", color: info.color }}
+            >
+              <i className={`fa-solid ${info.icon}`} /> {info.label}
+            </span>
+            <p className="inv-holding-name">{inv.name}</p>
+            {info.subtype === "unit" && (
+              <p className="inv-holding-meta">
+                {inv.quantity} units
+                {inv._lots > 1 && (
+                  <span className="inv-orders-badge"> {inv._lots} orders</span>
+                )}
+                {" · "}
+                {inv._lots > 1 ? "Avg buy" : "Buy"} {INR.format(inv.buyPrice)} →
+                Now {INR.format(inv.currentPrice)}
+              </p>
+            )}
+            {info.subtype === "fixed" && (
+              <p className="inv-holding-meta">
+                {inv.interestRate}% p.a. · {inv.tenureMonths} months
+              </p>
+            )}
+            <div className="inv-holding-amounts">
+              <div>
+                <p className="inv-holding-amt-label">Invested</p>
+                <p className="inv-holding-amt">{INR.format(investedAmount)}</p>
+              </div>
+              <div>
+                <p className="inv-holding-amt-label">Current</p>
+                <p className="inv-holding-amt" style={{ color: retColor }}>
+                  {INR.format(currentValue)}
+                </p>
+              </div>
+              <div>
+                <p className="inv-holding-amt-label">Returns</p>
+                <p className="inv-holding-amt" style={{ color: retColor }}>
+                  {pos ? "+" : ""}
+                  {INR.format(absoluteReturn)}
+                  <span className="inv-holding-pct">
+                    {" "}
+                    ({pos ? "+" : ""}
+                    {returnPct.toFixed(1)}%)
+                  </span>
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+        <p className="inv-delete-confirm-msg">
+          {deleteConfirm.count > 1 ? (
+            <>
+              Remove all <strong>{deleteConfirm.count} orders</strong>? This
+              cannot be undone.
+            </>
+          ) : (
+            <>Remove this holding? This cannot be undone.</>
+          )}
+        </p>
+
+        {canReturn && (
+          <>
+            <label className="inv-balance-toggle">
+              <input
+                type="checkbox"
+                checked={returnToBalance}
+                onChange={(e) => setReturnToBalance(e.target.checked)}
+              />
+              <span className="inv-balance-toggle-text">
+                Return {INR.format(investedAmount)} to my balance
+                <span className="inv-balance-toggle-sub">
+                  {returnToBalance
+                    ? "Logged as income and added to the bank below"
+                    : "Off — deleting won't change your balance; the invested amount stays spent"}
+                </span>
+              </span>
+            </label>
+            {returnToBalance && multiBankEnabled && accounts.length > 0 && (
+              <BankChipSelector
+                accounts={accounts}
+                value={accountId}
+                onChange={setAccountId}
+                label="Add to"
+              />
+            )}
+          </>
+        )}
+
+        <div className="form-actions">
+          <button type="button" className="cancel-button" onClick={onClose}>
+            Cancel
+          </button>
+          <button
+            type="button"
+            className="inv-delete-confirm-btn"
+            onClick={() =>
+              onConfirm({
+                returnToBalance: canReturn && returnToBalance,
+                accountId,
+              })
+            }
+          >
+            <i className="fa-solid fa-trash-can" /> Delete
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -1249,6 +1541,16 @@ function walkAutoDeductPeriods(startDate, frequency) {
     for (let yr = start.getFullYear(); yr < now.getFullYear(); yr++) {
       out.push({ kind: "yearly", year: yr });
     }
+  } else if (frequency === "halfyearly") {
+    let yr = start.getFullYear();
+    let h = Math.floor(start.getMonth() / 6);
+    const curYr = now.getFullYear();
+    const curH = Math.floor(now.getMonth() / 6);
+    while (yr < curYr || (yr === curYr && h < curH)) {
+      out.push({ kind: "halfyearly", year: yr, half: h });
+      h++;
+      if (h > 1) { h = 0; yr++; }
+    }
   } else if (frequency === "quarterly") {
     let yr = start.getFullYear();
     let q = Math.floor(start.getMonth() / 3);
@@ -1276,6 +1578,12 @@ function walkAutoDeductPeriods(startDate, frequency) {
 
 function txMatchesPeriod(txDate, period) {
   if (period.kind === "yearly") return txDate.getFullYear() === period.year;
+  if (period.kind === "halfyearly") {
+    return (
+      txDate.getFullYear() === period.year &&
+      Math.floor(txDate.getMonth() / 6) === period.half
+    );
+  }
   if (period.kind === "quarterly") {
     return (
       txDate.getFullYear() === period.year &&
@@ -1290,6 +1598,7 @@ function txMatchesPeriod(txDate, period) {
 
 function periodToDate(period) {
   if (period.kind === "yearly") return new Date(period.year, 0, 1);
+  if (period.kind === "halfyearly") return new Date(period.year, period.half * 6, 1);
   if (period.kind === "quarterly") return new Date(period.year, period.quarter * 3, 1);
   return new Date(period.year, period.month, 1);
 }
@@ -1299,6 +1608,13 @@ function periodToDate(period) {
 // in the LedgerModal pending-entry logic.
 function currentPeriodOf(now, frequency) {
   if (frequency === "yearly") return { kind: "yearly", year: now.getFullYear() };
+  if (frequency === "halfyearly") {
+    return {
+      kind: "halfyearly",
+      year: now.getFullYear(),
+      half: Math.floor(now.getMonth() / 6),
+    };
+  }
   if (frequency === "quarterly") {
     return {
       kind: "quarterly",
@@ -1311,6 +1627,9 @@ function currentPeriodOf(now, frequency) {
 
 function periodLabel(period) {
   if (period.kind === "yearly") return String(period.year);
+  if (period.kind === "halfyearly") {
+    return `H${period.half + 1} ${period.year}`;
+  }
   if (period.kind === "quarterly") {
     return `Q${period.quarter + 1} ${period.year}`;
   }
@@ -1320,6 +1639,7 @@ function periodLabel(period) {
 
 function frequencyLabel(frequency) {
   if (frequency === "yearly") return "year";
+  if (frequency === "halfyearly") return "half-year";
   if (frequency === "quarterly") return "quarter";
   return "month";
 }
@@ -1795,7 +2115,7 @@ function LedgerModal({ inv, rawLots, allTransactions, highlightTxId, onSell, onD
   }
 
   return (
-    <div className="inv-ledger-list">
+    <Scroller className="inv-ledger-list">
       {entries.map((e) => {
         const deletePayload = getDeletePayload(e);
         return (
@@ -1811,7 +2131,7 @@ function LedgerModal({ inv, rawLots, allTransactions, highlightTxId, onSell, onD
           />
         );
       })}
-    </div>
+    </Scroller>
   );
 }
 
@@ -1972,6 +2292,9 @@ function LedgerEntry({ e, fmt, highlight, onSell, onDelete, onLogPending, logPen
 }
 
 function HoldingCard({ inv, onEdit, onDelete, onSell, onLedger, onPause, onResume, onHardDelete, onSurrender, onMature, onPayArrears, allTransactions = [], highlightId, mode = "holdings" }) {
+  const userTypes = useSelector(
+    (state) => state.transactions.transactionData?.investmentTypes ?? [],
+  );
   const isHighlighted =
     highlightId && (inv.id === highlightId || inv._ids?.includes(highlightId));
   const cardRef = useRef(null);
@@ -2030,15 +2353,25 @@ function HoldingCard({ inv, onEdit, onDelete, onSell, onLedger, onPause, onResum
   };
 
   const { investedAmount, currentValue, absoluteReturn, returnPct } =
-    calcReturns(inv);
+    calcReturns(inv, userTypes, allTransactions);
   const info = getTypeInfo(inv.type);
   const pos = absoluteReturn >= 0;
   const retColor = pos ? "var(--amount-income)" : "var(--amount-expense)";
+  const showGainBar = investedAmount > 0 && currentValue > 0;
+  const gainBase = showGainBar
+    ? (Math.min(investedAmount, currentValue) /
+        Math.max(investedAmount, currentValue)) *
+      100
+    : 0;
+  const gainDelta = 100 - gainBase;
+  const showMomentum =
+    Number.isFinite(returnPct) && Math.abs(absoluteReturn) >= 1;
 
   return (
     <div
       ref={cardRef}
-      className={`inv-holding-card${isHighlighted ? " inv-holding-card--highlight" : ""}`}
+      className={`inv-holding-card inv-holding-card--accent${isHighlighted ? " inv-holding-card--highlight" : ""}`}
+      style={{ "--inv-accent": info.color }}
     >
       <div className="inv-holding-header">
         <span
@@ -2047,6 +2380,17 @@ function HoldingCard({ inv, onEdit, onDelete, onSell, onLedger, onPause, onResum
         >
           <i className={`fa-solid ${info.icon}`} /> {info.label}
         </span>
+        {showMomentum && (
+          <span
+            className={`inv-momentum inv-momentum--${pos ? "up" : "down"}`}
+          >
+            <i
+              className={`fa-solid ${pos ? "fa-caret-up" : "fa-caret-down"}`}
+            />
+            {pos ? "+" : ""}
+            {returnPct.toFixed(1)}%
+          </span>
+        )}
         <div className="inv-holding-actions">
           <button
             className="inv-icon-btn"
@@ -2196,9 +2540,8 @@ function HoldingCard({ inv, onEdit, onDelete, onSell, onLedger, onPause, onResum
             <span className="inv-orders-badge"> {inv._lots} orders</span>
           )}
           {" · "}
-          {inv.type === "sip"
-            ? `Avg NAV ${INR.format(inv.buyPrice)} → Now ${INR.format(inv.currentPrice)}`
-            : `${inv._lots > 1 ? "Avg buy" : "Buy"} ${INR.format(inv.buyPrice)} → Now ${INR.format(inv.currentPrice)}`}
+          {inv.type === "sip" || inv.type === "mf" ? "NAV " : "LTP "}
+          {INR.format(inv.currentPrice)}
           {inv.priceUpdatedAt && (
             <span className="inv-price-updated">
               {" "}
@@ -2266,7 +2609,22 @@ function HoldingCard({ inv, onEdit, onDelete, onSell, onLedger, onPause, onResum
         );
       })()}
 
-      <div className="inv-holding-amounts">
+      {showGainBar && (
+        <div className="inv-gain-bar" aria-hidden="true">
+          <span
+            className="inv-gain-seg inv-gain-seg--base"
+            style={{ width: `${gainBase}%` }}
+          />
+          <span
+            className={`inv-gain-seg inv-gain-seg--delta inv-gain-seg--${pos ? "up" : "down"}`}
+            style={{ width: `${gainDelta}%` }}
+          />
+        </div>
+      )}
+
+      <div
+        className={`inv-holding-amounts${info.subtype === "unit" ? " inv-holding-amounts--4" : ""}`}
+      >
         <div>
           <p className="inv-holding-amt-label">Invested</p>
           <p className="inv-holding-amt">{INR.format(investedAmount)}</p>
@@ -2277,6 +2635,14 @@ function HoldingCard({ inv, onEdit, onDelete, onSell, onLedger, onPause, onResum
             {INR.format(currentValue)}
           </p>
         </div>
+        {info.subtype === "unit" && (
+          <div>
+            <p className="inv-holding-amt-label">
+              {inv.type === "sip" || inv.type === "mf" ? "Avg NAV" : "Avg buy"}
+            </p>
+            <p className="inv-holding-amt">{INR.format(inv.buyPrice)}</p>
+          </div>
+        )}
         <div>
           <p className="inv-holding-amt-label">Returns</p>
           <p className="inv-holding-amt" style={{ color: retColor }}>
@@ -2317,52 +2683,234 @@ function AllocationLabel({ cx, cy, midAngle, innerRadius, outerRadius, pct }) {
   );
 }
 
-function AllocationRing({ investments, theme }) {
+function renderActiveSlice(props) {
+  const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill } = props;
+  return (
+    <Sector
+      cx={cx}
+      cy={cy}
+      innerRadius={innerRadius}
+      outerRadius={outerRadius + 7}
+      startAngle={startAngle}
+      endAngle={endAngle}
+      fill={fill}
+    />
+  );
+}
+
+function AllocationRing({ investments, onSelectType }) {
   const data = useMemo(() => getAllocationData(investments), [investments]);
+  const [active, setActive] = useState(-1);
   if (data.length === 0) return null;
 
-  const tooltipStyle = {
-    background: theme === "light" ? "#e0d6d5" : "#1a1a2e",
-    border: "1px solid rgba(128,128,128,0.2)",
-    borderRadius: 8,
-    fontSize: 13,
-  };
+  const total = data.reduce((s, d) => s + d.value, 0);
+  const cur = active >= 0 ? data[active] : null;
 
   return (
     <div className="dash-section inv-allocation">
       <p className="dash-section-title">Portfolio Allocation</p>
       <div className="inv-allocation-inner">
-        <ResponsiveContainer width="100%" height={220}>
-          <PieChart>
-            <Pie
-              data={data}
-              cx="50%"
-              cy="50%"
-              innerRadius={55}
-              outerRadius={95}
-              dataKey="value"
-              labelLine={false}
-              label={AllocationLabel}
-            >
-              {data.map((entry) => (
-                <Cell key={entry.type} fill={entry.color} />
-              ))}
-            </Pie>
-            <Tooltip
-              formatter={(v) => INR.format(v)}
-              contentStyle={tooltipStyle}
-            />
-          </PieChart>
-        </ResponsiveContainer>
+        <div className="inv-alloc-chart-wrap">
+          <ResponsiveContainer width="100%" height={210}>
+            <PieChart>
+              <Pie
+                data={data}
+                cx="50%"
+                cy="50%"
+                innerRadius={64}
+                outerRadius={92}
+                paddingAngle={data.length > 1 ? 2 : 0}
+                dataKey="value"
+                stroke="none"
+                activeIndex={active >= 0 ? active : undefined}
+                activeShape={renderActiveSlice}
+                onMouseEnter={(_, i) => setActive(i)}
+                onMouseLeave={() => setActive(-1)}
+                onClick={(_, i) => onSelectType?.(data[i].type)}
+                isAnimationActive
+                animationDuration={900}
+                animationEasing="ease-out"
+              >
+                {data.map((entry) => (
+                  <Cell key={entry.type} fill={entry.color} cursor="pointer" />
+                ))}
+              </Pie>
+            </PieChart>
+          </ResponsiveContainer>
+          <div className="inv-alloc-center">
+            <span className="inv-alloc-center-label">
+              {cur ? cur.label : "Total"}
+            </span>
+            <span className="inv-alloc-center-value">
+              {INR.format(cur ? cur.value : total)}
+            </span>
+            {cur && (
+              <span
+                className="inv-alloc-center-pct"
+                style={{ color: cur.color }}
+              >
+                {cur.pct}%
+              </span>
+            )}
+          </div>
+        </div>
         <div className="inv-alloc-legend">
-          {data.map((d) => (
-            <div key={d.type} className="inv-alloc-legend-item">
+          {data.map((d, i) => (
+            <button
+              key={d.type}
+              type="button"
+              className={`inv-alloc-legend-item${active === i ? " inv-alloc-legend-item--active" : ""}`}
+              onMouseEnter={() => setActive(i)}
+              onMouseLeave={() => setActive(-1)}
+              onClick={() => onSelectType?.(d.type)}
+            >
               <span className="inv-alloc-dot" style={{ background: d.color }} />
               <span className="inv-alloc-label">{d.label}</span>
+              <span className="inv-alloc-legend-bar">
+                <span
+                  className="inv-alloc-legend-fill"
+                  style={{ width: `${d.pct}%`, background: d.color }}
+                />
+              </span>
               <span className="inv-alloc-pct">{d.pct}%</span>
-            </div>
+            </button>
           ))}
         </div>
+      </div>
+      <p className="inv-alloc-hint">
+        <i className="fa-solid fa-hand-pointer" /> Tap a slice to view those
+        holdings
+      </p>
+    </div>
+  );
+}
+
+function computePortfolioHealth(investments, fdRate) {
+  const alloc = getAllocationData(investments);
+  if (alloc.length === 0) return { score: null };
+  const summary = getPortfolioSummary(investments);
+  const topPct = alloc[0].pct;
+  const typeCount = alloc.filter((d) => d.pct >= 3).length;
+  let equityPct = 0;
+  let fixedPct = 0;
+  for (const d of alloc) {
+    const sub = getTypeInfo(d.type).subtype;
+    if (sub === "unit") equityPct += d.pct;
+    else if (sub === "fixed") fixedPct += d.pct;
+  }
+  const factors = [];
+  let score = 0;
+
+  score += typeCount >= 4 ? 30 : typeCount === 3 ? 23 : typeCount === 2 ? 15 : 6;
+  factors.push({
+    ok: typeCount >= 3,
+    label:
+      typeCount >= 3
+        ? `Diversified across ${typeCount} asset types`
+        : `Only ${typeCount} asset type${typeCount > 1 ? "s" : ""}`,
+  });
+
+  score += topPct <= 25 ? 30 : topPct <= 40 ? 18 : 8;
+  factors.push({
+    ok: topPct <= 30,
+    label:
+      topPct <= 30
+        ? "No single position dominates"
+        : `${topPct}% concentrated in ${alloc[0].label}`,
+  });
+
+  const balanced = equityPct > 0 && fixedPct > 0;
+  score += balanced ? 20 : 10;
+  factors.push({
+    ok: balanced,
+    label: balanced
+      ? `Equity/Fixed balance ${Math.round(equityPct)}/${Math.round(fixedPct)}`
+      : equityPct > 0
+        ? "All market-linked — no fixed income"
+        : "No market-linked growth",
+  });
+
+  const r = summary.returnPct;
+  score += r >= fdRate ? 20 : r > 0 ? 12 : 4;
+  factors.push({
+    ok: r >= fdRate,
+    label:
+      r >= fdRate
+        ? `Beating FD — ${r.toFixed(1)}% vs ${fdRate}%`
+        : `Return ${r.toFixed(1)}% (FD ~${fdRate}%)`,
+  });
+
+  score = Math.round(score);
+  const band = score >= 75 ? "good" : score >= 50 ? "ok" : "low";
+  return { score, band, factors };
+}
+
+const HEALTH_R = 52;
+const HEALTH_CIRC = 2 * Math.PI * HEALTH_R;
+
+function PortfolioHealth({ investments }) {
+  const fdRate = useSelector(
+    (s) => s.transactions.transactionData?.preferences?.fdRate ?? 7,
+  );
+  const { score, band, factors } = useMemo(
+    () => computePortfolioHealth(investments, fdRate),
+    [investments, fdRate],
+  );
+  const [filled, setFilled] = useState(false);
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => setFilled(true));
+    return () => cancelAnimationFrame(raf);
+  }, []);
+
+  if (score == null) return null;
+
+  const bandColor =
+    band === "good"
+      ? "var(--amount-income)"
+      : band === "ok"
+        ? "#eab308"
+        : "var(--amount-expense)";
+  const bandLabel =
+    band === "good" ? "Healthy" : band === "ok" ? "Fair" : "Needs work";
+
+  return (
+    <div className="dash-section inv-health" style={{ "--gauge-accent": bandColor }}>
+      <p className="dash-section-title">Portfolio Health</p>
+      <div className="inv-health-inner">
+        <div className="inv-health-gauge">
+          <svg viewBox="0 0 120 120" className="inv-health-svg">
+            <circle className="inv-health-track" cx="60" cy="60" r={HEALTH_R} />
+            <circle
+              className="inv-health-ring"
+              cx="60"
+              cy="60"
+              r={HEALTH_R}
+              style={{
+                strokeDasharray: HEALTH_CIRC,
+                strokeDashoffset: filled
+                  ? HEALTH_CIRC * (1 - score / 100)
+                  : HEALTH_CIRC,
+              }}
+            />
+          </svg>
+          <div className="inv-health-score">
+            <span className="inv-health-num">{score}</span>
+            <span className="inv-health-band">{bandLabel}</span>
+          </div>
+        </div>
+        <ul className="inv-health-factors">
+          {factors.map((f, i) => (
+            <li
+              key={i}
+              className={`inv-health-factor${f.ok ? " inv-health-factor--ok" : " inv-health-factor--warn"}`}
+            >
+              <i
+                className={`fa-solid ${f.ok ? "fa-circle-check" : "fa-triangle-exclamation"}`}
+              />
+              <span>{f.label}</span>
+            </li>
+          ))}
+        </ul>
       </div>
     </div>
   );
@@ -2399,6 +2947,169 @@ function CategoryBreakdown({ investments }) {
   );
 }
 
+// ── Momentum & milestones strip ──────────────────────
+
+function MomentumStrip({ investments }) {
+  const allTransactions = useSelector(
+    (s) => s.transactions.transactionData?.transactions ?? [],
+  );
+  const goals = useSelector((s) => s.transactions.transactionData?.goals ?? []);
+  const userTypes = useSelector(
+    (s) => s.transactions.transactionData?.investmentTypes ?? [],
+  );
+
+  const items = useMemo(() => {
+    const active = investments.filter((i) => !i.inHistory);
+    const out = [];
+
+    const valued = active
+      .map((inv) => {
+        const { investedAmount, currentValue } = calcReturns(
+          inv,
+          userTypes,
+          allTransactions,
+        );
+        return { inv, investedAmount, currentValue };
+      })
+      .filter((v) => v.investedAmount > 0);
+
+    const milestones = [];
+    for (const v of valued) {
+      const ratio = v.currentValue / v.investedAmount;
+      const band = [10, 5, 3, 2].find((m) => ratio >= m);
+      if (band) milestones.push({ ...v, band });
+    }
+    milestones.sort((a, b) => b.band - a.band);
+    for (const m of milestones.slice(0, 2)) {
+      out.push({
+        icon: "fa-trophy",
+        accent: "#eab308",
+        title: m.band === 2 ? `${m.inv.name} doubled` : `${m.inv.name} · ${m.band}×`,
+        sub: "Milestone reached",
+      });
+    }
+
+    let best = null;
+    for (const v of valued) {
+      const pct = ((v.currentValue - v.investedAmount) / v.investedAmount) * 100;
+      if (!best || pct > best.pct) best = { inv: v.inv, pct };
+    }
+    if (best && best.pct > 0) {
+      out.push({
+        icon: "fa-arrow-trend-up",
+        accent: "var(--amount-income)",
+        title: best.inv.name,
+        sub: `Top performer · +${best.pct.toFixed(1)}%`,
+      });
+    }
+
+    const sipMonths = new Set();
+    for (const t of allTransactions) {
+      if (t.sipInvestmentId || t.category === "SIP") {
+        const d = new Date(t.occurredAt || t.createdAt);
+        if (!Number.isNaN(d.getTime())) {
+          sipMonths.add(`${d.getFullYear()}-${d.getMonth()}`);
+        }
+      }
+    }
+    const mKey = (d) => `${d.getFullYear()}-${d.getMonth()}`;
+    let streak = 0;
+    const cursor = new Date();
+    cursor.setDate(1);
+    if (!sipMonths.has(mKey(cursor))) cursor.setMonth(cursor.getMonth() - 1);
+    while (sipMonths.has(mKey(cursor))) {
+      streak += 1;
+      cursor.setMonth(cursor.getMonth() - 1);
+    }
+    if (streak >= 2) {
+      out.push({
+        icon: "fa-fire",
+        accent: "#f97316",
+        title: `${streak}-month streak`,
+        sub: "Consistent SIP investing",
+      });
+    }
+
+    const summary = getPortfolioSummary(active);
+    const goalTarget = goals
+      .map((g) => ({ g, target: parseFloat(g.targetAmount) || 0 }))
+      .filter((x) => x.target > 0)
+      .sort((a, b) => b.target - a.target)
+      .find((x) => summary.totalCurrent < x.target * 3);
+    if (goalTarget) {
+      const pct = Math.min(
+        100,
+        Math.round((summary.totalCurrent / goalTarget.target) * 100),
+      );
+      out.push({
+        icon: "fa-bullseye",
+        accent: "var(--amount-investment)",
+        title: `${pct}% to ${goalTarget.g.name}`,
+        sub: `${INR.format(summary.totalCurrent)} of ${INR.format(goalTarget.target)}`,
+        progress: pct,
+      });
+    }
+
+    if (out.length < 2) {
+      const dates = allTransactions
+        .filter((t) => t.transactionType === "investment")
+        .map((t) => new Date(t.occurredAt || t.createdAt).getTime())
+        .filter((n) => !Number.isNaN(n));
+      if (dates.length) {
+        const first = new Date(Math.min(...dates));
+        const months = Math.max(
+          1,
+          Math.round((Date.now() - first.getTime()) / (30 * 86_400_000)),
+        );
+        out.push({
+          icon: "fa-seedling",
+          accent: "var(--amount-income)",
+          title: `${months} months investing`,
+          sub: `Since ${first.toLocaleDateString("en-IN", { month: "short", year: "numeric" })}`,
+        });
+      }
+    }
+
+    return out;
+  }, [investments, allTransactions, goals, userTypes]);
+
+  if (items.length === 0) return null;
+
+  return (
+    <div className="inv-momentum-strip">
+      {items.map((it, i) => (
+        <motion.div
+          key={i}
+          className="inv-mom-card"
+          style={{ "--mom-accent": it.accent }}
+          initial={{ opacity: 0, y: 14, scale: 0.95 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{
+            type: "spring",
+            stiffness: 420,
+            damping: 28,
+            delay: i * 0.07,
+          }}
+        >
+          {it.progress != null ? (
+            <div className="inv-mom-ring" style={{ "--p": it.progress }}>
+              <span>{it.progress}%</span>
+            </div>
+          ) : (
+            <span className="inv-mom-icon">
+              <i className={`fa-solid ${it.icon}`} />
+            </span>
+          )}
+          <div className="inv-mom-text">
+            <span className="inv-mom-title">{it.title}</span>
+            <span className="inv-mom-sub">{it.sub}</span>
+          </div>
+        </motion.div>
+      ))}
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────
 
 const InvestmentPage = () => {
@@ -2409,22 +3120,25 @@ const InvestmentPage = () => {
   const ledgerParam = searchParams.get("ledger");
   const highlightTxParam = searchParams.get("highlightTx");
 
-  useEffect(() => {
-    if (!highlightId) return;
-    // 400ms delay before highlight starts + 1.8s blink + buffer.
-    const t = setTimeout(() => setSearchParams({}, { replace: true }), 3500);
-    return () => clearTimeout(t);
-  }, [highlightId, setSearchParams]);
+  const investments = useInvestments();
+  const investmentsLoading = useInvestmentsLoading();
+  const ledgerLoading = useLedgerLoading();
+  const showSkeleton = investmentsLoading && investments.length === 0;
 
   useEffect(() => {
-    if (!ledgerParam) return;
+    if (!highlightId || showSkeleton) return;
+    // Only start the auto-clear once data is loaded (a deep link from another
+    // page may arrive before the investments have loaded); 400ms delay + 1.8s
+    // blink + buffer.
     const t = setTimeout(() => setSearchParams({}, { replace: true }), 3500);
     return () => clearTimeout(t);
-  }, [ledgerParam, setSearchParams]);
+  }, [highlightId, showSkeleton, setSearchParams]);
 
-  const investments = useSelector(
-    (state) => state.transactions.transactionData?.investments ?? [],
-  );
+  useEffect(() => {
+    if (!ledgerParam || showSkeleton) return;
+    const t = setTimeout(() => setSearchParams({}, { replace: true }), 3500);
+    return () => clearTimeout(t);
+  }, [ledgerParam, showSkeleton, setSearchParams]);
   const allTransactions = useSelector(
     (state) => state.transactions.transactionData?.transactions ?? [],
   );
@@ -2452,6 +3166,9 @@ const InvestmentPage = () => {
   const [pageTab, setPageTab] = useState("overview"); // "overview" | "portfolio"
   const [typeSel, setTypeSel] = useState("all"); // "all" | type key — Portfolio rail
   const savingInvestmentRef = useRef(false);
+  const navigate = useNavigate();
+  const advisoryAccessPages = useSelector((state) => state.access.pages);
+  const canSeeAdvisory = isPageAccessible("advisory", advisoryAccessPages);
   const userTypes = useSelector(
     (state) => state.transactions.transactionData?.investmentTypes ?? [],
   );
@@ -2506,12 +3223,12 @@ const InvestmentPage = () => {
     }
     return [...grouped.values()].sort((a, b) => {
       if (sortBy === "name") return a.name.localeCompare(b.name);
-      const ra = calcReturns(a);
-      const rb = calcReturns(b);
+      const ra = calcReturns(a, userTypes, allTransactions);
+      const rb = calcReturns(b, userTypes, allTransactions);
       if (sortBy === "returns") return rb.returnPct - ra.returnPct;
       return rb.currentValue - ra.currentValue;
     });
-  }, [filteredInvestments, sortBy]);
+  }, [filteredInvestments, sortBy, userTypes, allTransactions]);
 
   // Holdings = active investments. History = sold-out non-SIP unit lots and
   // soft-deleted SIPs (inHistory). Active SIPs (paused or not) stay in
@@ -2570,7 +3287,7 @@ const InvestmentPage = () => {
     }
     if (handledLedgerRef.current === ledgerParam) return;
     const t = setTimeout(() => {
-      const group = sortedInvestmentsRef.current.find(
+      const group = sortedInvestments.find(
         (g) => g.id === ledgerParam || g._ids?.includes(ledgerParam),
       );
       if (group) {
@@ -2579,13 +3296,44 @@ const InvestmentPage = () => {
       }
     }, 400);
     return () => clearTimeout(t);
-  }, [ledgerParam]);
+  }, [ledgerParam, sortedInvestments]);
+
+  useEffect(() => {
+    if (!investments.length || ledgerLoading) return;
+    const now = new Date();
+    const day = now.getDate();
+    const lastDay = new Date(
+      now.getFullYear(),
+      now.getMonth() + 1,
+      0,
+    ).getDate();
+    for (const inv of investments) {
+      if (inv.paused || inv.inHistory) continue;
+      if (resolveLogMode(inv) !== "auto") continue;
+      if (inv.startDate && new Date(inv.startDate) > now) continue;
+      if (inv.type === "sip") {
+        if (!inv.monthlyAmount || !inv.startDate) continue;
+        const sipDay = parseInt(inv.sipDay) || new Date(inv.startDate).getDate();
+        if (day >= Math.min(sipDay, lastDay)) {
+          dispatch(persistSIPInstalment(inv));
+        }
+      } else {
+        dispatch(persistAutoDeductInstalment(inv));
+      }
+    }
+  }, [investments, ledgerLoading, dispatch]);
 
   const handleSaveInvestment = useCallback(
     async (inv) => {
       if (savingInvestmentRef.current) return;
       savingInvestmentRef.current = true;
-      const isEdit = invModal && typeof invModal === "object";
+      // Route by identity, not by how the modal was opened: any payload whose
+      // id already exists is an UPDATE. Guards against a chooser-selected edit
+      // (which reuses the existing id) being pushed as a duplicate via the add
+      // path — the root cause of duplicate lots + double-counted balance.
+      const isEdit =
+        (invModal && typeof invModal === "object") ||
+        (investments ?? []).some((i) => i.id === inv.id);
       setInvModal(null);
       try {
         if (isEdit) {
@@ -2596,11 +3344,16 @@ const InvestmentPage = () => {
             dispatch(persistSIPInstalment(inv));
           }
         }
+        // Once a SIP carries a linked account, retroactively tag its past
+        // untagged instalments so history debits the same bank.
+        if (inv.type === "sip" && inv.accountId) {
+          dispatch(persistBackfillSipAccount(inv));
+        }
       } finally {
         savingInvestmentRef.current = false;
       }
     },
-    [dispatch, invModal],
+    [dispatch, invModal, investments],
   );
 
   const handleDeleteInvestment = useCallback((ids, name, count, inv) => {
@@ -2608,12 +3361,17 @@ const InvestmentPage = () => {
     setDeleteConfirm({ ids: many, name, count: many.length, inv });
   }, []);
 
-  const handleConfirmDelete = useCallback(() => {
-    if (!deleteConfirm) return;
-    deleteConfirm.ids.forEach((id) => dispatch(persistDeleteInvestment(id)));
-    dispatch(showToast({ message: `Deleted ${deleteConfirm.name}` }));
-    setDeleteConfirm(null);
-  }, [deleteConfirm, dispatch]);
+  const handleConfirmDelete = useCallback(
+    (opts = {}) => {
+      if (!deleteConfirm) return;
+      deleteConfirm.ids.forEach((id) =>
+        dispatch(persistDeleteInvestment(id, opts)),
+      );
+      dispatch(showToast({ message: `Deleted ${deleteConfirm.name}` }));
+      setDeleteConfirm(null);
+    },
+    [deleteConfirm, dispatch],
+  );
 
   const handleLedgerDelete = useCallback(
     (payload) => {
@@ -2817,68 +3575,114 @@ const InvestmentPage = () => {
     <>
       <FilterBar scope="investments" />
       <div className="dashboard">
-      <PortfolioHero investments={filteredInvestments} />
-      <div className="inv-page-tabs">
-        <button
-          className={`inv-page-tab${pageTab === "overview" ? " inv-page-tab--active" : ""}`}
-          onClick={() => setPageTab("overview")}
-        >
-          {pageTab === "overview" && (
-            <motion.span
-              layoutId="invPageTabPill"
-              className="inv-page-tab-pill"
-              transition={{ type: "spring", stiffness: 480, damping: 38 }}
-            />
-          )}
-          <i className="fa-solid fa-chart-pie" /> Overview
-        </button>
-        <button
-          className={`inv-page-tab${pageTab === "portfolio" ? " inv-page-tab--active" : ""}`}
-          onClick={() => setPageTab("portfolio")}
-        >
-          {pageTab === "portfolio" && (
-            <motion.span
-              layoutId="invPageTabPill"
-              className="inv-page-tab-pill"
-              transition={{ type: "spring", stiffness: 480, damping: 38 }}
-            />
-          )}
-          <i className="fa-solid fa-layer-group" /> Portfolio
-        </button>
-      </div>
-
-      {pageTab === "overview" && (
+      {showSkeleton && (
         <>
-          {/* ── Highlights (top/bottom, concentration, maturities) ──
-               Reads from the unfiltered investments list internally so the
-               date filter at the top of the page can't slice legacy holdings
-               out of a grouped position. */}
-          <PortfolioHighlights />
-
-          {/* ── Upcoming Reminders ──
-               Next SIP debit and next LIC premium for each active recurring
-               investment. Always reads from the unfiltered list so an active
-               date filter doesn't hide an obligation. */}
-          <ReminderSection />
-
-          {/* ── Section 80C tax tracker ──
-               Tax-saving headroom for the current FY. Surfaces only when the
-               user actually has 80C-eligible contributions. */}
-          <Section80CTracker />
-
-          {/* ── Allocation ring ── */}
-          <AllocationRing investments={filteredInvestments} theme={theme} />
-
-          {/* ── Sector & Category Breakdown ── */}
-          <CategoryBreakdown investments={filteredInvestments} />
-
-          {/* ── Portfolio Pulse ── */}
-          <InsightCards investments={filteredInvestments} />
+          <Skeleton className="inv-value-hero" count={1} lines={5} />
+          <div className="inv-holdings-list">
+            <Skeleton className="inv-holding-card" count={5} lines={4} />
+          </div>
+        </>
+      )}
+      {/* On the Portfolio tab the page collapses to just the holdings section
+          (see request): the hero + tab switcher are hidden so switching the
+          per-type filter never shrinks the page enough to yank the scroll
+          position, and a Back button restores the full overview. */}
+      {!showSkeleton && pageTab === "overview" && (
+        <>
+          <PortfolioHero investments={filteredInvestments} />
+          <div className="inv-page-tabs">
+            <button
+              className="inv-page-tab inv-page-tab--active"
+              onClick={() => setPageTab("overview")}
+            >
+              <motion.span
+                layoutId="invPageTabPill"
+                className="inv-page-tab-pill"
+                transition={{ type: "spring", stiffness: 480, damping: 38 }}
+              />
+              <i className="fa-solid fa-chart-pie" /> Overview
+            </button>
+            <button
+              className="inv-page-tab"
+              onClick={() => setPageTab("portfolio")}
+            >
+              <i className="fa-solid fa-layer-group" /> Portfolio
+            </button>
+          </div>
         </>
       )}
 
-      {pageTab === "portfolio" && (
+      {pageTab === "overview" && (
+        <>
+          <MomentumStrip investments={filteredInvestments} />
+
+          {canSeeAdvisory && (
+            <Reveal>
+              <button
+                type="button"
+                className="inv-advisory-cta"
+                onClick={() => navigate("/Advisory")}
+              >
+                <span className="inv-advisory-cta-icon">
+                  <i className="fa-solid fa-lightbulb" />
+                </span>
+                <span className="inv-advisory-cta-text">
+                  <span className="inv-advisory-cta-title">Advisory</span>
+                  <span className="inv-advisory-cta-sub">
+                    Insights and recommendations for your portfolio
+                  </span>
+                </span>
+                <i className="fa-solid fa-arrow-up-right-from-square inv-advisory-cta-arrow" />
+              </button>
+            </Reveal>
+          )}
+
+          <Reveal>
+            <PortfolioHighlights />
+          </Reveal>
+
+          <Reveal>
+            <ReminderSection />
+          </Reveal>
+
+          <Reveal>
+            <Section80CTracker />
+          </Reveal>
+
+          <Reveal>
+            <PortfolioHealth investments={filteredInvestments} />
+          </Reveal>
+
+          <Reveal>
+            <AllocationRing
+              investments={filteredInvestments}
+              onSelectType={(type) => {
+                setTypeSel(type);
+                setPageTab("portfolio");
+                window.scrollTo({ top: 0, behavior: "smooth" });
+              }}
+            />
+          </Reveal>
+
+          <Reveal>
+            <CategoryBreakdown investments={filteredInvestments} />
+          </Reveal>
+
+          <Reveal>
+            <InsightCards investments={filteredInvestments} />
+          </Reveal>
+        </>
+      )}
+
+      {!showSkeleton && pageTab === "portfolio" && (
         <div className="dash-section inv-holdings-section">
+          <button
+            type="button"
+            className="inv-back-btn"
+            onClick={() => setPageTab("overview")}
+          >
+            <i className="fa-solid fa-arrow-left" /> Back to overview
+          </button>
           <div className="inv-tabs">
             <button
               className={`inv-tab${tab === "holdings" ? " inv-tab--active" : ""}`}
@@ -3040,6 +3844,33 @@ const InvestmentPage = () => {
               items: groupMap.get(typeKey),
             }));
 
+            // ── Totals summary strip ──
+            // One-line invested / current / return for whatever's currently in
+            // view: the grand total on "All", or the selected type's total.
+            // Cash-flow types (chit fund, APY) drop the % since it isn't
+            // meaningful for them. Pinned above the scroll box so it stays in
+            // the viewport as the list scrolls.
+            const totalsSet = activeType === "all" ? visible : filtered;
+            let totInvested = 0;
+            let totCurrent = 0;
+            for (const i of totalsSet) {
+              const r = calcReturns(i, userTypes, allTransactions);
+              totInvested += r.investedAmount;
+              totCurrent += r.currentValue;
+            }
+            const totReturn = totCurrent - totInvested;
+            const totPct =
+              totInvested > 0 ? (totReturn / totInvested) * 100 : 0;
+            const totalsIsCashflow =
+              activeType !== "all" &&
+              getInvestmentMathProfile(activeType, userTypes) === "cashflow";
+            const totalsLabel =
+              activeType === "all" ? "All holdings" : typeMeta(activeType).label;
+            const totPos = totReturn >= 0;
+            const totColor = totPos
+              ? "var(--amount-income)"
+              : "var(--amount-expense)";
+
             const renderCard = (inv) => (
               <HoldingCard
                 key={inv.id}
@@ -3112,7 +3943,39 @@ const InvestmentPage = () => {
                     })}
                   </div>
                 )}
-                <div className="inv-holdings-list" key={activeType}>
+                <div className="inv-type-total">
+                  <span className="inv-type-total-label">{totalsLabel}</span>
+                  <div className="inv-type-total-stats">
+                    <span className="inv-type-total-stat">
+                      <span className="inv-type-total-cap">Invested</span>
+                      <span className="inv-type-total-val">
+                        {INR.format(totInvested)}
+                      </span>
+                    </span>
+                    <span className="inv-type-total-stat">
+                      <span className="inv-type-total-cap">
+                        {totalsIsCashflow ? "Current" : "Now"}
+                      </span>
+                      <span
+                        className="inv-type-total-val"
+                        style={totalsIsCashflow ? undefined : { color: totColor }}
+                      >
+                        {INR.format(totCurrent)}
+                      </span>
+                    </span>
+                    {!totalsIsCashflow && totInvested > 0 && (
+                      <span
+                        className="inv-type-total-ret"
+                        style={{ color: totColor }}
+                      >
+                        {totPos ? "+" : ""}
+                        {totPct.toFixed(1)}%
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <Scroller className="inv-holdings-scroll" key={activeType}>
+                  <div className="inv-holdings-list">
                   {groups.map((g) => (
                     <div className="inv-type-group" key={g.typeKey}>
                       {showHeads && (
@@ -3135,7 +3998,8 @@ const InvestmentPage = () => {
                       {g.items.map(renderCard)}
                     </div>
                   ))}
-                </div>
+                  </div>
+                </Scroller>
               </>
             );
           })()}
@@ -3159,119 +4023,15 @@ const InvestmentPage = () => {
         </Modal>
       )}
 
-      {deleteConfirm &&
-        (() => {
-          const inv = deleteConfirm.inv;
-          const info = inv ? getTypeInfo(inv.type) : null;
-          const { investedAmount, currentValue, absoluteReturn, returnPct } =
-            inv ? calcReturns(inv) : {};
-          const pos = absoluteReturn >= 0;
-          const retColor = pos
-            ? "var(--amount-income)"
-            : "var(--amount-expense)";
-          return (
-            <Modal
-              open={!!deleteConfirm}
-              onClose={() => setDeleteConfirm(null)}
-              title="Remove Investment"
-            >
-              <div className="inv-delete-confirm">
-                {inv && (
-                  <div className="inv-delete-asset-preview">
-                    <span
-                      className="inv-type-badge"
-                      style={{
-                        background: info.color + "22",
-                        color: info.color,
-                      }}
-                    >
-                      <i className={`fa-solid ${info.icon}`} /> {info.label}
-                    </span>
-                    <p className="inv-holding-name">{inv.name}</p>
-                    {info.subtype === "unit" && (
-                      <p className="inv-holding-meta">
-                        {inv.quantity} units
-                        {inv._lots > 1 && (
-                          <span className="inv-orders-badge">
-                            {" "}
-                            {inv._lots} orders
-                          </span>
-                        )}
-                        {" · "}
-                        {inv._lots > 1 ? "Avg buy" : "Buy"}{" "}
-                        {INR.format(inv.buyPrice)} → Now{" "}
-                        {INR.format(inv.currentPrice)}
-                      </p>
-                    )}
-                    {info.subtype === "fixed" && (
-                      <p className="inv-holding-meta">
-                        {inv.interestRate}% p.a. · {inv.tenureMonths} months
-                      </p>
-                    )}
-                    <div className="inv-holding-amounts">
-                      <div>
-                        <p className="inv-holding-amt-label">Invested</p>
-                        <p className="inv-holding-amt">
-                          {INR.format(investedAmount)}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="inv-holding-amt-label">Current</p>
-                        <p
-                          className="inv-holding-amt"
-                          style={{ color: retColor }}
-                        >
-                          {INR.format(currentValue)}
-                        </p>
-                      </div>
-                      <div>
-                        <p className="inv-holding-amt-label">Returns</p>
-                        <p
-                          className="inv-holding-amt"
-                          style={{ color: retColor }}
-                        >
-                          {pos ? "+" : ""}
-                          {INR.format(absoluteReturn)}
-                          <span className="inv-holding-pct">
-                            {" "}
-                            ({pos ? "+" : ""}
-                            {returnPct.toFixed(1)}%)
-                          </span>
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-                <p className="inv-delete-confirm-msg">
-                  {deleteConfirm.count > 1 ? (
-                    <>
-                      Remove all <strong>{deleteConfirm.count} orders</strong>?
-                      This cannot be undone.
-                    </>
-                  ) : (
-                    <>Remove this holding? This cannot be undone.</>
-                  )}
-                </p>
-                <div className="form-actions">
-                  <button
-                    type="button"
-                    className="cancel-button"
-                    onClick={() => setDeleteConfirm(null)}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    className="inv-delete-confirm-btn"
-                    onClick={handleConfirmDelete}
-                  >
-                    <i className="fa-solid fa-trash-can" /> Delete
-                  </button>
-                </div>
-              </div>
-            </Modal>
-          );
-        })()}
+      {deleteConfirm && (
+        <DeleteInvestmentModal
+          deleteConfirm={deleteConfirm}
+          userTypes={userTypes}
+          allTransactions={allTransactions}
+          onConfirm={handleConfirmDelete}
+          onClose={() => setDeleteConfirm(null)}
+        />
+      )}
 
       {hardDeleteConfirm && (
         <Modal

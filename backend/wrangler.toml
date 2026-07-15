@@ -1,0 +1,17 @@
+name = "espresso-expenses-backend"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+[triggers]
+crons = ["0 */6 * * *"]
+
+[vars]
+ALLOWLIST = "nishanth.donthi@gmail.com"
+ADMIN = "nishanth.donthi@gmail.com"
+APP_ORIGIN = "https://espresso-and-expenses-14371.web.app,http://localhost:5173"
+# Advisory Q&A (optional). Non-secret config lives here; the key is a secret —
+# set it with:  wrangler secret put LLM_API_KEY
+# Leave LLM_API_KEY unset to keep the "Ask" feature disabled (returns 503).
+LLM_API_URL = "https://api.openai.com/v1/chat/completions"
+LLM_MODEL = "gpt-4o-mini"

@@ -31,6 +31,7 @@ function txPeriodKey(d, frequency) {
   const yr = d.getFullYear();
   const mo = d.getMonth();
   if (frequency === "yearly") return `${yr}`;
+  if (frequency === "halfyearly") return `${yr}-H${Math.floor(mo / 6)}`;
   if (frequency === "quarterly") return `${yr}-Q${Math.floor(mo / 3)}`;
   return `${yr}-${mo}`;
 }
@@ -42,6 +43,18 @@ function walkPeriods(startIso, endDate, frequency) {
     const curYr = endDate.getFullYear();
     for (let yr = start.getFullYear(); yr < curYr; yr++) {
       out.push({ key: `${yr}`, year: yr });
+    }
+    return out;
+  }
+  if (frequency === "halfyearly") {
+    let yr = start.getFullYear();
+    let h = Math.floor(start.getMonth() / 6);
+    const curYr = endDate.getFullYear();
+    const curH = Math.floor(endDate.getMonth() / 6);
+    while (yr < curYr || (yr === curYr && h < curH)) {
+      out.push({ key: `${yr}-H${h}`, year: yr, half: h });
+      h++;
+      if (h > 1) { h = 0; yr++; }
     }
     return out;
   }

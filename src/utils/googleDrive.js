@@ -11,6 +11,7 @@ const LS_EXPIRY = "gapi_token_expiry";
 let tokenClient = null;
 let accessToken = null;
 let tokenExpiry = 0;
+let pendingToken = null;
 
 // Restore token from localStorage so the app survives tab close / reopen.
 {
@@ -84,6 +85,7 @@ export function clearAccessToken() {
   accessToken = null;
   tokenExpiry = 0;
   tokenClient = null;
+  pendingToken = null;
   localStorage.removeItem(LS_TOKEN);
   localStorage.removeItem(LS_EXPIRY);
 }
@@ -152,16 +154,21 @@ export async function reconnectDrive() {
 export async function getAccessToken() {
   await waitForGoogle();
   initClient();
-  return new Promise((resolve, reject) => {
-    if (isTokenValid()) {
-      resolve(accessToken);
-      return;
-    }
 
+  if (isTokenValid()) return accessToken;
+
+  // Coalesce concurrent callers: the tokenClient has a single mutable callback
+  // slot, so two simultaneous requests (e.g. Drive init + page-access load)
+  // would clobber each other and leave one promise hanging. Share one in-flight
+  // request instead.
+  if (pendingToken) return pendingToken;
+
+  pendingToken = new Promise((resolve, reject) => {
     // Brave (and iOS WebKit) silently drop the hidden-iframe used for prompt:""
     // silent refresh, leaving the callback unfired and the Promise hanging forever.
     // Treat no response within 6 s as a reconnect signal.
     const timeout = setTimeout(() => {
+      pendingToken = null;
       const err = new Error("needs-reconnect");
       err.code = "needs-reconnect";
       reject(err);
@@ -169,6 +176,7 @@ export async function getAccessToken() {
 
     tokenClient.callback = (response) => {
       clearTimeout(timeout);
+      pendingToken = null;
       if (response.error) {
         const err = new Error("needs-reconnect");
         err.code = "needs-reconnect";
@@ -180,6 +188,8 @@ export async function getAccessToken() {
     };
     tokenClient.requestAccessToken({ prompt: "", hint: getUserEmail() });
   });
+
+  return pendingToken;
 }
 
 async function driveRequest(url, options = {}, _retry = true) {
@@ -229,6 +239,54 @@ export async function createOrFetchFile(fileName, initialData) {
   );
   const data = await downloadRes.json();
   return { fileId, data, created: false };
+}
+
+export async function uploadFile(fileName, data) {
+  const metadata = { name: fileName, mimeType: "application/json" };
+  const form = new FormData();
+  form.append(
+    "metadata",
+    new Blob([JSON.stringify(metadata)], { type: "application/json" }),
+  );
+  form.append(
+    "file",
+    new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }),
+  );
+  const res = await driveRequest(
+    "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id",
+    { method: "POST", body: form },
+  );
+  if (!res.ok) throw new Error(`Drive upload failed (${res.status})`);
+  const created = await res.json();
+  return created.id;
+}
+
+export async function deleteFile(fileId) {
+  const res = await driveRequest(
+    `https://www.googleapis.com/drive/v3/files/${fileId}`,
+    { method: "DELETE" },
+  );
+  if (!res.ok && res.status !== 404) {
+    throw new Error(`Drive delete failed (${res.status})`);
+  }
+}
+
+export async function listFiles(query) {
+  const q = encodeURIComponent(`${query} and trashed=false`);
+  const res = await driveRequest(
+    `https://www.googleapis.com/drive/v3/files?q=${q}&fields=files(id,name,modifiedTime,size)&orderBy=modifiedTime desc`,
+  );
+  if (!res.ok) throw new Error(`Drive list failed (${res.status})`);
+  const { files } = await res.json();
+  return files ?? [];
+}
+
+export async function downloadFile(fileId) {
+  const res = await driveRequest(
+    `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+  );
+  if (!res.ok) throw new Error(`Drive download failed (${res.status})`);
+  return res.json();
 }
 
 const SAVE_ATTEMPTS = 3;

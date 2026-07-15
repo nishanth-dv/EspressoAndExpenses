@@ -1,4 +1,28 @@
 import { NSE_STOCKS } from "./nseStocks";
+import { getAccessToken } from "./googleDrive";
+
+const API = import.meta.env.VITE_API_URL ?? "";
+
+// Reliable server-side quote — the Cloudflare Worker fetches Yahoo without CORS
+// or the flaky public proxies the browser is stuck with. Returns null (rather
+// than throwing) on any failure so the caller can fall back gracefully.
+async function fetchBackendQuote(symbol) {
+  if (!API) return null;
+  try {
+    const token = await getAccessToken();
+    if (!token) return null;
+    const res = await fetch(
+      `${API}/quote?symbol=${encodeURIComponent(symbol)}`,
+      { headers: { Authorization: `Bearer ${token}` } },
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    const price = data?.price;
+    return typeof price === "number" ? price : null;
+  } catch {
+    return null;
+  }
+}
 
 // ── Mutual Funds — MFAPI.in ───────────────────────────
 
@@ -81,7 +105,7 @@ const YAHOO_HOSTS = [
 const PROXY_WRAPPERS = [
   (url) => `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
   (url) => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-  (url) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
+  (url) => `https://api.codetabs.com/v1/proxy/?quest=${encodeURIComponent(url)}`,
 ];
 
 async function fetchWithTimeout(url, ms = 8000) {
@@ -110,6 +134,12 @@ async function proxyFetch(path) {
 
 async function fetchYahooPrice(ticker) {
   const sym = ticker.toUpperCase();
+
+  // Try the reliable backend proxy first — no CORS, no third-party proxy
+  // outages (the #1 cause of "price refresh failed" for stocks).
+  const backendPrice = await fetchBackendQuote(sym);
+  if (backendPrice != null && backendPrice > 0) return backendPrice;
+
   const path = `/v8/finance/chart/${encodeURIComponent(sym)}?interval=1d&range=1d`;
   let res;
   try {
@@ -232,12 +262,16 @@ export async function fetchSIPData(schemeCode, monthlyAmount, startDate, sipDay)
 
 // ── Public entry point ────────────────────────────────
 
+const ceil2 = (n) => Math.ceil((Number(n) || 0) * 100 - 1e-9) / 100;
+
 export async function fetchCurrentPrice(type, ticker) {
   if (!ticker?.trim()) throw new Error("No ticker/identifier set");
   const t = ticker.trim();
-  if (type === "mf" || type === "sip") return fetchMFPrice(t);
-  if (type === "crypto") return fetchCryptoPrice(t);
-  return fetchYahooPrice(t);
+  let price;
+  if (type === "mf" || type === "sip") price = await fetchMFPrice(t);
+  else if (type === "crypto") price = await fetchCryptoPrice(t);
+  else price = await fetchYahooPrice(t);
+  return ceil2(price);
 }
 
 export function tickerPlaceholder(type) {

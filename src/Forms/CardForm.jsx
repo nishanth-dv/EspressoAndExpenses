@@ -3,7 +3,7 @@ import PropTypes from "prop-types";
 import { useSelector } from "react-redux";
 import DayPicker from "./DayPicker";
 import OptionField from "../components/OptionField";
-import { BANKS as DEFAULT_BANKS } from "../utils/constants";
+import { BANKS as DEFAULT_BANKS, CATEGORIES } from "../utils/constants";
 
 function randomColor() {
   const h = Math.floor(Math.random() * 360);
@@ -20,6 +20,10 @@ const makeEmpty = () => ({
   dueDay: "",
   color: randomColor(),
   notes: "",
+  annualFee: "",
+  feeWaiverSpend: "",
+  rewardBase: "",
+  rewardCategories: [],
 });
 
 function fromExisting(e) {
@@ -31,12 +35,29 @@ function fromExisting(e) {
     dueDay: e.dueDay ? String(e.dueDay) : "",
     color: e.color ?? randomColor(),
     notes: e.notes ?? "",
+    annualFee: e.annualFee ?? "",
+    feeWaiverSpend: e.feeWaiverSpend ?? "",
+    rewardBase: e.rewardBase ?? "",
+    rewardCategories: Array.isArray(e.rewardCategories)
+      ? e.rewardCategories.map((r) => ({
+          category: r.category ?? "",
+          rate: r.rate ?? "",
+          _k: crypto.randomUUID(),
+        }))
+      : [],
   };
 }
 
 const CardForm = ({ onSubmit, onCancel, existing, cards = [] }) => {
   const [form, setForm] = useState(() => existing ? fromExisting(existing) : makeEmpty());
   const [combine, setCombine] = useState(() => !!existing?.creditGroupId);
+  const [showRewards, setShowRewards] = useState(
+    () =>
+      !!existing &&
+      (existing.annualFee ||
+        existing.rewardBase ||
+        (existing.rewardCategories?.length ?? 0) > 0),
+  );
   const BANKS = useSelector(
     (state) =>
       state.transactions.transactionData?.lists?.banks ?? DEFAULT_BANKS,
@@ -78,9 +99,47 @@ const CardForm = ({ onSubmit, onCancel, existing, cards = [] }) => {
     setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
   }
 
+  const addRewardCat = () =>
+    setForm((f) => ({
+      ...f,
+      rewardCategories: [
+        ...f.rewardCategories,
+        { category: "", rate: "", _k: crypto.randomUUID() },
+      ],
+    }));
+  const updateRewardCat = (i, key, val) =>
+    setForm((f) => {
+      const rc = f.rewardCategories.map((r, idx) =>
+        idx === i ? { ...r, [key]: val } : r,
+      );
+      return { ...f, rewardCategories: rc };
+    });
+  const removeRewardCat = (i) =>
+    setForm((f) => ({
+      ...f,
+      rewardCategories: f.rewardCategories.filter((_, idx) => idx !== i),
+    }));
+
+  // Categories still available to add as a bonus row (no duplicates).
+  const usedCats = new Set(form.rewardCategories.map((r) => r.category));
+
   function handleSubmit(e) {
     e.preventDefault();
     if (!form.dueDay) return;
+    const numOrNull = (v) => (v === "" || v == null ? null : parseFloat(v));
+    const rewardFields = {
+      annualFee: numOrNull(form.annualFee),
+      feeWaiverSpend: numOrNull(form.feeWaiverSpend),
+      rewardBase: numOrNull(form.rewardBase),
+      rewardCategories: form.rewardCategories
+        .filter(
+          (r) =>
+            r.category &&
+            r.rate !== "" &&
+            Number.isFinite(parseFloat(r.rate)),
+        )
+        .map((r) => ({ category: r.category, rate: parseFloat(r.rate) })),
+    };
     const card = existing
       ? {
           ...existing,
@@ -88,6 +147,7 @@ const CardForm = ({ onSubmit, onCancel, existing, cards = [] }) => {
           limit: parseFloat(form.limit),
           statementDay: form.statementDay ? parseInt(form.statementDay) : null,
           dueDay: parseInt(form.dueDay),
+          ...rewardFields,
         }
       : {
           ...form,
@@ -96,6 +156,7 @@ const CardForm = ({ onSubmit, onCancel, existing, cards = [] }) => {
           statementDay: form.statementDay ? parseInt(form.statementDay) : null,
           dueDay: parseInt(form.dueDay),
           createdAt: new Date().toISOString(),
+          ...rewardFields,
         };
     const combineBank = combine && siblings.length > 0 ? form.bank : null;
     onSubmit(card, { combineBank });
@@ -123,7 +184,7 @@ const CardForm = ({ onSubmit, onCancel, existing, cards = [] }) => {
         label="Bank"
         required
         placeholder=""
-        options={BANKS}
+        options={BANKS.map((b) => ({ value: b, label: b, bank: b }))}
       />
 
       {siblings.length > 0 && (
@@ -199,6 +260,116 @@ const CardForm = ({ onSubmit, onCancel, existing, cards = [] }) => {
           placeholder=" "
         />
         <label>Notes (optional)</label>
+      </div>
+
+      <div className="card-rewards">
+        <button
+          type="button"
+          className="card-rewards-toggle"
+          onClick={() => setShowRewards((s) => !s)}
+          aria-expanded={showRewards}
+        >
+          <i
+            className={`fa-solid fa-chevron-${showRewards ? "down" : "right"}`}
+          />
+          Rewards &amp; fees (optional)
+        </button>
+
+        {showRewards && (
+          <div className="card-rewards-body">
+            <p className="card-rewards-hint">
+              Add these to unlock best-card routing and fee-vs-benefit tips in
+              Advisory.
+            </p>
+
+            <div className="field">
+              <input
+                name="annualFee"
+                type="number"
+                inputMode="decimal"
+                value={form.annualFee}
+                onChange={handleChange}
+                placeholder=" "
+              />
+              <label>Annual fee (₹)</label>
+            </div>
+
+            <div className="field">
+              <input
+                name="feeWaiverSpend"
+                type="number"
+                inputMode="decimal"
+                value={form.feeWaiverSpend}
+                onChange={handleChange}
+                placeholder=" "
+              />
+              <label>Fee waived at yearly spend (₹)</label>
+            </div>
+
+            <div className="field">
+              <input
+                name="rewardBase"
+                type="number"
+                inputMode="decimal"
+                step="0.1"
+                value={form.rewardBase}
+                onChange={handleChange}
+                placeholder=" "
+              />
+              <label>Base reward rate (%)</label>
+            </div>
+
+            <div className="card-reward-cats">
+              <span className="card-reward-cats-label">
+                Bonus categories (optional)
+              </span>
+              {form.rewardCategories.map((r, i) => (
+                <div className="card-reward-row" key={r._k}>
+                  <select
+                    className="card-reward-select"
+                    value={r.category}
+                    onChange={(e) =>
+                      updateRewardCat(i, "category", e.target.value)
+                    }
+                  >
+                    <option value="">Category…</option>
+                    {CATEGORIES.filter(
+                      (c) => c === r.category || !usedCats.has(c),
+                    ).map((c) => (
+                      <option key={c} value={c}>
+                        {c}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    className="card-reward-rate"
+                    type="number"
+                    inputMode="decimal"
+                    step="0.1"
+                    value={r.rate}
+                    onChange={(e) => updateRewardCat(i, "rate", e.target.value)}
+                    placeholder="%"
+                  />
+                  <button
+                    type="button"
+                    className="card-reward-remove"
+                    onClick={() => removeRewardCat(i)}
+                    aria-label="Remove category"
+                  >
+                    <i className="fa-solid fa-xmark" />
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                className="card-reward-add"
+                onClick={addRewardCat}
+              >
+                <i className="fa-solid fa-plus" /> Add category
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="form-actions">

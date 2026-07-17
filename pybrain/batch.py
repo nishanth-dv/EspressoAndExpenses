@@ -99,8 +99,13 @@ def sb(method, path, body=None, upsert=False):
     }
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
-    with urllib.request.urlopen(req, timeout=60) as r:
-        return r.status
+    try:
+        with urllib.request.urlopen(req, timeout=60) as r:
+            return r.status
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode("utf-8", "ignore")[:600]
+        print(f"Supabase {method} {path.split('?')[0]} -> {e.code}: {detail}")
+        raise
 
 
 def write(collected, universe_size, today):

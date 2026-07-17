@@ -18,6 +18,13 @@ dist-ssr
 # graphify generated output
 graphify-out/
 
+# Python
+__pycache__/
+*.pyc
+
+# Local example/template files
+*.example
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

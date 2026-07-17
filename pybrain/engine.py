@@ -416,5 +416,9 @@ def run_signals(candles, ctx=None):
         scored = with_signal_confidence({**r, "id": signal_id(symbol, interval, r["type"], r["time"]), "factors": factors})
         scored["sortValue"] = round(scored["factors"]["signalStrength"] * scored["confidence"])
         signals.append(scored)
+    uniq = {}
+    for s in signals:
+        uniq.setdefault(s["id"], s)
+    signals = list(uniq.values())
     signals.sort(key=lambda s: s["sortValue"], reverse=True)
     return {"symbol": symbol, "timeframe": timeframe, "interval": interval, "generatedAt": candles[last]["time"], "engine": ENGINE, "candleCount": len(candles), "signals": signals}

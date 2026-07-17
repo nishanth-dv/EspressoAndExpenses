@@ -61,7 +61,10 @@ export function runSignals(candles, ctx = {}) {
     return scored;
   });
 
-  signals.sort((a, b) => b.sortValue - a.sortValue);
+  const byId = new Map();
+  for (const s of signals) if (!byId.has(s.id)) byId.set(s.id, s);
+  const unique = [...byId.values()];
+  unique.sort((a, b) => b.sortValue - a.sortValue);
 
   return {
     symbol,
@@ -70,6 +73,6 @@ export function runSignals(candles, ctx = {}) {
     generatedAt: ctx.now ?? candles[lastIndex].time,
     engine: ENGINE,
     candleCount: candles.length,
-    signals,
+    signals: unique,
   };
 }

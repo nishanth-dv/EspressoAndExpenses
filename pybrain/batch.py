@@ -88,11 +88,14 @@ def scan(symbols, today, limit=None):
     return collected
 
 
-def sb(method, path, body=None):
+def sb(method, path, body=None, upsert=False):
     url = f"{SUPABASE_URL}/rest/v1/{path}"
+    prefer = "return=minimal"
+    if upsert:
+        prefer += ",resolution=merge-duplicates"
     headers = {
         "apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}",
-        "Content-Type": "application/json", "Prefer": "return=minimal",
+        "Content-Type": "application/json", "Prefer": prefer,
     }
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(url, data=data, headers=headers, method=method)
@@ -109,9 +112,8 @@ def write(collected, universe_size, today):
         return
     sb("DELETE", f"grow_signals?scan_date=eq.{today}")
     for i in range(0, len(collected), 500):
-        sb("POST", "grow_signals", collected[i : i + 500])
-    sb("DELETE", f"grow_scans?scan_date=eq.{today}")
-    sb("POST", "grow_scans", {"scan_date": today, "universe_size": universe_size, "signal_count": len(collected)})
+        sb("POST", "grow_signals", collected[i : i + 500], upsert=True)
+    sb("POST", "grow_scans", {"scan_date": today, "universe_size": universe_size, "signal_count": len(collected)}, upsert=True)
     print(f"wrote {len(collected)} signals for {today} ({universe_size} names)")
 
 
@@ -124,7 +126,14 @@ def main():
     print(f"universe: {len(universe)} symbols")
     collected = scan(universe, today, limit)
     collected.sort(key=lambda r: (BANDRANK[r["band"]], r["confidence"], r["liquidity"]), reverse=True)
-    collected = collected[:200]
+    seen = set()
+    unique = []
+    for r in collected:
+        if r["id"] in seen:
+            continue
+        seen.add(r["id"])
+        unique.append(r)
+    collected = unique[:200]
     write(collected, len(universe), today)
 
 

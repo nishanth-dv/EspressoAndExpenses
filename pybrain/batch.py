@@ -115,10 +115,12 @@ def write(collected, universe_size, today):
             print(f"  {str(r['confidence']).rjust(3)} {r['band'][:3]}  {r['symbol'].ljust(14)} {r['name']} ({r['direction']})")
         print(f"\n{len(collected)} recent (<= {RECENCY_MAX} bars) signals across {universe_size} names")
         return
+    ids = [r["id"] for r in collected]
+    print(f"writing {len(collected)} rows ({len(set(ids))} unique ids) for {today}")
     sb("DELETE", f"grow_signals?scan_date=eq.{today}")
     for i in range(0, len(collected), 500):
-        sb("POST", "grow_signals", collected[i : i + 500], upsert=True)
-    sb("POST", "grow_scans", {"scan_date": today, "universe_size": universe_size, "signal_count": len(collected)}, upsert=True)
+        sb("POST", "grow_signals?on_conflict=id,scan_date", collected[i : i + 500], upsert=True)
+    sb("POST", "grow_scans?on_conflict=scan_date", {"scan_date": today, "universe_size": universe_size, "signal_count": len(collected)}, upsert=True)
     print(f"wrote {len(collected)} signals for {today} ({universe_size} names)")
 
 

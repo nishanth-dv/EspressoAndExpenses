@@ -1,18 +1,22 @@
 import { useState } from "react";
+import { motion } from "framer-motion";
 import { NavLink, Outlet, useNavigate, useLocation } from "react-router-dom";
 import AdvisoryReport from "./AdvisoryReport";
 import { useInvestments } from "../../hooks/useInvestments";
 import { useLedger } from "../../hooks/useLedger";
 
-// Tabs per domain. "Grow" has no tabs yet — its landing is a single page — so
-// its subnav stays hidden until make-money features ship.
+// Tabs per domain.
 const ANALYSE_TABS = [
   { to: "understand", label: "Understand" },
   { to: "review", label: "Review" },
   { to: "actions", label: "Actions" },
   { to: "ask", label: "Ask" },
 ];
-const GROW_TABS = [];
+const GROW_TABS = [
+  { to: "/Advisory/grow", label: "Overview", end: true },
+  { to: "/Advisory/grow/charts", label: "Charts" },
+  { to: "/Advisory/grow/signals", label: "Signals" },
+];
 
 // "home" = the chooser at /Advisory; "grow" = make-money domain; anything else
 // under /Advisory is an analysis lens.
@@ -63,11 +67,23 @@ export default function AdvisoryLayout() {
             <NavLink
               key={t.to}
               to={t.to}
+              end={t.end}
               className={({ isActive }) =>
                 `adv-subnav-tab${isActive ? " adv-subnav-tab--active" : ""}`
               }
             >
-              {t.label}
+              {({ isActive }) => (
+                <>
+                  {isActive && (
+                    <motion.span
+                      layoutId="advSubnavPill"
+                      className="adv-subnav-tab-pill"
+                      transition={{ type: "spring", stiffness: 480, damping: 38 }}
+                    />
+                  )}
+                  {t.label}
+                </>
+              )}
             </NavLink>
           ))}
         </div>

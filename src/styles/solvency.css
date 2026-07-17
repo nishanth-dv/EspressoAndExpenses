@@ -378,6 +378,7 @@ html[data-skin="glass"] .sol-insight {
   height: 26px;
   display: grid;
   place-items: center;
+  padding: 0;
   border-radius: 9px;
   background: color-mix(in srgb, var(--accent, #5b8dee) 16%, transparent);
   border: 1px solid color-mix(in srgb, var(--accent, #5b8dee) 30%, transparent);
@@ -385,24 +386,49 @@ html[data-skin="glass"] .sol-insight {
     color-mix(in srgb, var(--accent, #5b8dee) 42%, transparent);
   color: var(--accent, #5b8dee);
   font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  transition: transform 0.14s ease;
   z-index: 1;
 }
 
-.sol-df-flag {
-  position: absolute;
-  right: 0;
-  top: 2px;
-  display: grid;
-  place-items: center;
-  width: 26px;
-  height: 26px;
-  border-radius: 9px;
-  background: color-mix(in srgb, var(--amount-income) 18%, transparent);
-  border: 1px solid color-mix(in srgb, var(--amount-income) 34%, transparent);
-  color: var(--amount-income);
-  font-size: 12px;
-  z-index: 2;
+.sol-df-marker:hover,
+.sol-df-marker--active {
+  transform: translateX(-50%) scale(1.14);
+  z-index: 3;
 }
+
+.sol-df-marker--active {
+  box-shadow:
+    0 0 0 3px color-mix(in srgb, var(--accent, #5b8dee) 26%, transparent),
+    0 4px 12px -4px color-mix(in srgb, var(--accent, #5b8dee) 50%, transparent);
+}
+
+.sol-df-caption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 12px;
+  padding: 8px 11px;
+  border-radius: 9px;
+  background: var(--surface-active);
+  font-size: 12px;
+}
+
+.sol-df-caption-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.sol-df-caption-date {
+  color: var(--text-label);
+  white-space: nowrap;
+}
+
 
 html[data-skin="glass"] .sol-df {
   background: var(--surface-bg);
@@ -458,14 +484,81 @@ html[data-skin="glass"] .sol-overview-hero {
 .sol-overview-hero {
   display: flex;
   gap: 20px;
+  justify-content: center;
   align-items: center;
   flex-wrap: wrap;
+  width: 100%;
+  box-sizing: border-box;
+  text-align: left;
   background: var(--card-bg);
   border: 1px solid var(--card-border);
   border-radius: 16px;
   padding: 16px 18px;
   margin-bottom: 14px;
   box-shadow: var(--card-shadow);
+  font-family: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.sol-overview-hero:hover {
+  border-color: var(--surface-border-open);
+}
+
+.sol-score-summary {
+  margin: 0 0 6px;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+  color: var(--text-primary);
+}
+
+.sol-score-expand {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-label);
+}
+
+.sol-score-breakdown {
+  flex: 1 0 100%;
+  overflow: hidden;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+}
+
+.sol-score-breakdown p {
+  margin: 0 0 8px;
+}
+
+.sol-score-breakdown p:last-child {
+  margin-bottom: 0;
+}
+
+.sol-score-factors {
+  list-style: none;
+  margin: 0 0 8px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.sol-score-factors li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sol-score-factors i {
+  width: 14px;
+  text-align: center;
+  color: var(--text-label);
+  flex-shrink: 0;
 }
 
 .sol-score-wrap {
@@ -482,12 +575,16 @@ html[data-skin="glass"] .sol-overview-hero {
 
 .sol-score-center {
   position: absolute;
-  inset: 0;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 2px;
+  text-align: center;
+  width: max-content;
 }
 
 .sol-score-num {
@@ -1795,19 +1892,8 @@ html[data-skin="glass"] .sol-due-item {
    overscroll-behavior is `auto` (chained) so once the inner scroll hits its
    top/bottom, the wheel/touch falls through and continues scrolling the
    page — explicitly avoiding `contain` here, which traps the scroll. */
-.sol-linked-tx-list {
+.sol-linked-tx-scroll {
   max-height: 320px;
-  overflow-y: auto;
-  scrollbar-width: thin;
-}
-
-.sol-linked-tx-list::-webkit-scrollbar {
-  width: 6px;
-}
-
-.sol-linked-tx-list::-webkit-scrollbar-thumb {
-  background: var(--surface-border-open);
-  border-radius: 3px;
 }
 
 /* Clickable EMI badge — pill that doubles as a button to jump into the
@@ -1846,6 +1932,15 @@ html[data-skin="glass"] .sol-due-item {
 .sol-linked-tx-month {
   padding: 6px 2px 4px;
   font-size: 10px;
+  /* The shared .tx-date-separator is built for the edge-to-edge Transactions
+     list (full-viewport bleed, sticky, blur bar). Inside a Solvency card those
+     make it overflow the card — reset them so it reads as a plain in-card
+     separator (keeps the base flex label + trailing divider line). */
+  position: static;
+  margin-inline: 0;
+  background: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 .sol-linked-tx-cycle {

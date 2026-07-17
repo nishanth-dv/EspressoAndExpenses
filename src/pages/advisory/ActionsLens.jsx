@@ -16,7 +16,9 @@ import { addEntry, removeEntry } from "../../utils/advisory/ledger";
 import CoverageMeter from "./CoverageMeter";
 import CardMenu from "./CardMenu";
 import CardMenuLegend from "./CardMenuLegend";
+import Modal from "../../preStyledElements/modal/Modal";
 import InfoTooltip from "../../components/InfoTooltip";
+import OptionField from "../../components/OptionField";
 import { ConfidenceBadge, ConfidenceReveal } from "./ConfidenceControl";
 import { learnFor } from "../../utils/advisory/learn";
 import { guideFor } from "../../utils/advisory/guide";
@@ -270,28 +272,22 @@ export default function ActionsLens() {
       <button
         type="button"
         className="adv-profile-chip"
-        onClick={() => setShowProfile((v) => !v)}
+        onClick={() => setShowProfile(true)}
       >
         <i className="fa-solid fa-sliders" /> {age}y · {profile.riskAppetite} ·{" "}
         {(profile.taxSlab * 100).toFixed(0)}% slab · target{" "}
         {profile.targetAllocation.equity}/{profile.targetAllocation.debt}/
         {profile.targetAllocation.gold}
-        <i
-          className={`fa-solid fa-chevron-${showProfile ? "up" : "down"} adv-profile-chev`}
-        />
+        <i className="fa-solid fa-pen adv-profile-chev" />
       </button>
 
-      <AnimatePresence initial={false}>
-        {showProfile && (
-          <motion.div
-            className="adv-profile"
-            initial={{ opacity: 0, y: -8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
-            transition={{ duration: 0.2, ease: EASE }}
-          >
-            <label className="adv-field">
-              <span>Age</span>
+      <Modal
+        open={showProfile}
+        onClose={() => setShowProfile(false)}
+        title="Your profile"
+      >
+        <div className="adv-profile">
+            <div className="field">
               <input
                 type="number"
                 value={age}
@@ -303,48 +299,42 @@ export default function ActionsLens() {
                   });
                 }}
               />
-            </label>
-            <label className="adv-field">
-              <span>Risk</span>
-              <select
-                value={profile.riskAppetite}
-                onChange={(e) =>
-                  save({
-                    riskAppetite: e.target.value,
-                    targetAllocation: glidePath(age, e.target.value),
-                  })
-                }
-              >
-                <option value="conservative">Conservative</option>
-                <option value="moderate">Moderate</option>
-                <option value="aggressive">Aggressive</option>
-              </select>
-            </label>
-            <label className="adv-field">
-              <span>Regime</span>
-              <select
-                value={profile.taxRegime}
-                onChange={(e) => save({ taxRegime: e.target.value })}
-              >
-                <option value="new">New</option>
-                <option value="old">Old</option>
-              </select>
-            </label>
-            <label className="adv-field">
-              <span>Tax slab</span>
-              <select
-                value={profile.taxSlab}
-                onChange={(e) => save({ taxSlab: parseFloat(e.target.value) })}
-              >
-                {[0, 0.05, 0.1, 0.15, 0.2, 0.3].map((s) => (
-                  <option key={s} value={s}>
-                    {(s * 100).toFixed(0)}%
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="adv-field">
-              <span>Emergency (months)</span>
+              <label>Age</label>
+            </div>
+            <OptionField
+              label="Risk"
+              value={profile.riskAppetite}
+              options={[
+                { value: "conservative", label: "Conservative" },
+                { value: "moderate", label: "Moderate" },
+                { value: "aggressive", label: "Aggressive" },
+              ]}
+              onChange={(e) =>
+                save({
+                  riskAppetite: e.target.value,
+                  targetAllocation: glidePath(age, e.target.value),
+                })
+              }
+            />
+            <OptionField
+              label="Regime"
+              value={profile.taxRegime}
+              options={[
+                { value: "new", label: "New" },
+                { value: "old", label: "Old" },
+              ]}
+              onChange={(e) => save({ taxRegime: e.target.value })}
+            />
+            <OptionField
+              label="Tax slab"
+              value={profile.taxSlab}
+              options={[0, 0.05, 0.1, 0.15, 0.2, 0.3].map((s) => ({
+                value: s,
+                label: `${(s * 100).toFixed(0)}%`,
+              }))}
+              onChange={(e) => save({ taxSlab: parseFloat(e.target.value) })}
+            />
+            <div className="field">
               <input
                 type="number"
                 value={profile.emergencyMonths}
@@ -352,9 +342,9 @@ export default function ActionsLens() {
                   save({ emergencyMonths: parseInt(e.target.value) || 6 })
                 }
               />
-            </label>
-            <label className="adv-field">
-              <span>80C used (₹)</span>
+              <label>Emergency (months)</label>
+            </div>
+            <div className="field">
               <input
                 type="number"
                 value={profile.used80C}
@@ -362,9 +352,9 @@ export default function ActionsLens() {
                   save({ used80C: parseFloat(e.target.value) || 0 })
                 }
               />
-            </label>
-            <label className="adv-field">
-              <span>NPS extra used (₹)</span>
+              <label>80C used (₹)</label>
+            </div>
+            <div className="field">
               <input
                 type="number"
                 value={profile.npsExtraUsed}
@@ -372,9 +362,9 @@ export default function ActionsLens() {
                   save({ npsExtraUsed: parseFloat(e.target.value) || 0 })
                 }
               />
-            </label>
-            <label className="adv-field">
-              <span>LTCG booked this yr (₹)</span>
+              <label>NPS extra used (₹)</label>
+            </div>
+            <div className="field">
               <input
                 type="number"
                 value={profile.ltcgRealized}
@@ -382,18 +372,18 @@ export default function ActionsLens() {
                   save({ ltcgRealized: parseFloat(e.target.value) || 0 })
                 }
               />
-            </label>
-            <label className="adv-field">
-              <span>Monthly take-home (₹)</span>
+              <label>LTCG booked this yr (₹)</label>
+            </div>
+            <div className="field">
               <input
                 type="number"
                 placeholder="auto from income"
                 value={profile.monthlyIncome ?? ""}
                 onChange={(e) => save({ monthlyIncome: e.target.value })}
               />
-            </label>
-            <label className="adv-field">
-              <span>Dependents</span>
+              <label>Monthly take-home (₹)</label>
+            </div>
+            <div className="field">
               <input
                 type="number"
                 value={profile.dependents ?? 0}
@@ -401,27 +391,27 @@ export default function ActionsLens() {
                   save({ dependents: parseInt(e.target.value) || 0 })
                 }
               />
-            </label>
-            <label className="adv-field">
-              <span>Term cover (₹)</span>
+              <label>Dependents</label>
+            </div>
+            <div className="field">
               <input
                 type="number"
                 placeholder="existing sum assured"
                 value={profile.termCover ?? ""}
                 onChange={(e) => save({ termCover: e.target.value })}
               />
-            </label>
-            <label className="adv-field">
-              <span>Health cover (₹)</span>
+              <label>Term cover (₹)</label>
+            </div>
+            <div className="field">
               <input
                 type="number"
                 placeholder="existing cover"
                 value={profile.healthCover ?? ""}
                 onChange={(e) => save({ healthCover: e.target.value })}
               />
-            </label>
-            <label className="adv-field">
-              <span>Retirement age</span>
+              <label>Health cover (₹)</label>
+            </div>
+            <div className="field">
               <input
                 type="number"
                 value={profile.retireAge ?? 60}
@@ -429,7 +419,8 @@ export default function ActionsLens() {
                   save({ retireAge: parseInt(e.target.value) || 60 })
                 }
               />
-            </label>
+              <label>Retirement age</label>
+            </div>
             <div className="adv-field adv-field--target">
               <span>Target % (eq / debt / gold / alt)</span>
               <div className="adv-target-inputs">
@@ -489,9 +480,8 @@ export default function ActionsLens() {
                 <i className="fa-solid fa-plus" /> Add goal
               </button>
             </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+        </div>
+      </Modal>
 
       {advisoryWins.length > 0 && (
         <div className="adv-wins">

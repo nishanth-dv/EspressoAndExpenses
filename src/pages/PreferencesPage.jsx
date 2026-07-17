@@ -918,6 +918,10 @@ const PreferencesPage = () => {
     (state) =>
       state.transactions.transactionData?.preferences?.quickSelect ?? false,
   );
+  const actionStyle = useSelector(
+    (state) =>
+      state.transactions.transactionData?.preferences?.actionStyle ?? "docked",
+  );
   const notificationsEnabled = useSelector(
     (state) =>
       state.transactions.transactionData?.preferences?.notificationsEnabled ??
@@ -1719,6 +1723,65 @@ const PreferencesPage = () => {
             </span>
             <span className="field-style-name">One-tap chips</span>
             <span className="field-style-desc">Pick in a single tap</span>
+          </button>
+        </div>
+
+        <div
+          className="pref-row"
+          style={{
+            alignItems: "flex-start",
+            marginTop: 22,
+            borderTop: "1px solid var(--surface-border)",
+            paddingTop: 20,
+          }}
+        >
+          <div className="pref-row-text">
+            <p className="pref-row-label">Action style</p>
+            <p className="pref-row-hint">
+              How you add entries and reach the Toolbox. Docked keeps the bottom
+              bar; Floating merges add actions and tools into one button.
+            </p>
+          </div>
+        </div>
+        <div className="field-style-picker action-style-picker">
+          <button
+            type="button"
+            className={`field-style-tile${actionStyle === "docked" ? " field-style-tile--active" : ""}`}
+            onClick={() => dispatch(persistSetPreference("actionStyle", "docked"))}
+            aria-pressed={actionStyle === "docked"}
+          >
+            <span className="field-style-modal action-style-screen">
+              <span className="as-screen-line" />
+              <span className="as-screen-line as-screen-line--short" />
+              <span className="as-dock">
+                <span className="as-dock-pill as-dock-pill--income" />
+                <span className="as-dock-pill as-dock-pill--expense" />
+              </span>
+            </span>
+            <span className="field-style-name">Docked bar</span>
+            <span className="field-style-desc">Bottom action bar</span>
+          </button>
+          <button
+            type="button"
+            className={`field-style-tile${actionStyle === "floating" ? " field-style-tile--active" : ""}`}
+            onClick={() =>
+              dispatch(persistSetPreference("actionStyle", "floating"))
+            }
+            aria-pressed={actionStyle === "floating"}
+          >
+            <span className="field-style-modal action-style-screen">
+              <span className="as-screen-line" />
+              <span className="as-screen-line as-screen-line--short" />
+              <span className="as-float-menu">
+                <span className="as-float-row" />
+                <span className="as-float-row" />
+              </span>
+              <span className="as-fab">
+                <i className="fa-solid fa-plus" />
+              </span>
+            </span>
+            <span className="field-style-name">Floating button</span>
+            <span className="field-style-desc">One button, all actions</span>
           </button>
         </div>
       </PrefSection>

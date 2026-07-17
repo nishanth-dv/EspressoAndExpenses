@@ -1,4 +1,4 @@
-import { memo, useState, useMemo, useEffect } from "react";
+import { memo, useState, useMemo, useEffect, useRef } from "react";
 import PropTypes from "prop-types";
 import { useDispatch, useSelector } from "react-redux";
 import { CATEGORIES, PAYMENT_MODES, INVESTMENT_TYPES } from "../utils/constants";
@@ -60,6 +60,7 @@ const ExpenseForm = ({
   investmentTarget,
   onChangeInvestmentTarget,
   onSubscriptionSelect,
+  autoVoice = false,
 }) => {
   const [form, setForm] = useState(() =>
     existing
@@ -178,6 +179,13 @@ const ExpenseForm = ({
     onError: (message) =>
       dispatch(showToast({ message, type: "error", duration: 4500 })),
   });
+
+  const autoVoiceStartedRef = useRef(false);
+  useEffect(() => {
+    if (!autoVoice || autoVoiceStartedRef.current || !voice.supported) return;
+    autoVoiceStartedRef.current = true;
+    voice.start();
+  }, [autoVoice, voice]);
 
   function handleNameChange(value) {
     setForm((f) => {
@@ -715,6 +723,7 @@ ExpenseForm.propTypes = {
   investmentTarget: PropTypes.object,
   onChangeInvestmentTarget: PropTypes.func,
   onSubscriptionSelect: PropTypes.func,
+  autoVoice: PropTypes.bool,
 };
 
 export default memo(ExpenseForm);

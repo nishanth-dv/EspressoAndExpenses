@@ -20,6 +20,8 @@ import AdminPage from "./pages/AdminPage";
 import AdvisoryLayout from "./pages/advisory/AdvisoryLayout";
 import AdvisoryHome from "./pages/advisory/AdvisoryHome";
 import GrowHome from "./pages/advisory/GrowHome";
+import GrowChart from "./pages/advisory/GrowChart";
+import GrowSignals from "./pages/advisory/GrowSignals";
 import ActionsLens from "./pages/advisory/ActionsLens";
 import UnderstandLens from "./pages/advisory/UnderstandLens";
 import ReviewLens from "./pages/advisory/ReviewLens";
@@ -184,6 +186,8 @@ export default function App() {
           >
             <Route index element={<AdvisoryHome />} />
             <Route path="grow" element={<GrowHome />} />
+            <Route path="grow/charts" element={<GrowChart />} />
+            <Route path="grow/signals" element={<GrowSignals />} />
             <Route path="actions" element={<ActionsLens />} />
             <Route path="understand" element={<UnderstandLens />} />
             <Route path="review" element={<ReviewLens />} />

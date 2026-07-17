@@ -41,7 +41,7 @@ const Navbar = () => {
         <div className="nav-controls">
           <div className="flex nav-desktop">
             {pages.map((p) => (
-              <NavigationLink key={p.key} to={p.route}>
+              <NavigationLink key={p.key} to={p.route} pill>
                 {p.label}
               </NavigationLink>
             ))}

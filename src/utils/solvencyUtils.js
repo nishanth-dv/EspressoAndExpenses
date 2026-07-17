@@ -223,16 +223,43 @@ export function getCardDue(card, allTransactions = [], commitments = [], now = n
 
 // True when an EMI commitment has a repayment logged this calendar month
 // (either against the commitment directly, or via the card it's billed to).
-function commitmentPaidThisMonth(commitment, allTransactions) {
-  const now = new Date();
+function commitmentPaidThisMonth(commitment, allTransactions, asOf = new Date()) {
   return allTransactions.some((t) => {
     if (t.repaymentFor !== commitment.id && t.repaymentFor !== commitment.cardId)
       return false;
     const d = new Date(t.occurredAt ?? t.createdAt);
     return (
-      d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()
+      d.getFullYear() === asOf.getFullYear() && d.getMonth() === asOf.getMonth()
     );
   });
+}
+
+// True when the EMI's current cycle is settled. Mirrors how card bills net out:
+// the total instalments billed to date minus ALL repayments logged for this EMI
+// regardless of the repayment's date, so a back-dated repayment settles the
+// cycle it covers (same behaviour as clearing a card bill). Falls back to the
+// calendar-month check when the schedule can't be amortised (no start/first-
+// payment date, or no EMI amount — e.g. an open-ended recurring commitment).
+export function commitmentCycleSettled(
+  commitment,
+  allTransactions,
+  asOf = new Date(),
+) {
+  const emi = parseFloat(commitment?.emiAmount) || 0;
+  const first = getEmiFirstPaymentDate(commitment);
+  if (emi <= 0 || !first) {
+    return commitmentPaidThisMonth(commitment, allTransactions, asOf);
+  }
+  const billed = emiInstallmentsBilled(commitment, asOf);
+  const repaid = allTransactions
+    .filter(
+      (t) =>
+        t.repaymentFor &&
+        (t.repaymentFor === commitment.id ||
+          t.repaymentFor === commitment.cardId),
+    )
+    .reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
+  return repaid + SETTLED_EPS >= billed * emi;
 }
 
 // Days until the card's next due date, payment-aware. Negative means the
@@ -256,7 +283,7 @@ export function daysUntilCommitmentDue(commitment, allTransactions = []) {
   if (thisMonthDue >= today) {
     return Math.round((thisMonthDue - today) / 86_400_000);
   }
-  if (commitmentPaidThisMonth(commitment, allTransactions)) {
+  if (commitmentCycleSettled(commitment, allTransactions, now)) {
     return Math.round((nextMonthDue - today) / 86_400_000);
   }
   return -Math.round((today - thisMonthDue) / 86_400_000);
@@ -506,18 +533,6 @@ export function getUpcomingDues(
   const yr = now.getFullYear();
   const mo = now.getMonth();
 
-  // Returns true if a repayment for the obligation (or any of the fallback IDs)
-  // was recorded this calendar month. For an EMI commitment paid via credit card,
-  // paying the card bill counts as settling the EMI too.
-  function paidThisMonth(id, ...fallbackIds) {
-    const valid = new Set([id, ...fallbackIds].filter(Boolean));
-    return allTransactions.some((t) => {
-      if (!valid.has(t.repaymentFor)) return false;
-      const d = new Date(t.occurredAt ?? t.createdAt);
-      return d.getFullYear() === yr && d.getMonth() === mo;
-    });
-  }
-
   const result = [];
 
   cards.forEach((card) => {
@@ -547,7 +562,7 @@ export function getUpcomingDues(
     if (isCardFundedEmi(c)) return;
     const dueDay = parseInt(c.dueDay);
     const thisMonthDue = new Date(yr, mo, dueDay);
-    const paid = paidThisMonth(c.id, c.cardId);
+    const paid = commitmentCycleSettled(c, allTransactions, now);
     let due;
     if (thisMonthDue >= now) {
       due = thisMonthDue;

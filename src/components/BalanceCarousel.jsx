@@ -1,6 +1,7 @@
-import { memo, useCallback, useMemo, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useState } from "react";
 import PropTypes from "prop-types";
 import { motion, AnimatePresence } from "framer-motion";
+import useCountUp from "../hooks/useCountUp";
 import { useSelector, useDispatch } from "react-redux";
 import {
   computeAccountBalance,
@@ -91,9 +92,21 @@ const BalanceCarousel = ({ variant = "compact", syncTransactionFilter = false })
   const [direction, setDirection] = useState(0);
   const [busyRecompute, setBusyRecompute] = useState(false);
   const [verifyTarget, setVerifyTarget] = useState(null);
+  const [showHint, setShowHint] = useState(false);
 
   const safeIndex = Math.min(index, slides.length - 1);
   const slide = slides[safeIndex];
+
+  useEffect(() => {
+    if (slides.length <= 1) return undefined;
+    if (localStorage.getItem("bc-swipe-hint")) return undefined;
+    setShowHint(true);
+    const t = setTimeout(() => {
+      localStorage.setItem("bc-swipe-hint", "1");
+      setShowHint(false);
+    }, 3200);
+    return () => clearTimeout(t);
+  }, [slides.length]);
 
   // Infinite cycle: wraps last → 0 going forward, 0 → last going back.
   // `dir` is the user's intent (1 = next, -1 = prev) so the slide animation
@@ -162,17 +175,23 @@ const BalanceCarousel = ({ variant = "compact", syncTransactionFilter = false })
   // base bar background so the colour reads as a soft accent, not a saturated
   // panel. Falls back to plain bar-bg for the All slide. Applied via a CSS
   // variable so the transition can be animated in CSS.
-  const tintBg =
+  const bankColor =
     slide?.kind === "account" && slide.account?.color
-      ? `color-mix(in srgb, ${slide.account.color} 16%, var(--bar-bg))`
-      : "var(--bar-bg)";
+      ? slide.account.color
+      : null;
+  const tintBg = bankColor
+    ? `color-mix(in srgb, ${bankColor} 16%, var(--bar-bg))`
+    : "var(--bar-bg)";
+  const tintGlow = bankColor
+    ? `color-mix(in srgb, ${bankColor} 45%, transparent)`
+    : "color-mix(in srgb, #d4a35a 26%, transparent)";
 
   return (
     <div
       className={`balance-carousel balance-carousel--${variant}${
         showCarouselControls ? "" : " balance-carousel--single"
       }`}
-      style={{ "--bank-tint-bg": tintBg }}
+      style={{ "--bank-tint-bg": tintBg, "--bank-tint-glow": tintGlow }}
     >
       {showCarouselControls && (
         <button
@@ -184,28 +203,34 @@ const BalanceCarousel = ({ variant = "compact", syncTransactionFilter = false })
           <i className="fa-solid fa-chevron-left" />
         </button>
       )}
-      <AnimatePresence custom={direction} initial={false} mode="wait">
-        <motion.div
-          key={safeIndex}
-          className="balance-carousel-slide"
-          custom={direction}
-          variants={slideVariants}
-          initial="enter"
-          animate="center"
-          exit="exit"
-          transition={SLIDE_TRANSITION}
-          drag={showCarouselControls ? "x" : false}
-          dragConstraints={{ left: 0, right: 0 }}
-          dragElastic={0.2}
-          onDragEnd={handleDragEnd}
-        >
-          <BalanceSlide slide={slide} variant={variant} />
-        </motion.div>
-      </AnimatePresence>
+      <motion.div
+        className="balance-carousel-drag"
+        drag={showCarouselControls ? "x" : false}
+        dragConstraints={{ left: 0, right: 0 }}
+        dragElastic={0.2}
+        onDragEnd={handleDragEnd}
+      >
+        <AnimatePresence custom={direction} initial={false} mode="wait">
+          <motion.div
+            key={safeIndex}
+            className="balance-carousel-slide"
+            custom={direction}
+            variants={slideVariants}
+            initial="enter"
+            animate="center"
+            exit="exit"
+            transition={SLIDE_TRANSITION}
+          >
+            <BalanceSlide slide={slide} variant={variant} />
+          </motion.div>
+        </AnimatePresence>
+      </motion.div>
       {showCarouselControls && (
         <button
           type="button"
-          className="balance-carousel-arrow balance-carousel-arrow--right"
+          className={`balance-carousel-arrow balance-carousel-arrow--right${
+            showHint ? " balance-carousel-arrow--hint" : ""
+          }`}
           onClick={goNext}
           aria-label="Next account"
         >
@@ -213,8 +238,6 @@ const BalanceCarousel = ({ variant = "compact", syncTransactionFilter = false })
         </button>
       )}
 
-      {/* Static meta row beneath the carousel. Identical in shape regardless
-          of which slide is showing, so the card height never jumps. */}
       <BalanceMetaRow
         slide={slide}
         onRecompute={handleRecompute}
@@ -262,6 +285,9 @@ BalanceCarousel.propTypes = {
 // ── Slide body ────────────────────────────────────────
 
 function BalanceSlide({ slide, variant }) {
+  const animated = useCountUp(slide.balance, 600);
+  const shown =
+    Math.abs(animated - slide.balance) < 0.5 ? slide.balance : Math.round(animated);
   return (
     <div className={`balance-slide balance-slide--${variant}`}>
       <p className="balance-slide-label">
@@ -275,7 +301,7 @@ function BalanceSlide({ slide, variant }) {
         {slide.title}
       </p>
       <p className="balance balance-carousel-value">
-        {INR.format(slide.balance)}
+        {INR.format(shown)}
       </p>
     </div>
   );

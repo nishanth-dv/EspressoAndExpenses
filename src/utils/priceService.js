@@ -121,7 +121,7 @@ async function fetchWithTimeout(url, ms = 8000) {
 }
 
 // Builds every (proxy × host) combination for a given path and races them.
-async function proxyFetch(path) {
+export async function proxyFetch(path) {
   const attempts = YAHOO_HOSTS.flatMap((host) =>
     PROXY_WRAPPERS.map((wrap) => fetchWithTimeout(wrap(host + path))),
   );

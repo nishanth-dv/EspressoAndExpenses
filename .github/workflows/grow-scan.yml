@@ -1,0 +1,21 @@
+name: Grow breadth scan
+
+on:
+  schedule:
+    - cron: "30 13 * * 1-5" # 19:00 IST, weekdays (after NSE close + EOD settle)
+  workflow_dispatch: {}
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run breadth scan
+        working-directory: pybrain
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python batch.py

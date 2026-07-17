@@ -49,6 +49,7 @@ import { solvencyInsights } from "../utils/solvencyInsights";
 import { resolveMonthlyIncome } from "../utils/incomeUtils";
 import useCountUp from "../hooks/useCountUp";
 import Reveal from "../components/Reveal";
+import Scroller from "../components/Scroller";
 import "../styles/solvency.css";
 
 const INR = new Intl.NumberFormat("en-IN", {
@@ -253,9 +254,24 @@ function HealthScoreCircle({score, grade, color, deductions}) {
   const r = 44;
   const circ = 2 * Math.PI * r;
   const offset = circ - (score / 100) * circ;
+  const [open, setOpen] = useState(false);
+
+  const gradeWord =
+    { A: "strong", B: "good", C: "fair", D: "weak", E: "poor" }[grade] || "";
+  const topDrag = deductions.length
+    ? [...deductions].sort((a, b) => b.points - a.points)[0]
+    : null;
+  const summary = topDrag
+    ? `Grade ${grade} · ${gradeWord}. Biggest drag: ${topDrag.reason} (−${topDrag.points}).`
+    : `Grade ${grade} · ${gradeWord}. Nothing is pulling your score down.`;
 
   return (
-    <div className="sol-overview-hero">
+    <button
+      type="button"
+      className="sol-overview-hero"
+      onClick={() => setOpen((v) => !v)}
+      aria-expanded={open}
+    >
       <div className="sol-score-wrap">
         <svg viewBox="0 0 100 100" className="sol-score-ring">
           <circle
@@ -289,6 +305,7 @@ function HealthScoreCircle({score, grade, color, deductions}) {
       </div>
 
       <div className="sol-score-deductions">
+        <p className="sol-score-summary">{summary}</p>
         {deductions.length === 0 ? (
           <span className="sol-score-all-good">
             <i className="fa-solid fa-circle-check" /> All clear — no deductions
@@ -304,8 +321,48 @@ function HealthScoreCircle({score, grade, color, deductions}) {
             ))}
           </>
         )}
+        <span className="sol-score-expand">
+          {open ? "Hide details" : "How this is scored"}{" "}
+          <i className={`fa-solid fa-chevron-${open ? "up" : "down"}`} />
+        </span>
       </div>
-    </div>
+
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            className="sol-score-breakdown"
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: "auto" }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.2, ease: [0.25, 0.46, 0.45, 0.94] }}
+          >
+            <p>
+              Your score starts at 100. Points come off for the risks that make
+              debt harder to carry:
+            </p>
+            <ul className="sol-score-factors">
+              <li>
+                <i className="fa-solid fa-triangle-exclamation" /> Overdue
+                payments — up to −30
+              </li>
+              <li>
+                <i className="fa-solid fa-gauge-high" /> Credit utilization — −12
+                over 30%, −26 over 60%
+              </li>
+              <li>
+                <i className="fa-solid fa-scale-unbalanced" /> EMIs vs income —
+                up to −26 as they pass 20 / 35 / 50%
+              </li>
+              <li>
+                <i className="fa-solid fa-hourglass-half" /> Stale lendings — up
+                to −12
+              </li>
+            </ul>
+            <p>Clear the flagged items above to lift your grade toward A.</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </button>
   );
 }
 
@@ -497,9 +554,9 @@ function ObligationsBar({commitments}) {
 
 // ── Road to debt-free (horizontal payoff journey) ─────
 
-const DF_SCALE = 88;
+const DF_SCALE = 85;
 
-function DebtFreeTimeline({ commitments }) {
+function DebtFreeTimeline({ commitments, cards }) {
   const items = useMemo(() => {
     const now = new Date();
     return commitments
@@ -508,18 +565,21 @@ function DebtFreeTimeline({ commitments }) {
         const months = commitmentRemainingMonths(c);
         const info = getCommitmentTypeInfo(c.type);
         const payoff = new Date(now.getFullYear(), now.getMonth() + months, 1);
+        const card = c.cardId ? (cards ?? []).find((cc) => cc.id === c.cardId) : null;
         return {
           id: c.id,
           name: c.name,
           months,
           payoff,
-          color: info.color,
+          color: card?.color || info.color,
           icon: info.icon,
+          bank: card?.bank || null,
+          bankColor: card?.color || null,
         };
       })
       .filter((x) => x.months > 0)
       .sort((a, b) => a.months - b.months);
-  }, [commitments]);
+  }, [commitments, cards]);
 
   const laned = useMemo(() => {
     const laneEnds = [];
@@ -533,17 +593,30 @@ function DebtFreeTimeline({ commitments }) {
     });
   }, [items]);
 
+  const [selected, setSelected] = useState(null);
+
   if (items.length === 0) return null;
 
+  const selectedItem = laned.find((d) => d.id === selected) || null;
   const maxMonths = items[items.length - 1].months || 1;
   const laneCount = Math.max(1, ...laned.map((d) => d.lane + 1));
   const fmtPay = (d) =>
     d.toLocaleDateString("en-IN", { month: "short", year: "numeric" });
   const dfLabel = fmtPay(items[items.length - 1].payoff);
 
-  const yearMarks = [];
-  for (let y = 1; y <= Math.floor(maxMonths / 12); y++)
-    yearMarks.push({ m: y * 12, label: `${y}y` });
+  const nowMark = new Date();
+  const monthLabel = (m) =>
+    new Date(nowMark.getFullYear(), nowMark.getMonth() + m, 1).toLocaleDateString(
+      "en-IN",
+      maxMonths > 12 ? { month: "short", year: "2-digit" } : { month: "short" },
+    );
+  const yearMarks = [
+    { m: 0, label: "Now" },
+    ...[...new Set(items.map((it) => it.months))].map((m) => ({
+      m,
+      label: monthLabel(m),
+    })),
+  ];
 
   return (
     <div className="sol-df">
@@ -564,19 +637,44 @@ function DebtFreeTimeline({ commitments }) {
           </div>
         ))}
         {laned.map((d) => (
-          <div
+          <button
+            type="button"
             key={d.id}
-            className="sol-df-marker"
+            className={`sol-df-marker${selected === d.id ? " sol-df-marker--active" : ""}`}
             style={{ left: `${d.x}%`, top: d.lane * 30 + 2, "--accent": d.color }}
-            title={`${d.name} · clear by ${fmtPay(d.payoff)}`}
+            onClick={() => setSelected((s) => (s === d.id ? null : d.id))}
+            aria-label={`${d.name} · clear by ${fmtPay(d.payoff)}`}
           >
-            <i className={`fa-solid ${d.icon}`} />
-          </div>
+            {d.bank ? (
+              <BankLogo bank={d.bank} color={d.bankColor} size={18} />
+            ) : (
+              <i className={`fa-solid ${d.icon}`} />
+            )}
+          </button>
         ))}
-        <div className="sol-df-flag" title={`Debt-free · ${dfLabel}`}>
-          <i className="fa-solid fa-flag-checkered" />
-        </div>
       </div>
+      {selectedItem && (
+        <div className="sol-df-caption">
+          <span className="sol-df-caption-name">
+            {selectedItem.bank ? (
+              <BankLogo
+                bank={selectedItem.bank}
+                color={selectedItem.bankColor}
+                size={16}
+              />
+            ) : (
+              <i
+                className={`fa-solid ${selectedItem.icon}`}
+                style={{ color: selectedItem.color }}
+              />
+            )}
+            {selectedItem.name}
+          </span>
+          <span className="sol-df-caption-date">
+            clear by {fmtPay(selectedItem.payoff)}
+          </span>
+        </div>
+      )}
     </div>
   );
 }
@@ -701,7 +799,15 @@ function LoanTimeline({commitments, cards, onCardTap}) {
                         : "This EMI's linked card is missing."
                     }
                   >
-                    <i className="fa-solid fa-credit-card" />
+                    {fundingCard?.bank ? (
+                      <BankLogo
+                        bank={fundingCard.bank}
+                        color={fundingCard.color}
+                        size={14}
+                      />
+                    ) : (
+                      <i className="fa-solid fa-credit-card" />
+                    )}
                     <span>
                       via{"  "}
                       <strong>
@@ -798,6 +904,7 @@ function UpcomingDues({
         ? commitmentById.get(d.id)?.cardId ?? null
         : null;
     const sourceCard = sourceCardId ? cardById.get(sourceCardId) : null;
+    const leadCard = d.type === "card" ? cardById.get(d.id) : sourceCard;
     const targetCardId = d.type === "card" ? d.id : sourceCardId;
     const isSubscription = d.type === "subscription";
     const isTappable = isSubscription || !!targetCardId;
@@ -814,7 +921,11 @@ function UpcomingDues({
         role={isTappable ? "button" : undefined}
       >
         <div className="sol-due-left">
-          <i className={`fa-solid ${typeIcon[d.type]} sol-due-icon`} />
+          {leadCard?.bank ? (
+            <BankLogo bank={leadCard.bank} color={leadCard.color} size={18} />
+          ) : (
+            <i className={`fa-solid ${typeIcon[d.type]} sol-due-icon`} />
+          )}
           <div>
             <div className="sol-due-name">{d.name}</div>
             <div className="sol-due-date">
@@ -822,7 +933,15 @@ function UpcomingDues({
             </div>
             {d.type === "commitment" && sourceCardId && (
               <div className="sol-due-source">
-                <i className="fa-solid fa-credit-card" />
+                {sourceCard?.bank ? (
+                  <BankLogo
+                    bank={sourceCard.bank}
+                    color={sourceCard.color}
+                    size={12}
+                  />
+                ) : (
+                  <i className="fa-solid fa-credit-card" />
+                )}
                 <span>
                   via{" "}
                   <strong>
@@ -992,7 +1111,7 @@ function OverviewTab({
         <ObligationsBar commitments={commitments} />
       </Reveal>
       <Reveal>
-        <DebtFreeTimeline commitments={commitments} />
+        <DebtFreeTimeline commitments={commitments} cards={cards} />
       </Reveal>
       <Reveal>
         <LoanTimeline
@@ -1334,7 +1453,8 @@ function CardItem({
               {linkedTx.length === 0 ? (
                 <p className="sol-no-tx">No linked transactions yet.</p>
               ) : (
-                <div className="sol-linked-tx-list">
+                <Scroller className="sol-linked-tx-scroll">
+                  <div className="sol-linked-tx-list">
                   {linkedTx.map((tx, i) => {
                     const stmtDay = parseInt(card?.statementDay) || 0;
                     const cycleKey = cycleKeyOf(tx.occurredAt, stmtDay);
@@ -1417,7 +1537,8 @@ function CardItem({
                       </div>
                     );
                   })}
-                </div>
+                  </div>
+                </Scroller>
               )}
             </div>
           </motion.div>

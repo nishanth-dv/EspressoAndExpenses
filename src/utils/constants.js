@@ -267,6 +267,7 @@ export const DEFAULT_PREFERENCES = {
   // reimbursements, one-off receipts, …). Array of category names.
   incomeExcludeCategories: [],
   voiceAddEnabled: false,
+  actionStyle: "docked",
   autoCategoryRules: [],
   privacyMode: false,
   multiBankEnabled: false,

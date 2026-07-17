@@ -3,8 +3,7 @@ import { useLocation } from "react-router-dom";
 import { useSelector } from "react-redux";
 import { motion, AnimatePresence } from "framer-motion";
 import { useTally } from "../../context/TallyContext";
-import { useNotes } from "../../context/NotesContext";
-import { useCalendar } from "../../context/CalendarContext";
+import { useToolkitTools } from "../../hooks/useToolkitTools";
 import NotesDrawer from "../notes/NotesDrawer";
 import CalendarModal from "../calendar/CalendarModal";
 import "../../styles/notes.css";
@@ -15,53 +14,23 @@ const POP = { duration: 0.2, ease: [0.25, 0.46, 0.45, 0.94] };
 // "Tally" FAB. Tapping it reveals the enabled tools (Tally · Notes · Calendar).
 // With only one tool enabled it launches that directly (no menu). While Tally
 // is recording/reviewing, this hides so its own total-FAB / HUD takes the slot.
+// When the "floating" action style is active, the unified ActionLauncher owns
+// the FAB (tools + add actions), so this only mounts the tool surfaces.
 export default function ToolkitLayer() {
-  const { recording, reviewOpen, start } = useTally();
-  const { openNotes } = useNotes();
-  const { openCalendar } = useCalendar();
+  const { recording, reviewOpen } = useTally();
   const { pathname } = useLocation();
-  const tallyEnabled = useSelector(
-    (s) => s.transactions.transactionData?.preferences?.tallyEnabled ?? true,
+  const tools = useToolkitTools();
+  const actionStyle = useSelector(
+    (s) => s.transactions.transactionData?.preferences?.actionStyle ?? "docked",
   );
-  const notesEnabled = useSelector(
-    (s) => s.transactions.transactionData?.preferences?.notesEnabled ?? true,
-  );
-  const calendarEnabled = useSelector(
-    (s) => s.transactions.transactionData?.preferences?.calendarEnabled ?? true,
-  );
+  const floating = actionStyle === "floating";
   const [menuOpen, setMenuOpen] = useState(false);
   const fabRef = useRef(null);
   const menuRef = useRef(null);
 
-  const tools = [];
-  if (tallyEnabled)
-    tools.push({
-      key: "tally",
-      label: "Tally",
-      sub: "Tap amounts to add them up",
-      icon: "fa-arrow-down-up-across-line",
-      run: start,
-    });
-  if (notesEnabled)
-    tools.push({
-      key: "notes",
-      label: "Notes",
-      sub: "Jot a note or checklist",
-      icon: "fa-note-sticky",
-      run: () => openNotes(),
-    });
-  if (calendarEnabled)
-    tools.push({
-      key: "calendar",
-      label: "Calendar",
-      sub: "Upcoming dues & spending",
-      icon: "fa-calendar-days",
-      run: () => openCalendar(),
-    });
-
   const routeOk = !/^\/(Preferences|Admin)/i.test(pathname);
   const visible =
-    routeOk && tools.length > 0 && !recording && !reviewOpen;
+    !floating && routeOk && tools.length > 0 && !recording && !reviewOpen;
   const multi = tools.length > 1;
 
   useEffect(() => {

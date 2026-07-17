@@ -1,4 +1,4 @@
-import { memo, useState, useEffect, useRef } from "react";
+import { memo, useState, useEffect, useRef, useMemo } from "react";
 import { useDispatch, useSelector } from "react-redux";
 import { useLocation, useNavigate } from "react-router-dom";
 import {
@@ -9,6 +9,7 @@ import {
 } from "../redux/slices/transactionSlice";
 import { persistAddSubscription } from "../redux/slices/solvencySlice";
 import ActionButton from "../preStyledElements/actionButton/ActionButton";
+import ActionLauncher from "./ActionLauncher";
 import Modal from "../preStyledElements/modal/Modal";
 import ExpenseForm from "../Forms/ExpenseForm";
 import IncomeForm from "../Forms/IncomeForm";
@@ -29,6 +30,7 @@ const Actions = () => {
   const [investPreExisting, setInvestPreExisting] = useState(null);
   const [investPrefillType, setInvestPrefillType] = useState("");
   const [expenseInvestTarget, setExpenseInvestTarget] = useState(null);
+  const [expenseAutoVoice, setExpenseAutoVoice] = useState(false);
   const dispatch = useDispatch();
   const driveReady = useSelector(
     (state) => state.transactions.status === "ready",
@@ -42,6 +44,17 @@ const Actions = () => {
     (state) =>
       (state.transactions.transactionData?.accounts ?? []).length,
   );
+  const actionStyle = useSelector(
+    (state) =>
+      state.transactions.transactionData?.preferences?.actionStyle ?? "docked",
+  );
+  const voiceEnabled = useSelector(
+    (state) =>
+      state.transactions.transactionData?.preferences?.voiceAddEnabled ?? false,
+  );
+  const recentTransactions = useSelector(
+    (state) => state.transactions.transactionData?.transactions,
+  );
   const canSelfTransfer = multiBankEnabled && accountCount >= 2;
   const { pathname } = useLocation();
   const navigate = useNavigate();
@@ -51,6 +64,9 @@ const Actions = () => {
   const onSubscriptionsPage = pathname.toLowerCase().includes("subscriptions");
   const onAdvisoryPage = pathname.toLowerCase().includes("advisory");
   const hasFooter = !(onSolvencyPage || onPreferencesPage || onAdvisoryPage);
+  const floating = actionStyle === "floating";
+  const showDockedFooter = !floating && hasFooter;
+  const showTransfer = !onInvestPage && !onSubscriptionsPage && canSelfTransfer;
 
   useEffect(() => {
     if (window.location.hash.toLowerCase() === "#expense") {
@@ -64,7 +80,7 @@ const Actions = () => {
   useEffect(() => {
     const root = document.documentElement;
     const el = footerRef.current;
-    if (!hasFooter || !el) {
+    if (!showDockedFooter || !el) {
       root.style.setProperty("--footer-h", "0px");
       return;
     }
@@ -77,12 +93,113 @@ const Actions = () => {
       ro.disconnect();
       root.style.setProperty("--footer-h", "0px");
     };
-  }, [hasFooter]);
+  }, [showDockedFooter]);
+
+  const adaptivePrimary = useMemo(() => {
+    const list = recentTransactions ?? [];
+    const recent = [...list]
+      .sort((a, b) => new Date(b.occurredAt) - new Date(a.occurredAt))
+      .slice(0, 10);
+    let inc = 0;
+    let exp = 0;
+    for (const t of recent) {
+      if (t.transactionType === "income") inc += 1;
+      else if (t.transactionType === "expense") exp += 1;
+    }
+    return inc > exp ? "income" : "expense";
+  }, [recentTransactions]);
+
+  const addActions = useMemo(() => {
+    if (onSubscriptionsPage)
+      return [
+        {
+          key: "subscription",
+          label: "Add Subscription",
+          sub: "Track a recurring charge",
+          icon: "fa-rotate",
+          tone: "var(--amount-repayment)",
+          primary: true,
+          needsDrive: true,
+          onClick: () => setIsSubFormOpen(true),
+        },
+      ];
+    if (onInvestPage)
+      return [
+        {
+          key: "investment",
+          label: "Add Investment",
+          sub: "Log a new holding",
+          icon: "fa-seedling",
+          tone: "var(--amount-investment)",
+          primary: true,
+          needsDrive: true,
+          onClick: () => setIsInvestFormOpen(true),
+        },
+      ];
+    if (onSolvencyPage || onAdvisoryPage) return [];
+
+    const income = {
+      key: "income",
+      label: "Add Income",
+      sub: "Money in",
+      icon: "fa-money-bill-trend-up",
+      tone: "var(--amount-income)",
+      needsDrive: true,
+      onClick: () => setIsIncomeFormOpen(true),
+    };
+    const expense = {
+      key: "expense",
+      label: "Add Expense",
+      sub: "Money out",
+      icon: "fa-bag-shopping",
+      tone: "var(--amount-expense)",
+      needsDrive: true,
+      onClick: () => setIsExpenseFormOpen(true),
+    };
+    const ordered =
+      adaptivePrimary === "income"
+        ? [{ ...income, primary: true }, expense]
+        : [{ ...expense, primary: true }, income];
+
+    if (voiceEnabled)
+      ordered.push({
+        key: "voice",
+        label: "Speak to add",
+        sub: 'Say "200 for lunch"',
+        icon: "fa-microphone",
+        tone: "var(--amount-investment)",
+        needsDrive: true,
+        onClick: () => {
+          setExpenseAutoVoice(true);
+          setIsExpenseFormOpen(true);
+        },
+      });
+    if (showTransfer)
+      ordered.push({
+        key: "transfer",
+        label: "Self Transfer",
+        sub: "Move between your accounts",
+        icon: "fa-arrow-right-arrow-left",
+        tone: "var(--text-secondary)",
+        needsDrive: true,
+        onClick: () => setIsTransferFormOpen(true),
+      });
+    return ordered;
+  }, [
+    onSubscriptionsPage,
+    onInvestPage,
+    onSolvencyPage,
+    onAdvisoryPage,
+    adaptivePrimary,
+    voiceEnabled,
+    showTransfer,
+  ]);
 
   const handleTransaction = (transaction) => {
     setIsIncomeFormOpen(false);
     setIsExpenseFormOpen(false);
     setExpenseInvestTarget(null);
+    setExpenseAutoVoice(false);
     dispatch(persistTransaction(transaction));
   };
 
@@ -127,74 +244,8 @@ const Actions = () => {
     dispatch(persistAddSubscription(subscription));
   };
 
-  if (!hasFooter) return null;
-
-  const showTransfer = !onInvestPage && !onSubscriptionsPage && canSelfTransfer;
-
-  return (
+  const modals = (
     <>
-      <footer ref={footerRef} className="action-footer">
-        {/* Left spacer mirrors the right "side" slot so the centered group
-            stays visually centred when the transfer button is present. */}
-        {showTransfer && (
-          <div className="action-footer-side" aria-hidden="true" />
-        )}
-        <div className="action-footer-main">
-          {onSubscriptionsPage ? (
-            <ActionButton
-              className="generic-button income-button"
-              disabled={!driveReady}
-              onClick={() => setIsSubFormOpen(true)}
-            >
-              <i className="fa-solid fa-rotate" />
-              Add Subscription
-            </ActionButton>
-          ) : onInvestPage ? (
-            <ActionButton
-              className="generic-button income-button"
-              disabled={!driveReady}
-              onClick={() => setIsInvestFormOpen(true)}
-            >
-              <i className="fa-solid fa-seedling" />
-              Add Investment
-            </ActionButton>
-          ) : (
-            <>
-              <ActionButton
-                className="generic-button income-button"
-                disabled={!driveReady}
-                onClick={() => setIsIncomeFormOpen(true)}
-              >
-                <i className="fa-solid fa-money-bills" />
-                Income
-              </ActionButton>
-              <ActionButton
-                className="generic-button expense-button"
-                disabled={!driveReady}
-                onClick={() => setIsExpenseFormOpen(true)}
-              >
-                <i className="fa-solid fa-cart-arrow-down" />
-                Expense
-              </ActionButton>
-            </>
-          )}
-        </div>
-        {showTransfer && (
-          <div className="action-footer-side action-footer-side--right">
-            <button
-              type="button"
-              className="action-transfer-btn"
-              disabled={!driveReady}
-              onClick={() => setIsTransferFormOpen(true)}
-              aria-label="Add Self Transfer"
-              title="Self Transfer between your bank accounts"
-            >
-              <i className="fa-solid fa-arrow-right-arrow-left" />
-            </button>
-          </div>
-        )}
-      </footer>
-
       {isIncomeFormOpen && (
         <Modal
           open={isIncomeFormOpen}
@@ -213,19 +264,23 @@ const Actions = () => {
           onClose={() => {
             setIsExpenseFormOpen(false);
             setExpenseInvestTarget(null);
+            setExpenseAutoVoice(false);
           }}
           title={expenseInvestTarget ? "Pay Premium" : "Add Expense"}
         >
           <ExpenseForm
             onSubmit={handleTransaction}
             investmentTarget={expenseInvestTarget}
+            autoVoice={expenseAutoVoice}
             onChangeInvestmentTarget={handleChangeInvestment}
             onCancel={() => {
               setIsExpenseFormOpen(false);
               setExpenseInvestTarget(null);
+              setExpenseAutoVoice(false);
             }}
             onInvestmentSelect={({ amount, existing, type } = {}) => {
               setIsExpenseFormOpen(false);
+              setExpenseAutoVoice(false);
               setInvestPrefillAmount(amount ?? "");
               setInvestPreExisting(existing ?? null);
               setInvestPrefillType(existing ? "" : (type ?? ""));
@@ -234,6 +289,7 @@ const Actions = () => {
             onSubscriptionSelect={({ name, amount } = {}) => {
               setIsExpenseFormOpen(false);
               setExpenseInvestTarget(null);
+              setExpenseAutoVoice(false);
               setSubPrefill({ name: name ?? "", amount: amount ?? "" });
               setIsSubFormOpen(true);
             }}
@@ -297,6 +353,85 @@ const Actions = () => {
           />
         </Modal>
       )}
+    </>
+  );
+
+  if (floating) {
+    return (
+      <>
+        <ActionLauncher addActions={addActions} driveReady={driveReady} />
+        {modals}
+      </>
+    );
+  }
+
+  if (!hasFooter) return null;
+
+  return (
+    <>
+      <footer ref={footerRef} className="action-footer">
+        {/* Left spacer mirrors the right "side" slot so the centered group
+            stays visually centred when the transfer button is present. */}
+        {showTransfer && (
+          <div className="action-footer-side" aria-hidden="true" />
+        )}
+        <div className="action-footer-main">
+          {onSubscriptionsPage ? (
+            <ActionButton
+              className="generic-button income-button"
+              disabled={!driveReady}
+              onClick={() => setIsSubFormOpen(true)}
+            >
+              <i className="fa-solid fa-rotate" />
+              Add Subscription
+            </ActionButton>
+          ) : onInvestPage ? (
+            <ActionButton
+              className="generic-button income-button"
+              disabled={!driveReady}
+              onClick={() => setIsInvestFormOpen(true)}
+            >
+              <i className="fa-solid fa-seedling" />
+              Add Investment
+            </ActionButton>
+          ) : (
+            <>
+              <ActionButton
+                className="generic-button income-button"
+                disabled={!driveReady}
+                onClick={() => setIsIncomeFormOpen(true)}
+              >
+                <i className="fa-solid fa-money-bill-trend-up" />
+                Income
+              </ActionButton>
+              <ActionButton
+                className="generic-button expense-button"
+                disabled={!driveReady}
+                onClick={() => setIsExpenseFormOpen(true)}
+              >
+                <i className="fa-solid fa-bag-shopping" />
+                Expense
+              </ActionButton>
+            </>
+          )}
+        </div>
+        {showTransfer && (
+          <div className="action-footer-side action-footer-side--right">
+            <button
+              type="button"
+              className="action-transfer-btn"
+              disabled={!driveReady}
+              onClick={() => setIsTransferFormOpen(true)}
+              aria-label="Add Self Transfer"
+              title="Self Transfer between your bank accounts"
+            >
+              <i className="fa-solid fa-arrow-right-arrow-left" />
+            </button>
+          </div>
+        )}
+      </footer>
+
+      {modals}
     </>
   );
 };

@@ -88,6 +88,51 @@ async function fetchYahooReturns(
   }
 }
 
+async function fetchYahooCandles(
+  symbol: string,
+  interval: string,
+  range: string,
+): Promise<
+  { time: number; open: number; high: number; low: number; close: number; volume: number }[] | null
+> {
+  try {
+    const res = await fetch(
+      `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=${encodeURIComponent(interval)}&range=${encodeURIComponent(range)}`,
+      { headers: { "User-Agent": "Mozilla/5.0" } },
+    );
+    if (!res.ok) return null;
+    const data = (await res.json()) as {
+      chart?: {
+        result?: {
+          timestamp?: number[];
+          indicators?: {
+            quote?: {
+              open?: (number | null)[];
+              high?: (number | null)[];
+              low?: (number | null)[];
+              close?: (number | null)[];
+              volume?: (number | null)[];
+            }[];
+          };
+        }[];
+      };
+    };
+    const r = data?.chart?.result?.[0];
+    const ts = r?.timestamp;
+    const q = r?.indicators?.quote?.[0];
+    if (!ts || !q?.close) return null;
+    const out = [];
+    for (let i = 0; i < ts.length; i++) {
+      const o = q.open?.[i], h = q.high?.[i], l = q.low?.[i], c = q.close?.[i];
+      if (o == null || h == null || l == null || c == null) continue;
+      out.push({ time: ts[i], open: o, high: h, low: l, close: c, volume: q.volume?.[i] ?? 0 });
+    }
+    return out;
+  } catch {
+    return null;
+  }
+}
+
 async function refreshRates(env: Env) {
   const db = serviceClient(env);
   const now = new Date().toISOString();
@@ -179,6 +224,48 @@ app.get("/quote", requireToken, async (c) => {
   const price = await fetchYahoo(symbol);
   if (price == null) return c.json({ error: "no price data" }, 502);
   return c.json({ symbol, price });
+});
+
+const CANDLE_INTERVALS = new Set(["1m", "5m", "15m", "30m", "60m", "1d", "1wk", "1mo"]);
+const CANDLE_RANGES = new Set(["1d", "5d", "1mo", "3mo", "6mo", "1y", "2y", "5y", "max"]);
+app.get("/candles", requireToken, async (c) => {
+  const symbol = String(c.req.query("symbol") ?? "").trim();
+  const interval = String(c.req.query("interval") ?? "1d").trim();
+  const range = String(c.req.query("range") ?? "6mo").trim();
+  if (!symbol) return c.json({ error: "symbol required" }, 400);
+  if (!CANDLE_INTERVALS.has(interval) || !CANDLE_RANGES.has(range))
+    return c.json({ error: "bad interval/range" }, 400);
+  const candles = await fetchYahooCandles(symbol, interval, range);
+  if (!candles) return c.json({ error: "no candle data" }, 502);
+  return c.json({ symbol, interval, range, candles });
+});
+
+// Grow breadth scan — ranked signals from the nightly pybrain batch (Supabase).
+app.get("/grow/signals", requireToken, async (c) => {
+  const db = serviceClient(c.env);
+  const { data: scan } = await db
+    .from("grow_scans")
+    .select("scan_date, universe_size, signal_count, generated_at")
+    .order("scan_date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!scan) return c.json({ scan: null, signals: [] });
+
+  const limit = Math.min(Number(c.req.query("limit") ?? 150) || 150, 300);
+  let q = db
+    .from("grow_signals")
+    .select("*")
+    .eq("scan_date", scan.scan_date)
+    .order("confidence", { ascending: false })
+    .limit(limit);
+  const dir = c.req.query("direction");
+  if (dir) q = q.eq("direction", dir);
+  const band = c.req.query("band");
+  if (band) q = q.eq("band", band);
+
+  const { data, error } = await q;
+  if (error) return c.json({ error: error.message }, 500);
+  return c.json({ scan, signals: data ?? [] });
 });
 
 // Page access — token-only (Drive users included). Returns the gated page keys

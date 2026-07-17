@@ -76,6 +76,67 @@
   color: var(--text-secondary);
 }
 
+/* ── Floating action launcher (unified add + Toolbox) ─── */
+.action-launcher-fab {
+  z-index: 61;
+}
+
+.action-launcher-fab--open {
+  opacity: 1;
+}
+
+.action-launcher-menu {
+  bottom: 132px;
+  width: 258px;
+}
+
+.al-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.al-divider {
+  height: 1px;
+  margin: 5px 8px;
+  background: var(--surface-border-open);
+}
+
+.al-item:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.al-item--primary {
+  background: var(--surface-active);
+}
+
+.al-item-title {
+  display: inline-flex;
+  align-items: center;
+}
+
+.al-primary-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 7px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--surface-bg);
+  color: var(--text-label);
+  font-family: system-ui, sans-serif;
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+}
+
+.al-primary-badge i {
+  font-size: 8px;
+  color: #d4a35a;
+}
+
 /* ── Notes modal ──────────────────────────────────────── */
 /* Rendered inside the shared Modal — it supplies the backdrop, centred panel,
    title bar and close button; these just lay out the notes content within it. */

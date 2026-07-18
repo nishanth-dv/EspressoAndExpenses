@@ -60,7 +60,7 @@
 }
 
 .modal-content {
-  padding: 14px 0 0 0;
+  padding: 14px 4px 0 4px;
   max-height: 72vh;
   overflow-y: auto;
   scrollbar-width: none;

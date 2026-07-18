@@ -13,6 +13,13 @@ export const DIRECTION = {
 
 export const ENGINE = { source: "rules", version: "grow-signals-0.1.0" };
 
+export const CATEGORY_META = {
+  candlestick: { label: "Candlestick", icon: "fa-chart-column" },
+  indicator: { label: "Indicator", icon: "fa-wave-square" },
+  structure: { label: "Structure", icon: "fa-ruler-horizontal" },
+  chart: { label: "Chart pattern", icon: "fa-shapes" },
+};
+
 export function signalId(symbol, interval, type, time) {
   return `${symbol}:${interval}:${type}:${time}`;
 }

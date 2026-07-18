@@ -36,7 +36,7 @@ function fromExisting(existing) {
     description: existing.description ?? "",
     occurredAt: existing.occurredAt ?? "",
     cardId: existing.cardId ?? "",
-    repaymentFor: existing.repaymentFor ?? "",
+    repaymentFor: existing.repaymentFor ?? existing.lendingId ?? "",
     accountId: existing.accountId ?? "",
   };
 }
@@ -110,6 +110,9 @@ const ExpenseForm = ({
   );
   const investments = useSelector(
     (state) => state.transactions.transactionData?.investments ?? [],
+  );
+  const lendings = useSelector(
+    (state) => state.transactions.transactionData?.lendings ?? [],
   );
   const userInvestmentTypes = useSelector(
     (state) => state.transactions.transactionData?.investmentTypes ?? [],
@@ -297,9 +300,23 @@ const ExpenseForm = ({
     }
     setFormError(null);
 
+    // A repayment targets EITHER a card/commitment (tagged repaymentFor) or a
+    // borrowed lending (tagged lendingId) — never both. Card/commitment dues
+    // are computed live from repaymentFor txns; a lending's outstanding is a
+    // stored field drawn down (and reversed) via the lendingId tag.
+    const repayLending =
+      isRepayment && form.repaymentFor
+        ? lendings.find(
+            (l) => l.id === form.repaymentFor && l.direction === "borrowed",
+          )
+        : null;
+
     const extra = {};
     if (paidByCard && form.cardId) extra.cardId = form.cardId;
-    if (isRepayment && form.repaymentFor) extra.repaymentFor = form.repaymentFor;
+    if (isRepayment && form.repaymentFor) {
+      if (repayLending) extra.lendingId = form.repaymentFor;
+      else extra.repaymentFor = form.repaymentFor;
+    }
 
     const transaction = existing
       ? { ...existing, ...form, ...extra }
@@ -311,10 +328,12 @@ const ExpenseForm = ({
           id: crypto.randomUUID(),
         };
 
-    // Strip optional fields that don't apply — a stale cardId/repaymentFor must
-    // never ride along on an expense that isn't card-paid / a repayment.
+    // Strip optional fields that don't apply — a stale cardId/repaymentFor/
+    // lendingId must never ride along on an expense that isn't card-paid / the
+    // matching kind of repayment.
     if (!paidByCard || !transaction.cardId) delete transaction.cardId;
-    if (!isRepayment || !transaction.repaymentFor) delete transaction.repaymentFor;
+    if (!isRepayment || !extra.repaymentFor) delete transaction.repaymentFor;
+    if (!isRepayment || !extra.lendingId) delete transaction.lendingId;
     // Card-paid expenses don't touch a bank account directly — the bank
     // only moves when the card bill is repaid. Drop accountId so the
     // per-bank balance math stays correct.
@@ -331,20 +350,17 @@ const ExpenseForm = ({
     onSubmit(transaction);
   }
 
-  // Repayment targets:
-  //   • Cards with an outstanding balance (i.e., there's a current bill
-  //     to pay). Cards with zero outstanding don't appear — there's
-  //     nothing to repay against them.
-  //   • Commitments that are NOT funded by a credit card. Card-funded
-  //     EMIs are already covered by the card's bill above, so showing
-  //     them separately would double-tag the same money.
-  // Each entry carries the auto-populate amount: the card's current
-  // statement due or the EMI's per-period amount. When the user picks a
-  // target, the expense amount input gets prefilled with this value
-  // (overridable). Cards use getCardDue — the statement-cycle-aware bill
-  // (billed charges + billed EMIs − repayments), the same figure the
-  // Solvency page shows — so unbilled/post-statement purchases aren't
-  // prefilled as if they were already due.
+  // Everything the app knows you owe and can repay:
+  //   • Cards with an outstanding balance (statement-cycle-aware bill via
+  //     getCardDue — the same figure Solvency shows). Zero-balance cards
+  //     are skipped: nothing to repay.
+  //   • Commitments (EMIs / loans) that are NOT funded by a credit card —
+  //     card-funded EMIs already ride the card's bill above, so listing
+  //     them again would double-tag the same money.
+  //   • Borrowed lendings with a positive outstanding — money you took from
+  //     someone and still owe back.
+  // Each entry carries the auto-populate amount used to prefill the amount
+  // input when a target is picked (overridable).
   const repaymentTargets = useMemo(() => {
     const now = new Date();
     const cardTargets = cards
@@ -361,8 +377,18 @@ const ExpenseForm = ({
         label: c.name,
         amount: parseFloat(c.emiAmount) || 0,
       }));
-    return [...cardTargets, ...emiTargets];
-  }, [cards, commitments, allTransactions]);
+    const lendingTargets = lendings
+      .filter(
+        (l) =>
+          l.direction === "borrowed" && (parseFloat(l.outstanding) || 0) > 0,
+      )
+      .map((l) => ({
+        id: l.id,
+        label: `Return to ${l.name}`,
+        amount: parseFloat(l.outstanding) || 0,
+      }));
+    return [...cardTargets, ...emiTargets, ...lendingTargets];
+  }, [cards, commitments, allTransactions, lendings]);
 
   // These single-choice fields no longer offer a "None" — a card-paid expense
   // is always on some card, and a repayment always settles something. Keep them
@@ -374,8 +400,16 @@ const ExpenseForm = ({
     }
   }, [paidByCard, cards, form.cardId]);
 
+  // Auto-pick the first target once when Repayment is entered — but only
+  // once, so a deliberate "None" choice sticks instead of snapping back.
+  const repayInitRef = useRef(false);
   useEffect(() => {
-    if (isRepayment && repaymentTargets.length > 0 && !form.repaymentFor) {
+    if (!isRepayment) {
+      repayInitRef.current = false;
+      return;
+    }
+    if (repayInitRef.current || repaymentTargets.length === 0) return;
+    if (!form.repaymentFor) {
       const first = repaymentTargets[0];
       setForm((f) => ({
         ...f,
@@ -383,6 +417,7 @@ const ExpenseForm = ({
         amount: !f.amount && first.amount > 0 ? String(first.amount) : f.amount,
       }));
     }
+    repayInitRef.current = true;
   }, [isRepayment, repaymentTargets, form.repaymentFor]);
 
   return (
@@ -634,10 +669,13 @@ const ExpenseForm = ({
               value={form.repaymentFor}
               onChange={handleChange}
               label="Repayment for"
-              options={repaymentTargets.map((t) => ({
-                value: t.id,
-                label: t.label,
-              }))}
+              options={[
+                { value: "", label: "None", dashed: true },
+                ...repaymentTargets.map((t) => ({
+                  value: t.id,
+                  label: t.label,
+                })),
+              ]}
             />
           )}
 

@@ -401,7 +401,7 @@ def run_signals(candles, ctx=None):
     rsi = rsi_series(closes, 14)
     piv = pivots(candles, 3, 3)
     raw = detect_all(candles, closes, rsi, piv)
-    reliability = calibrate_reliabilities(raw, candles, ctx.get("grade"))
+    reliability = ctx.get("reliabilities") or calibrate_reliabilities(raw, candles, ctx.get("grade"))
     idx_by_time = {c["time"]: i for i, c in enumerate(candles)}
     by_time = {}
     for r in raw:

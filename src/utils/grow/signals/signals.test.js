@@ -38,9 +38,13 @@ const w = seq.map((p, k) =>
 const rep2 = runSignals(w, { symbol: "W.NS", interval: "1d", timeframe: "1Y" });
 const db = rep2.signals.find((s) => s.type === "double_bottom");
 assert(db, "expected a double_bottom signal");
-assert.strictEqual(db.fromTime, w[5].time, "double bottom spans from the first low");
+assert.strictEqual(db.fromTime, db.meta.shape[0].time, "double bottom fromTime = shape start (leading point)");
 assert.strictEqual(db.time, w[19].time, "double bottom confirms on the neckline breakout bar");
 assert.strictEqual(db.category, "chart", "geometric pattern is category chart");
+assert(Array.isArray(db.meta?.shape) && db.meta.shape.length >= 3, "double_bottom carries a plotted shape");
+for (let i = 1; i < db.meta.shape.length; i++) {
+  assert(db.meta.shape[i].time >= db.meta.shape[i - 1].time, "shape points are time-ordered");
+}
 
 console.log(`ok — double_bottom confidence ${db.confidence}`);
 
@@ -60,3 +64,29 @@ assert.strictEqual(sc.overall.hitRate, 1, "hit rate 100% for the single win");
 assert(sc.byBand.find((b) => b.band === "high").wins === 1, "the high-confidence band records the win");
 
 console.log(`ok — grade win; hit rate ${Math.round(sc.overall.hitRate * 100)}%`);
+
+const allIds = rep.signals.map((s) => s.id);
+assert.strictEqual(allIds.length, new Set(allIds).size, "signal ids must be unique");
+assert.deepStrictEqual(runSignals([], { symbol: "X" }).signals, [], "empty candles → no signals, no throw");
+
+const falling = [];
+for (let k = 0; k < 15; k++) {
+  const p = k < 3 ? 100 : 100 - (k - 2);
+  falling.push(candle(t0 + k * DAY, p, p + 0.5, p - 0.5, p));
+}
+const fidx = new Map(falling.map((c, k) => [c.time, k]));
+const bear = gradeSignal({ time: falling[2].time, direction: "bearish" }, falling, fidx, { horizon: 10, target: 0.04, stop: 0.03 });
+assert.strictEqual(bear.status, "win", "bearish signal into a falling trend should win");
+const bull = gradeSignal({ time: falling[2].time, direction: "bullish" }, falling, fidx, { horizon: 10, target: 0.04, stop: 0.03 });
+assert.strictEqual(bull.status, "loss", "bullish signal into a falling trend should lose");
+
+for (const s of rep.signals) {
+  assert(["high", "moderate", "low"].includes(s.confidenceBreakdown.band), "every signal has a valid band");
+  assert.strictEqual(
+    s.confidenceBreakdown.rows.reduce((a, r) => a + r.points, 0),
+    s.confidence,
+    "breakdown rows always sum to confidence",
+  );
+}
+
+console.log("ok — invariants: unique ids, empty-safe, bearish/loss grade, band sums");

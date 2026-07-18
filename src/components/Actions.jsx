@@ -7,7 +7,10 @@ import {
   persistUpdateInvestment,
   persistSelfTransfer,
 } from "../redux/slices/transactionSlice";
-import { persistAddSubscription } from "../redux/slices/solvencySlice";
+import {
+  persistAddSubscription,
+  persistRepayLending,
+} from "../redux/slices/solvencySlice";
 import ActionButton from "../preStyledElements/actionButton/ActionButton";
 import ActionLauncher from "./ActionLauncher";
 import Modal from "../preStyledElements/modal/Modal";
@@ -51,6 +54,9 @@ const Actions = () => {
   const voiceEnabled = useSelector(
     (state) =>
       state.transactions.transactionData?.preferences?.voiceAddEnabled ?? false,
+  );
+  const lendings = useSelector(
+    (state) => state.transactions.transactionData?.lendings ?? [],
   );
   const recentTransactions = useSelector(
     (state) => state.transactions.transactionData?.transactions,
@@ -200,6 +206,27 @@ const Actions = () => {
     setIsExpenseFormOpen(false);
     setExpenseInvestTarget(null);
     setExpenseAutoVoice(false);
+    // A repayment tagged to a borrowed lending must also draw down that
+    // lending's stored outstanding — route it through the same thunk the
+    // Solvency "Repay" button uses, keeping the form's own transaction.
+    const lending = transaction.lendingId
+      ? lendings.find(
+          (l) => l.id === transaction.lendingId && l.direction === "borrowed",
+        )
+      : null;
+    if (lending) {
+      dispatch(
+        persistRepayLending({
+          lending,
+          amount: parseFloat(transaction.amount) || 0,
+          occurredAt: transaction.occurredAt,
+          affectBalance: true,
+          accountId: transaction.accountId,
+          tx: transaction,
+        }),
+      );
+      return;
+    }
     dispatch(persistTransaction(transaction));
   };
 

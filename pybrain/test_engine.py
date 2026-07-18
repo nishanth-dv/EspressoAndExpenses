@@ -34,3 +34,25 @@ oc = grade_signal(sig, rising, idx, {"horizon": 10, "target": 0.04, "stop": 0.03
 assert oc["status"] == "win", "a bullish signal into a rising trend should win"
 
 print(f"ok — {len(rep['signals'])} signals; bullish_engulfing confidence {be['confidence']}; grade {oc['status']}")
+
+all_ids = [s["id"] for s in rep["signals"]]
+assert len(all_ids) == len(set(all_ids)), "signal ids must be unique"
+assert run_signals([], {"symbol": "X"})["signals"] == [], "empty candles -> no signals, no throw"
+
+rep_hi = run_signals(candles, {"symbol": "TEST.NS", "interval": "1d", "timeframe": "6M", "reliabilities": {"bullish_engulfing": 0.95}})
+be_hi = next(s for s in rep_hi["signals"] if s["type"] == "bullish_engulfing")
+assert be_hi["confidence"] > be["confidence"], "reliability override should raise confidence"
+
+falling = []
+for k in range(15):
+    p = 100 if k < 3 else 100 - (k - 2)
+    falling.append(candle(T0 + k * DAY, p, p + 0.5, p - 0.5, p))
+fidx = {c["time"]: k for k, c in enumerate(falling)}
+assert grade_signal({"time": falling[2]["time"], "direction": "bearish"}, falling, fidx)["status"] == "win", "bearish into falling wins"
+assert grade_signal({"time": falling[2]["time"], "direction": "bullish"}, falling, fidx)["status"] == "loss", "bullish into falling loses"
+
+for s in rep["signals"]:
+    assert s["confidenceBreakdown"]["band"] in ("high", "moderate", "low")
+    assert sum(r["points"] for r in s["confidenceBreakdown"]["rows"]) == s["confidence"]
+
+print("ok — invariants: unique ids, empty-safe, override, bearish/loss grade, band sums")

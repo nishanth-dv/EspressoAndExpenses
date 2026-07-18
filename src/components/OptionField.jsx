@@ -98,7 +98,7 @@ const OptionField = ({
               role="radio"
               aria-checked={active}
               disabled={disabled}
-              className={`opt-chip${active ? " opt-chip--active" : ""}`}
+              className={`opt-chip${active ? " opt-chip--active" : ""}${o.dashed ? " opt-chip--dashed" : ""}`}
               onClick={() => emit(o.value)}
             >
               {o.bank && <BankLogo bank={o.bank} color={o.color} size={18} />}

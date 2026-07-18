@@ -1,15 +1,24 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
-import { createChart, CandlestickSeries, LineSeries } from "lightweight-charts";
+import { createChart, CandlestickSeries, LineSeries, createSeriesMarkers } from "lightweight-charts";
 import { fetchCandles, TIMEFRAMES } from "../../utils/grow/growData";
 import { runSignals } from "../../utils/grow/signals";
-import { pivots } from "../../utils/grow/signals/indicators";
+import { CATEGORY_META } from "../../utils/grow/signals/contract";
 import { scoreCard } from "../../utils/grow/signals/grade";
 import { searchStockTickers } from "../../utils/priceService";
 import { ConfidenceBadge, ConfidenceReveal } from "./ConfidenceControl";
 
 const DEFAULT = { symbol: "RELIANCE.NS", name: "Reliance Industries" };
+const PATTERN_COLOR = "#f59e0b";
+const CANDLE_BARS = {
+  hammer: 1,
+  shooting_star: 1,
+  bullish_engulfing: 2,
+  bearish_engulfing: 2,
+  morning_star: 3,
+  evening_star: 3,
+};
 
 const INR = new Intl.NumberFormat("en-IN", {
   style: "currency",
@@ -46,40 +55,6 @@ function currentTheme() {
   return document.documentElement.getAttribute("data-theme") || "dark";
 }
 
-function fit(points) {
-  const n = points.length;
-  if (n < 2) return null;
-  let sx = 0, sy = 0, sxy = 0, sxx = 0;
-  for (const p of points) {
-    sx += p.x;
-    sy += p.y;
-    sxy += p.x * p.y;
-    sxx += p.x * p.x;
-  }
-  const d = n * sxx - sx * sx;
-  if (!d) return null;
-  const slope = (n * sxy - sx * sy) / d;
-  return { slope, intercept: (sy - slope * sx) / n };
-}
-
-function trendLine(candles) {
-  if (candles.length < 14) return null;
-  const closeFit = fit(candles.map((c, i) => ({ x: i, y: c.close })));
-  if (!closeFit) return null;
-  const up = closeFit.slope >= 0;
-  const piv = pivots(candles, 5, 5);
-  const swings = (up ? piv.lows : piv.highs).slice(-2);
-  if (swings.length < 2) return null;
-  const [a, b] = swings;
-  const slope = (b.price - a.price) / (b.index - a.index);
-  const intercept = a.price - slope * a.index;
-  const points = [];
-  for (let i = a.index; i < candles.length; i++) {
-    points.push({ time: candles[i].time, value: intercept + slope * i });
-  }
-  return { up, points };
-}
-
 function outcomeChip(oc) {
   if (!oc || oc.status === "pending") return null;
   const cls = oc.status === "win" ? "win" : oc.status === "loss" ? "loss" : "flat";
@@ -114,8 +89,11 @@ export default function GrowChart() {
   const holderRef = useRef(null);
   const chartRef = useRef(null);
   const seriesRef = useRef(null);
-  const trendRef = useRef(null);
+  const patternRef = useRef(null);
+  const markersRef = useRef(null);
   const priceLineRef = useRef(null);
+  const deepDone = useRef(false);
+  const chartWrapRef = useRef(null);
 
   const signals = useMemo(() => {
     if (candles.length < 3) return [];
@@ -165,21 +143,24 @@ export default function GrowChart() {
       ...chartOptions(),
     });
     const series = chart.addSeries(CandlestickSeries, candleOptions());
-    const trend = chart.addSeries(LineSeries, {
-      color: cssVar("--amount-income", "#16a34a"),
-      lineWidth: 2,
+    const pattern = chart.addSeries(LineSeries, {
+      color: PATTERN_COLOR,
+      lineWidth: 3,
+      pointMarkersVisible: true,
       lastValueVisible: false,
       priceLineVisible: false,
       crosshairMarkerVisible: false,
     });
     chartRef.current = chart;
     seriesRef.current = series;
-    trendRef.current = trend;
+    patternRef.current = pattern;
+    markersRef.current = createSeriesMarkers(series, []);
     return () => {
       chart.remove();
       chartRef.current = null;
       seriesRef.current = null;
-      trendRef.current = null;
+      patternRef.current = null;
+      markersRef.current = null;
     };
   }, []);
 
@@ -198,18 +179,6 @@ export default function GrowChart() {
     chartRef.current?.applyOptions(chartOptions());
     seriesRef.current?.applyOptions(candleOptions());
   }, [theme]);
-
-  useEffect(() => {
-    const t = trendRef.current;
-    if (!t) return;
-    const tl = trendLine(candles);
-    if (!tl) {
-      t.setData([]);
-      return;
-    }
-    t.applyOptions({ color: tl.up ? cssVar("--amount-income", "#16a34a") : cssVar("--amount-expense", "#ef4444") });
-    t.setData(tl.points);
-  }, [candles, theme]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -239,6 +208,95 @@ export default function GrowChart() {
       title: active.name,
     });
   }, [activeId, signals, theme]);
+
+  useEffect(() => {
+    const p = patternRef.current;
+    if (!p) return undefined;
+    const active = signals.find((s) => s.id === activeId);
+    const shape = active?.meta?.shape;
+    if (!shape || shape.length < 2) {
+      p.setData([]);
+      return undefined;
+    }
+    const pts = [];
+    for (const q of shape) {
+      if (!pts.length || q.time > pts[pts.length - 1].time) pts.push({ time: q.time, value: q.value });
+    }
+    if (pts.length < 2) {
+      p.setData(pts);
+      return undefined;
+    }
+    p.applyOptions({ color: PATTERN_COLOR });
+    p.setData([]);
+    const segs = pts.length - 1;
+    const DUR = 600;
+    let raf = 0;
+    let start = 0;
+    const draw = (now) => {
+      if (!start) start = now;
+      const prog = Math.min(1, (now - start) / DUR);
+      const pos = prog * segs;
+      const full = Math.floor(pos);
+      const data = pts.slice(0, full + 1);
+      if (full < segs) {
+        const a = pts[full];
+        const b = pts[full + 1];
+        const frac = pos - full;
+        const time = Math.round(a.time + (b.time - a.time) * frac);
+        const value = a.value + (b.value - a.value) * frac;
+        if (time > data[data.length - 1].time) data.push({ time, value });
+      }
+      p.setData(data);
+      if (prog < 1) raf = requestAnimationFrame(draw);
+    };
+    const timer = setTimeout(() => {
+      raf = requestAnimationFrame(draw);
+    }, 450);
+    return () => {
+      clearTimeout(timer);
+      cancelAnimationFrame(raf);
+    };
+  }, [activeId, signals, theme]);
+
+  useEffect(() => {
+    const m = markersRef.current;
+    if (!m) return undefined;
+    m.setMarkers([]);
+    const active = signals.find((s) => s.id === activeId);
+    if (!active || active.category === "chart") return undefined;
+    const idx = candles.findIndex((c) => c.time === active.time);
+    if (idx < 0) return undefined;
+    const n = CANDLE_BARS[active.type] ?? 1;
+    const bull = active.direction === "bullish";
+    const marks = [];
+    for (let i = Math.max(0, idx - n + 1); i <= idx; i++) {
+      marks.push({ time: candles[i].time, position: bull ? "belowBar" : "aboveBar", shape: "circle", color: PATTERN_COLOR });
+    }
+    const timer = setTimeout(() => m.setMarkers(marks), 450);
+    return () => clearTimeout(timer);
+  }, [activeId, signals, candles, theme]);
+
+  useEffect(() => {
+    if (deepDone.current || !signals.length) return;
+    const t = Number(params.get("t"));
+    const ty = params.get("ty");
+    if (!t || !ty) return;
+    const match = signals.find((s) => s.time === t && s.type === ty);
+    if (!match) return;
+    deepDone.current = true;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setActiveId(match.id);
+    focus(match);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [signals, params]);
+
+  useEffect(() => {
+    if (!activeId) return undefined;
+    const id = setTimeout(() => {
+      chartWrapRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+    }, 120);
+    return () => clearTimeout(id);
+  }, [activeId]);
 
   useEffect(() => {
     const q = query.trim();
@@ -278,9 +336,15 @@ export default function GrowChart() {
   }
 
   function focus(s) {
-    const idx = candles.findIndex((c) => c.time === s.time);
-    if (idx < 0 || !chartRef.current) return;
-    chartRef.current.timeScale().setVisibleLogicalRange({ from: Math.max(0, idx - 25), to: idx + 8 });
+    const chart = chartRef.current;
+    if (!chart) return;
+    const toIdx = candles.findIndex((c) => c.time === s.time);
+    if (toIdx < 0) return;
+    const fromT = s.fromTime ?? s.time;
+    let fromIdx = candles.findIndex((c) => c.time === fromT);
+    if (fromIdx < 0) fromIdx = toIdx;
+    const pad = Math.max(8, Math.round((toIdx - fromIdx) * 0.4));
+    chart.timeScale().setVisibleLogicalRange({ from: Math.max(0, fromIdx - pad), to: toIdx + pad });
   }
 
   function select(s) {
@@ -366,7 +430,7 @@ export default function GrowChart() {
         ))}
       </div>
 
-      <div className="grow-chart-canvas">
+      <div className="grow-chart-canvas" ref={chartWrapRef}>
         <div ref={holderRef} className="grow-chart-lw" />
         {loading && (
           <div className="grow-chart-overlay">
@@ -382,13 +446,9 @@ export default function GrowChart() {
 
       {signals.length > 0 && (
         <div className="grow-legend-key">
-          <span className="grow-legend-dir grow-legend-dir--bull">
-            <i className="fa-solid fa-arrow-trend-up" /> Uptrend
+          <span className="grow-legend-hint">
+            <i className="fa-solid fa-hand-pointer" /> Tap a signal below to plot its pattern on the chart
           </span>
-          <span className="grow-legend-dir grow-legend-dir--bear">
-            <i className="fa-solid fa-arrow-trend-down" /> Downtrend
-          </span>
-          <span className="grow-legend-hint">Trend line follows the slope · tap a signal to draw its level</span>
         </div>
       )}
 
@@ -480,9 +540,15 @@ export default function GrowChart() {
                       <i className={`fa-solid fa-arrow-trend-${s.direction === "bullish" ? "up" : "down"}`} />
                     </span>
                     <span className="grow-sig-text">
-                      <span className="grow-sig-title">{s.title}</span>
+                      <span className="grow-sig-title">
+                        <span className={`grow-cat grow-cat--${s.category}`}>
+                          <i className={`fa-solid ${CATEGORY_META[s.category]?.icon ?? ""}`} />{" "}
+                          {CATEGORY_META[s.category]?.label ?? s.category}
+                        </span>
+                        {s.title}
+                      </span>
                       <span className="grow-sig-meta">
-                        {s.name} · {new Date(s.time * 1000).toLocaleDateString("en-IN")}
+                        {new Date(s.time * 1000).toLocaleDateString("en-IN")}
                         {s.factors.confluence > 0 ? ` · +${s.factors.confluence} confirming` : ""}
                       </span>
                     </span>

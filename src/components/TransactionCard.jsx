@@ -97,6 +97,7 @@ const TransactionCard = ({transaction, balanceAfter, highlightId}) => {
     transactionType,
     cardId,
     repaymentFor,
+    lendingId,
     sipInvestmentId,
     licPolicyId,
     autoDeductInvestmentId,
@@ -188,6 +189,9 @@ const TransactionCard = ({transaction, balanceAfter, highlightId}) => {
   const solvencyCommitments = useSelector(
     (state) => state.transactions.transactionData?.commitments ?? [],
   );
+  const solvencyLendings = useSelector(
+    (state) => state.transactions.transactionData?.lendings ?? [],
+  );
   const linkedCard = cardId ? solvencyCards.find((c) => c.id === cardId) : null;
   const cardName = linkedCard?.name ?? null;
   const cardColor = linkedCard?.color ?? null;
@@ -197,7 +201,9 @@ const TransactionCard = ({transaction, balanceAfter, highlightId}) => {
         solvencyCommitments.find((c) => c.id === repaymentFor)?.name ??
         null
       )
-    : null;
+    : lendingId
+      ? solvencyLendings.find((l) => l.id === lendingId)?.name ?? null
+      : null;
 
   // Match by direct id (linked transaction), sipInvestmentId (SIP instalment),
   // licPolicyId (LIC premium payment) or autoDeductInvestmentId (recurring

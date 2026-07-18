@@ -225,6 +225,7 @@ function expenseDelta(tx) {
 }
 
 import { showToast } from "./toastSlice";
+import { lendingOutstandingAfter } from "../../utils/lendingUtils";
 import {
   computeAggregateBalance,
   computeAccountBalance,
@@ -1414,6 +1415,30 @@ export const persistRemoveMerchantAlias =
     await persistSettings(getState);
   };
 
+// Draw-down reversal for borrowed lendings. A repayment tagged `lendingId`
+// reduces that lending's STORED outstanding (unlike cards/commitments, whose
+// dues are recomputed live from their repayment txns). So when such a repayment
+// is removed, restored, or re-amounted, the stored figure has to move with it.
+// `delta` is added to outstanding (+ gives the debt back on delete, − takes it
+// on restore); the result is clamped to [0, original borrowed amount].
+// Dispatches the store update and returns the entity to persist (DB users), or
+// null when there's nothing tagged.
+function reconcileLending(dispatch, getState, lendingId, delta) {
+  if (!lendingId || !delta) return null;
+  const lendings = getState().transactions.transactionData?.lendings ?? [];
+  const lending = lendings.find((l) => l.id === lendingId);
+  if (!lending) return null;
+  const updated = { ...lending, outstanding: lendingOutstandingAfter(lending, delta) };
+  dispatch(updateLending(updated));
+  return updated;
+}
+
+async function persistLendingUpserts(upserts) {
+  for (const entity of upserts) {
+    await gql(UPSERT_ENTITY_MUTATION, { collection: "lendings", entity });
+  }
+}
+
 export const persistUpdateTransaction =
   (oldTx, newTx) => async (dispatch, getState) => {
     // Stamp the edit time so the ledger can show "Last updated". Lives on the
@@ -1421,10 +1446,36 @@ export const persistUpdateTransaction =
     const stamped = { ...newTx, updatedAt: new Date().toISOString() };
     const before = getState().transactions.transactionData.accounts ?? [];
     dispatch(updateTransaction({ oldTx, newTx: stamped }));
+
+    // Reverse the old draw-down, then apply the new one. When both point at the
+    // same lending the second call sees the first's update, so the net is
+    // outstanding + oldAmount − newAmount. Dedupe so only the latest entity is
+    // persisted per lending.
+    const lendingUpserts = [];
+    const restored = reconcileLending(
+      dispatch,
+      getState,
+      oldTx?.lendingId,
+      parseFloat(oldTx?.amount) || 0,
+    );
+    if (restored) lendingUpserts.push(restored);
+    const applied = reconcileLending(
+      dispatch,
+      getState,
+      stamped?.lendingId,
+      -(parseFloat(stamped?.amount) || 0),
+    );
+    if (applied) {
+      const i = lendingUpserts.findIndex((u) => u.id === applied.id);
+      if (i >= 0) lendingUpserts[i] = applied;
+      else lendingUpserts.push(applied);
+    }
+
     const done = () => dispatch(showToast({ message: "Transaction updated" }));
     if (dbEnabled(currentEmail())) {
       try {
         await gql(UPDATE_TRANSACTION_MUTATION, { tx: stamped });
+        await persistLendingUpserts(lendingUpserts);
         await persistRolledAccounts(getState, before);
         done();
         return;
@@ -1452,6 +1503,14 @@ export const persistDeleteTransaction = (id) => async (dispatch, getState) => {
   ) {
     dispatch(deleteInvestment(id));
   }
+  // Removing a borrowed-lending repayment gives its draw-down back.
+  const lendingUpsert = reconcileLending(
+    dispatch,
+    getState,
+    tx?.lendingId,
+    parseFloat(tx?.amount) || 0,
+  );
+  const lendingUpserts = lendingUpsert ? [lendingUpsert] : [];
   // Undo is offered for plain transactions — restoring the row fully reverses
   // the delete. Investment-type rows have cascades (linked investment), so they
   // skip Undo.
@@ -1467,6 +1526,7 @@ export const persistDeleteTransaction = (id) => async (dispatch, getState) => {
   if (dbEnabled(currentEmail())) {
     try {
       await gql(DELETE_TRANSACTION_MUTATION, { id });
+      await persistLendingUpserts(lendingUpserts);
       await persistRolledAccounts(getState, before);
       done();
       return;
@@ -1487,11 +1547,20 @@ export const persistRestoreTransaction =
     if (!tx) return;
     const before = getState().transactions.transactionData.accounts ?? [];
     dispatch(addTransaction(tx));
+    // Restoring a borrowed-lending repayment re-applies its draw-down.
+    const lendingUpsert = reconcileLending(
+      dispatch,
+      getState,
+      tx?.lendingId,
+      -(parseFloat(tx?.amount) || 0),
+    );
+    const lendingUpserts = lendingUpsert ? [lendingUpsert] : [];
     const done = () =>
       dispatch(showToast({ message: "Transaction restored" }));
     if (dbEnabled(currentEmail())) {
       try {
         await gql(ADD_TRANSACTION_MUTATION, { tx });
+        await persistLendingUpserts(lendingUpserts);
         await persistRolledAccounts(getState, before);
         done();
         return;

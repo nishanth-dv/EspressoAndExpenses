@@ -32,3 +32,33 @@ create table if not exists grow_scans (
 
 alter table grow_signals enable row level security;
 alter table grow_scans enable row level security;
+
+-- Forward-grading (out-of-sample). The nightly batch fills these for past
+-- signals once enough forward candles exist.
+alter table grow_signals add column if not exists outcome text;
+alter table grow_signals add column if not exists outcome_return numeric;
+alter table grow_signals add column if not exists outcome_bars int;
+alter table grow_signals add column if not exists graded_at timestamptz;
+
+create index if not exists grow_signals_ungraded_idx on grow_signals (scan_date) where outcome is null;
+
+-- Aggregated out-of-sample track record. Only resolved (non-pending) signals.
+create or replace function grow_track()
+returns table (scope text, key text, resolved bigint, wins bigint, hit_rate numeric, avg_return numeric)
+language sql stable as $$
+  select 'overall'::text, 'all'::text, count(*), count(*) filter (where outcome = 'win'),
+         round(avg((outcome = 'win')::int), 3), round(avg(outcome_return), 4)
+  from grow_signals where outcome is not null and outcome <> 'pending'
+  union all
+  select 'band'::text, band, count(*), count(*) filter (where outcome = 'win'),
+         round(avg((outcome = 'win')::int), 3), round(avg(outcome_return), 4)
+  from grow_signals where outcome is not null and outcome <> 'pending' group by band
+  union all
+  select 'direction'::text, direction, count(*), count(*) filter (where outcome = 'win'),
+         round(avg((outcome = 'win')::int), 3), round(avg(outcome_return), 4)
+  from grow_signals where outcome is not null and outcome <> 'pending' group by direction
+  union all
+  select 'type'::text, type, count(*), count(*) filter (where outcome = 'win'),
+         round(avg((outcome = 'win')::int), 3), round(avg(outcome_return), 4)
+  from grow_signals where outcome is not null and outcome <> 'pending' group by type;
+$$;

@@ -313,7 +313,7 @@ export const persistDeleteLending = (id) => async (dispatch, getState) => {
 // Records a partial or full repayment on a lending. Optionally logs an
 // income / expense transaction so the user's balance reflects the movement.
 export const persistRepayLending =
-  ({ lending, amount, occurredAt, affectBalance, accountId }) =>
+  ({ lending, amount, occurredAt, affectBalance, accountId, tx: txOverride }) =>
   async (dispatch, getState) => {
     const isLent = lending.direction === "lent";
     const remaining = Math.max(
@@ -325,7 +325,7 @@ export const persistRepayLending =
 
     const txAdds = [];
     if (affectBalance) {
-      const tx = {
+      const tx = txOverride ?? {
         id: crypto.randomUUID(),
         transactionType: isLent ? "income" : "expense",
         name: isLent ? `Received from ${lending.name}` : lending.name,

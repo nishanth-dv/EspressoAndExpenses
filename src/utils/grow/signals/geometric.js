@@ -41,16 +41,19 @@ function firstCloseBelow(candles, start, level) {
   for (let i = start; i < candles.length; i++) if (candles[i].close < level) return i;
   return -1;
 }
-function maxHighBetween(candles, a, b) {
+function argMaxHigh(candles, a, b) {
   let m = -Infinity;
-  for (let i = a; i <= b; i++) m = Math.max(m, candles[i].high);
-  return m;
+  let mi = a;
+  for (let i = a; i <= b; i++) if (candles[i].high > m) { m = candles[i].high; mi = i; }
+  return mi;
 }
-function minLowBetween(candles, a, b) {
+function argMinLow(candles, a, b) {
   let m = Infinity;
-  for (let i = a; i <= b; i++) m = Math.min(m, candles[i].low);
-  return m;
+  let mi = a;
+  for (let i = a; i <= b; i++) if (candles[i].low < m) { m = candles[i].low; mi = i; }
+  return mi;
 }
+const pt = (candles, i, value) => ({ time: candles[i].time, value });
 
 function doubleBottoms(candles, closes, lows) {
   const out = [];
@@ -61,9 +64,11 @@ function doubleBottoms(candles, closes, lows) {
     if (gap < 5 || gap > 80) continue;
     const diff = Math.abs(a.price - b.price) / Math.min(a.price, b.price);
     if (diff > 0.03) continue;
-    const neck = maxHighBetween(candles, a.index, b.index);
+    const peakIdx = argMaxHigh(candles, a.index, b.index);
+    const neck = candles[peakIdx].high;
     const conf = firstCloseAbove(candles, b.index + 1, neck);
     if (conf < 0) continue;
+    const leadIdx = argMaxHigh(candles, Math.max(0, a.index - gap), a.index);
     out.push(
       mkAt(candles, closes, conf, {
         type: "double_bottom",
@@ -71,10 +76,13 @@ function doubleBottoms(candles, closes, lows) {
         direction: DIRECTION.BULL,
         title: `Double bottom near ₹${Math.round((a.price + b.price) / 2)}`,
         code: "W",
-        fromTime: candles[a.index].time,
+        fromTime: candles[leadIdx].time,
         baseReliability: 0.62,
         signalStrength: (1 - diff / 0.03) * 0.6 + ((candles[conf].close / neck - 1) / 0.03) * 0.4,
-        meta: { level: Math.round((a.price + b.price) / 2) },
+        meta: {
+          level: Math.round((a.price + b.price) / 2),
+          shape: [pt(candles, leadIdx, candles[leadIdx].high), pt(candles, a.index, a.price), pt(candles, peakIdx, neck), pt(candles, b.index, b.price), pt(candles, conf, candles[conf].close)],
+        },
       }),
     );
     k++;
@@ -91,9 +99,11 @@ function doubleTops(candles, closes, highs) {
     if (gap < 5 || gap > 80) continue;
     const diff = Math.abs(a.price - b.price) / Math.min(a.price, b.price);
     if (diff > 0.03) continue;
-    const neck = minLowBetween(candles, a.index, b.index);
+    const troughIdx = argMinLow(candles, a.index, b.index);
+    const neck = candles[troughIdx].low;
     const conf = firstCloseBelow(candles, b.index + 1, neck);
     if (conf < 0) continue;
+    const leadIdx = argMinLow(candles, Math.max(0, a.index - gap), a.index);
     out.push(
       mkAt(candles, closes, conf, {
         type: "double_top",
@@ -101,10 +111,13 @@ function doubleTops(candles, closes, highs) {
         direction: DIRECTION.BEAR,
         title: `Double top near ₹${Math.round((a.price + b.price) / 2)}`,
         code: "M",
-        fromTime: candles[a.index].time,
+        fromTime: candles[leadIdx].time,
         baseReliability: 0.62,
         signalStrength: (1 - diff / 0.03) * 0.6 + ((1 - candles[conf].close / neck) / 0.03) * 0.4,
-        meta: { level: Math.round((a.price + b.price) / 2) },
+        meta: {
+          level: Math.round((a.price + b.price) / 2),
+          shape: [pt(candles, leadIdx, candles[leadIdx].low), pt(candles, a.index, a.price), pt(candles, troughIdx, neck), pt(candles, b.index, b.price), pt(candles, conf, candles[conf].close)],
+        },
       }),
     );
     k++;
@@ -122,7 +135,9 @@ function headShoulders(candles, closes, highs) {
     if (h.price < Math.max(l.price, r.price) * 1.01) continue;
     const shoulderDiff = Math.abs(l.price - r.price) / Math.min(l.price, r.price);
     if (shoulderDiff > 0.05) continue;
-    const neck = Math.min(minLowBetween(candles, l.index, h.index), minLowBetween(candles, h.index, r.index));
+    const t1 = argMinLow(candles, l.index, h.index);
+    const t2 = argMinLow(candles, h.index, r.index);
+    const neck = Math.min(candles[t1].low, candles[t2].low);
     const conf = firstCloseBelow(candles, r.index + 1, neck);
     if (conf < 0) continue;
     out.push(
@@ -135,7 +150,10 @@ function headShoulders(candles, closes, highs) {
         fromTime: candles[l.index].time,
         baseReliability: 0.66,
         signalStrength: (1 - shoulderDiff / 0.05) * 0.5 + ((h.price / Math.max(l.price, r.price) - 1) / 0.05) * 0.5,
-        meta: { neckline: Math.round(neck) },
+        meta: {
+          neckline: Math.round(neck),
+          shape: [pt(candles, l.index, l.price), pt(candles, t1, candles[t1].low), pt(candles, h.index, h.price), pt(candles, t2, candles[t2].low), pt(candles, r.index, r.price)],
+        },
       }),
     );
   }
@@ -152,7 +170,9 @@ function invHeadShoulders(candles, closes, lows) {
     if (h.price > Math.min(l.price, r.price) * 0.99) continue;
     const shoulderDiff = Math.abs(l.price - r.price) / Math.min(l.price, r.price);
     if (shoulderDiff > 0.05) continue;
-    const neck = Math.max(maxHighBetween(candles, l.index, h.index), maxHighBetween(candles, h.index, r.index));
+    const p1 = argMaxHigh(candles, l.index, h.index);
+    const p2 = argMaxHigh(candles, h.index, r.index);
+    const neck = Math.max(candles[p1].high, candles[p2].high);
     const conf = firstCloseAbove(candles, r.index + 1, neck);
     if (conf < 0) continue;
     out.push(
@@ -165,7 +185,10 @@ function invHeadShoulders(candles, closes, lows) {
         fromTime: candles[l.index].time,
         baseReliability: 0.66,
         signalStrength: (1 - shoulderDiff / 0.05) * 0.5 + ((Math.min(l.price, r.price) / h.price - 1) / 0.05) * 0.5,
-        meta: { neckline: Math.round(neck) },
+        meta: {
+          neckline: Math.round(neck),
+          shape: [pt(candles, l.index, l.price), pt(candles, p1, candles[p1].high), pt(candles, h.index, h.price), pt(candles, p2, candles[p2].high), pt(candles, r.index, r.price)],
+        },
       }),
     );
   }

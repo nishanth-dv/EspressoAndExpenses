@@ -7873,6 +7873,11 @@ html[data-skin="glass"] .ledger-summary {
   color: var(--amount-expense);
 }
 
+.opt-chip--dashed {
+  border-style: dashed;
+  color: var(--text-label);
+}
+
 .opt-field--invalid .opt-chip-strip {
   padding: 6px;
   box-sizing: border-box;
@@ -11818,7 +11823,7 @@ html[data-skin="glass"] .adv-card {
   outline: none;
   background: transparent;
   color: var(--text-primary);
-  font-size: 0.95rem;
+  font-size: 16px;
 }
 .grow-chart-results {
   position: absolute;
@@ -11989,6 +11994,7 @@ html[data-skin="glass"] .adv-card {
   border-radius: 12px;
   background: var(--surface-bg);
   padding: 10px 12px;
+  box-shadow: var(--levitate-shadow);
 }
 .grow-sig-card--bullish {
   border-left-color: var(--amount-income);
@@ -12059,6 +12065,36 @@ html[data-skin="glass"] .adv-card {
   font-size: 0.75rem;
   color: var(--text-secondary);
 }
+.grow-cat {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  padding: 1px 6px;
+  margin-right: 7px;
+  border-radius: 5px;
+  vertical-align: middle;
+  color: var(--cat, var(--text-secondary));
+  background: color-mix(in srgb, var(--cat, var(--text-secondary)) 15%, transparent);
+}
+.grow-cat i {
+  font-size: 0.9em;
+}
+.grow-cat--candlestick {
+  --cat: var(--amount-investment);
+}
+.grow-cat--indicator {
+  --cat: #a855f7;
+}
+.grow-cat--structure {
+  --cat: #d97706;
+}
+.grow-cat--chart {
+  --cat: var(--amount-income);
+}
 .grow-sig-oc {
   flex-shrink: 0;
   font-size: 0.72rem;
@@ -12102,6 +12138,31 @@ html[data-skin="glass"] .adv-card {
   border-color: color-mix(in srgb, var(--amount-income) 40%, transparent);
   background: color-mix(in srgb, var(--amount-income) 12%, transparent);
 }
+.grow-sigflt-switch {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  padding: 0;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.grow-sigflt-switch .pref-switch {
+  display: inline-block;
+  width: 40px;
+  height: 24px;
+}
+.grow-sigflt-switch .pref-switch-thumb {
+  width: 20px;
+  height: 20px;
+}
+.grow-sigflt-switch .pref-switch--on .pref-switch-thumb {
+  transform: translateX(16px);
+}
 .grow-sig-empty {
   display: flex;
   align-items: center;
@@ -12114,6 +12175,21 @@ html[data-skin="glass"] .adv-card {
 }
 .grow-sig-empty--err {
   color: var(--amount-expense);
+}
+.grow-sig-stale {
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 1px 7px;
+  border-radius: 999px;
+  color: var(--amount-expense);
+  background: color-mix(in srgb, var(--amount-expense) 14%, transparent);
+}
+.grow-sig-note {
+  margin: 14px 0 0;
+  font-size: 0.72rem;
+  color: var(--text-secondary);
 }
 
 /* ---- Grow → Charts · direction key ---- */
@@ -12150,6 +12226,11 @@ html[data-skin="glass"] .adv-card {
   background: var(--surface-bg);
   padding: 16px;
   margin-top: 4px;
+  box-shadow: var(--levitate-shadow);
+}
+html[data-skin="glass"] .grow-sig-card,
+html[data-skin="glass"] .grow-score {
+  box-shadow: 0 8px 24px -14px var(--glass-ambient, rgba(0, 0, 0, 0.4));
 }
 .grow-score .is-up {
   color: var(--amount-income);

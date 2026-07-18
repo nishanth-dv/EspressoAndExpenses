@@ -268,6 +268,14 @@ app.get("/grow/signals", requireToken, async (c) => {
   return c.json({ scan, signals: data ?? [] });
 });
 
+// Out-of-sample track record — aggregated forward-graded outcomes.
+app.get("/grow/track", requireToken, async (c) => {
+  const db = serviceClient(c.env);
+  const { data, error } = await db.rpc("grow_track");
+  if (error) return c.json({ error: error.message }, 500);
+  return c.json({ track: data ?? [] });
+});
+
 // Page access — token-only (Drive users included). Returns the gated page keys
 // this email may reach. No row = no gated access (default deny, fail-closed).
 app.get("/access", requireToken, async (c) => {

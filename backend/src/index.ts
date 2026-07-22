@@ -243,9 +243,11 @@ app.get("/candles", requireToken, async (c) => {
 // Grow breadth scan — ranked signals from the nightly pybrain batch (Supabase).
 app.get("/grow/signals", requireToken, async (c) => {
   const db = serviceClient(c.env);
+  const interval = c.req.query("interval") ?? "1d";
   const { data: scan } = await db
     .from("grow_scans")
-    .select("scan_date, universe_size, signal_count, generated_at")
+    .select("scan_date, interval, universe_size, signal_count, generated_at")
+    .eq("interval", interval)
     .order("scan_date", { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -256,6 +258,7 @@ app.get("/grow/signals", requireToken, async (c) => {
     .from("grow_signals")
     .select("*")
     .eq("scan_date", scan.scan_date)
+    .eq("interval", interval)
     .order("confidence", { ascending: false })
     .limit(limit);
   const dir = c.req.query("direction");
@@ -271,7 +274,8 @@ app.get("/grow/signals", requireToken, async (c) => {
 // Out-of-sample track record — aggregated forward-graded outcomes.
 app.get("/grow/track", requireToken, async (c) => {
   const db = serviceClient(c.env);
-  const { data, error } = await db.rpc("grow_track");
+  const interval = c.req.query("interval") ?? "1d";
+  const { data, error } = await db.rpc("grow_track", { p_interval: interval });
   if (error) return c.json({ error: error.message }, 500);
   return c.json({ track: data ?? [] });
 });

@@ -7,11 +7,25 @@ import sys
 import time
 import urllib.request
 
-from engine import run_signals, avg_volume, detect_all, pivots, rsi_series, grade_signal
+from engine import run_signals, avg_volume, detect_all, pivots, rsi_series, grade_signal, atr_series
 
 NIFTY200_CSV = "https://niftyindices.com/IndexConstituent/ind_nifty200list.csv"
 BANDRANK = {"high": 2, "moderate": 1, "low": 0}
 RECENCY_MAX = 2
+
+INTERVAL_RANGE = {
+    "1m": "7d",
+    "2m": "60d",
+    "5m": "60d",
+    "15m": "60d",
+    "30m": "60d",
+    "60m": "730d",
+    "90m": "60d",
+    "1h": "730d",
+    "1d": "1y",
+    "1wk": "5y",
+    "1mo": "max",
+}
 
 FALLBACK = [
     "RELIANCE", "TCS", "HDFCBANK", "ICICIBANK", "INFY", "SBIN", "BHARTIARTL", "ITC", "LT", "KOTAKBANK",
@@ -26,7 +40,16 @@ SUPABASE_URL = os.environ.get("SUPABASE_URL", "").rstrip("/")
 SUPABASE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "")
 
 
-def load_universe():
+def load_universe(top=300):
+    try:
+        from bhavcopy import bhavcopy_universe
+        syms = bhavcopy_universe(top=top)
+        if len(syms) >= 50:
+            print(f"universe: NSE bhavcopy, top {len(syms)} by turnover")
+            return syms
+        raise ValueError("bhavcopy returned too few names")
+    except Exception as e:
+        print(f"bhavcopy universe failed ({e}); trying Nifty200 CSV")
     try:
         req = urllib.request.Request(NIFTY200_CSV, headers={"User-Agent": "Mozilla/5.0"})
         with urllib.request.urlopen(req, timeout=30) as r:
@@ -59,13 +82,13 @@ def yahoo(symbol, interval="1d", rng="1y"):
     return out
 
 
-def fetch_all(symbols, limit=None):
+def fetch_all(symbols, interval="1d", rng="1y", limit=None):
     if limit:
         symbols = symbols[:limit]
     cache = []
     for sym in symbols:
         try:
-            candles = yahoo(sym)
+            candles = yahoo(sym, interval, rng)
             if len(candles) >= 30:
                 cache.append((sym, candles))
         except Exception as e:
@@ -74,7 +97,7 @@ def fetch_all(symbols, limit=None):
     return cache
 
 
-def pooled_reliabilities(cache, k=8):
+def pooled_reliabilities(cache, k=8, grade_opts=None):
     stat = {}
     tot_wins = tot_resolved = 0
     for _sym, candles in cache:
@@ -83,9 +106,10 @@ def pooled_reliabilities(cache, k=8):
         piv = pivots(candles, 3, 3)
         raw = detect_all(candles, closes, rsi, piv)
         idx = {c["time"]: i for i, c in enumerate(candles)}
+        atr = atr_series(candles, 14)
         for s in raw:
             v = stat.setdefault(s["type"], {"wins": 0, "resolved": 0})
-            g = grade_signal(s, candles, idx)
+            g = grade_signal(s, candles, idx, {**(grade_opts or {}), "atr": atr})
             if g["status"] == "pending":
                 continue
             v["resolved"] += 1
@@ -97,17 +121,17 @@ def pooled_reliabilities(cache, k=8):
     return {t: (v["wins"] + k * base) / (v["resolved"] + k) for t, v in stat.items()}
 
 
-def collect_signals(cache, today, reliabilities):
+def collect_signals(cache, today, reliabilities, interval="1d", long_only=True):
     collected = []
     for sym, candles in cache:
-        rep = run_signals(candles, {"symbol": sym, "interval": "1d", "timeframe": "1Y", "reliabilities": reliabilities})
+        rep = run_signals(candles, {"symbol": sym, "interval": interval, "timeframe": interval, "reliabilities": reliabilities, "longOnly": long_only})
         liquidity = round(avg_volume(candles, len(candles) - 1, 20) * candles[-1]["close"])
         display = sym.replace(".NS", "")
         for s in rep["signals"]:
             if s["factors"]["recencyBars"] > RECENCY_MAX:
                 continue
             collected.append({
-                "id": s["id"], "scan_date": today, "symbol": sym, "symbol_name": display,
+                "id": s["id"], "scan_date": today, "interval": interval, "symbol": sym, "symbol_name": display,
                 "type": s["type"], "name": s["name"], "category": s["category"], "direction": s["direction"],
                 "bar_time": s["time"], "price": s["price"], "title": s["title"],
                 "confidence": s["confidence"], "band": s["confidenceBreakdown"]["band"], "sort_value": s["sortValue"],
@@ -145,11 +169,12 @@ def sb_get(path):
         return json.loads(r.read())
 
 
-def grade_past(cache, today):
+def grade_past(cache, today, interval="1d"):
     if not SUPABASE_URL or not SUPABASE_KEY:
         return
     by_sym = {sym: candles for sym, candles in cache}
-    rows = sb_get(f"grow_signals?outcome=is.null&scan_date=lt.{today}&select=id,scan_date,symbol,direction,bar_time&limit=5000")
+    atr_by_sym = {sym: atr_series(candles, 14) for sym, candles in cache}
+    rows = sb_get(f"grow_signals?outcome=is.null&interval=eq.{interval}&scan_date=lt.{today}&select=id,scan_date,symbol,direction,bar_time&limit=5000")
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     updates = []
     for r in rows:
@@ -157,7 +182,7 @@ def grade_past(cache, today):
         if not candles:
             continue
         idx = {c["time"]: i for i, c in enumerate(candles)}
-        oc = grade_signal({"time": r["bar_time"], "direction": r["direction"]}, candles, idx)
+        oc = grade_signal({"time": r["bar_time"], "direction": r["direction"]}, candles, idx, {"atr": atr_by_sym[r["symbol"]]})
         if oc["status"] == "pending":
             continue
         updates.append({
@@ -166,37 +191,121 @@ def grade_past(cache, today):
         })
     for i in range(0, len(updates), 500):
         sb("POST", "grow_signals?on_conflict=id,scan_date", updates[i : i + 500], upsert=True)
-    print(f"forward-graded {len(updates)} past signals")
+    print(f"forward-graded {len(updates)} past {interval} signals")
 
 
-def write(collected, universe_size, today):
+def write(collected, universe_size, today, interval="1d"):
     if not SUPABASE_URL or not SUPABASE_KEY:
-        print("\nDRY RUN — no Supabase creds set. Top 20 ranked:")
+        print(f"\nDRY RUN — no Supabase creds set. Top 20 ranked ({interval}):")
         for r in collected[:20]:
             print(f"  {str(r['confidence']).rjust(3)} {r['band'][:3]}  {r['symbol'].ljust(14)} {r['name']} ({r['direction']})")
-        print(f"\n{len(collected)} recent (<= {RECENCY_MAX} bars) signals across {universe_size} names")
+        print(f"\n{len(collected)} recent (<= {RECENCY_MAX} bars) {interval} signals across {universe_size} names")
         return
     ids = [r["id"] for r in collected]
-    print(f"writing {len(collected)} rows ({len(set(ids))} unique ids) for {today}")
-    sb("DELETE", f"grow_signals?scan_date=eq.{today}")
+    print(f"writing {len(collected)} rows ({len(set(ids))} unique ids) for {today} {interval}")
+    sb("DELETE", f"grow_signals?scan_date=eq.{today}&interval=eq.{interval}")
     for i in range(0, len(collected), 500):
         sb("POST", "grow_signals?on_conflict=id,scan_date", collected[i : i + 500], upsert=True)
-    sb("POST", "grow_scans?on_conflict=scan_date", {"scan_date": today, "universe_size": universe_size, "signal_count": len(collected)}, upsert=True)
-    print(f"wrote {len(collected)} signals for {today} ({universe_size} names)")
+    sb("POST", "grow_scans?on_conflict=scan_date,interval", {"scan_date": today, "interval": interval, "universe_size": universe_size, "signal_count": len(collected)}, upsert=True)
+    print(f"wrote {len(collected)} {interval} signals for {today} ({universe_size} names)")
+
+
+def candle_rows(bhav_rows, date, interval="1d"):
+    t = int(datetime.datetime(date.year, date.month, date.day).timestamp())
+    return [{
+        "symbol": r["symbol"], "interval": interval, "bar_time": t,
+        "open": r["open"], "high": r["high"], "low": r["low"], "close": r["close"],
+        "volume": r["volume"], "deliv_per": r.get("deliv_per"),
+    } for r in bhav_rows]
+
+
+def ingest_bhavcopy(interval="1d", max_back=7):
+    from bhavcopy import fetch_bhavcopy
+    d = datetime.date.today()
+    rows, used = [], None
+    for _ in range(max_back):
+        if d.weekday() < 5:
+            try:
+                r = fetch_bhavcopy(d)
+                if r:
+                    rows, used = r, d
+                    break
+            except Exception as e:
+                print(f"bhavcopy {d} failed: {e}")
+        d -= datetime.timedelta(days=1)
+    if not rows:
+        print("bhavcopy ingest: no data found")
+        return 0
+    payload = candle_rows(rows, used, interval)
+    if not (SUPABASE_URL and SUPABASE_KEY):
+        print(f"DRY RUN — would upsert {len(payload)} candles for {used}")
+        return len(payload)
+    for i in range(0, len(payload), 500):
+        sb("POST", "grow_candles?on_conflict=symbol,interval,bar_time", payload[i : i + 500], upsert=True)
+    print(f"ingested {len(payload)} bhavcopy candles for {used}")
+    return len(payload)
+
+
+def _db_to_cache(rows, min_days=60, top=None):
+    series = {}
+    for r in rows:
+        series.setdefault(r["symbol"], []).append({
+            "time": int(r["bar_time"]), "open": float(r["open"]), "high": float(r["high"]),
+            "low": float(r["low"]), "close": float(r["close"]), "volume": float(r["volume"] or 0),
+        })
+    cache = []
+    for s, cs in series.items():
+        cs.sort(key=lambda c: c["time"])
+        if len(cs) >= min_days:
+            cache.append((s, cs))
+    if top:
+        cache.sort(key=lambda x: sum(c["volume"] for c in x[1]), reverse=True)
+        cache = cache[:top]
+    return cache
+
+
+def load_candles_db(interval="1d", min_days=60, top=300):
+    if not (SUPABASE_URL and SUPABASE_KEY):
+        return []
+    rows = sb_get(f"grow_candles?interval=eq.{interval}&select=symbol,bar_time,open,high,low,close,volume&order=bar_time.asc")
+    return _db_to_cache(rows, min_days, top)
 
 
 def main():
     limit = None
     if "--limit" in sys.argv:
         limit = int(sys.argv[sys.argv.index("--limit") + 1])
+    interval = "1d"
+    if "--interval" in sys.argv:
+        interval = sys.argv[sys.argv.index("--interval") + 1]
+    if "--ingest" in sys.argv:
+        ingest_bhavcopy(interval)
+        return
+    if interval not in INTERVAL_RANGE:
+        supported = ", ".join(INTERVAL_RANGE)
+        print(f"unsupported interval '{interval}'. Yahoo supports: {supported}.")
+        print("Sub-minute bars (1s) are not available from Yahoo — they need the production feed.")
+        sys.exit(1)
+    rng = INTERVAL_RANGE[interval]
+    if "--range" in sys.argv:
+        rng = sys.argv[sys.argv.index("--range") + 1]
+    long_only = "--allow-shorts" not in sys.argv
+    source = sys.argv[sys.argv.index("--source") + 1] if "--source" in sys.argv else "yahoo"
     today = datetime.date.today().isoformat()
-    universe = load_universe()
-    print(f"universe: {len(universe)} symbols")
-    cache = fetch_all(universe, limit)
-    print(f"fetched {len(cache)} symbols")
+    if source == "db":
+        cache = load_candles_db(interval, top=300)
+        universe = [s for s, _ in cache]
+        print(f"source: bhavcopy DB store · {len(cache)} symbols · {interval} · {'long-only' if long_only else 'long+short'}")
+    else:
+        universe = load_universe()
+        cache = fetch_all(universe, interval, rng, limit)
+        print(f"universe: {len(universe)} · fetched {len(cache)} · {interval} · {rng} · {'long-only' if long_only else 'long+short'}")
+    if not cache:
+        print("no candles to scan")
+        return
     pooled = pooled_reliabilities(cache)
     print("pooled reliabilities:", {t: round(r, 2) for t, r in sorted(pooled.items(), key=lambda x: -x[1])})
-    collected = collect_signals(cache, today, pooled)
+    collected = collect_signals(cache, today, pooled, interval, long_only=long_only)
     collected.sort(key=lambda r: (BANDRANK[r["band"]], r["confidence"], r["liquidity"]), reverse=True)
     seen = set()
     unique = []
@@ -206,8 +315,8 @@ def main():
         seen.add(r["id"])
         unique.append(r)
     collected = unique[:200]
-    write(collected, len(universe), today)
-    grade_past(cache, today)
+    write(collected, len(universe), today, interval)
+    grade_past(cache, today, interval)
 
 
 if __name__ == "__main__":

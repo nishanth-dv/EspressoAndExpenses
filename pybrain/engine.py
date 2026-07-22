@@ -1,11 +1,19 @@
 from __future__ import annotations
 
 ENGINE = {"source": "rules", "version": "grow-signals-py-0.1.0"}
-WEIGHTS = {"baseMin": 25, "baseSpan": 60, "strength": 10, "volume": 8, "recency": 1.5, "recencyCap": 15}
-GRADE_DEFAULTS = {"horizon": 10, "target": 0.04, "stop": 0.03}
+SUPPRESSED_TYPES = {
+    "double_top",
+    "breakdown",
+    "rsi_overbought",
+    "head_shoulders",
+    "shooting_star",
+    "bearish_engulfing",
+}
+WEIGHTS = {"strength": 3, "volume": 4}
+GRADE_DEFAULTS = {"horizon": 10, "target": 0.04, "stop": 0.03, "atrPeriod": 14, "atrTarget": 2, "atrStop": 1.5, "costBps": 15}
 MEANING = (
-    "Confidence reflects how strong, well-tested and current this setup is — "
-    "not a prediction that the trade will work."
+    "Confidence is our estimated chance this setup reaches its target before its stop — "
+    "from the pattern's tested win rate, plus its strength and volume. An estimate, not a guarantee."
 )
 
 
@@ -41,6 +49,26 @@ def rsi_series(closes, period=14):
         avg_gain = (avg_gain * (period - 1) + g) / period
         avg_loss = (avg_loss * (period - 1) + l) / period
         out[i] = 100.0 if avg_loss == 0 else 100 - 100 / (1 + avg_gain / avg_loss)
+    return out
+
+
+def atr_series(candles, period=14):
+    n = len(candles)
+    out = [None] * n
+    if n < period + 1:
+        return out
+    tr = [0.0] * n
+    for i in range(n):
+        if i == 0:
+            tr[i] = candles[0]["high"] - candles[0]["low"]
+        else:
+            pc = candles[i - 1]["close"]
+            tr[i] = max(candles[i]["high"] - candles[i]["low"], abs(candles[i]["high"] - pc), abs(candles[i]["low"] - pc))
+    atr = sum(tr[1 : period + 1]) / period
+    out[period] = atr
+    for i in range(period + 1, n):
+        atr = (atr * (period - 1) + tr[i]) / period
+        out[i] = atr
     return out
 
 
@@ -314,26 +342,25 @@ def detect_all(candles, closes, rsi, piv):
 
 
 def band(s):
-    if s >= 80:
+    if s >= 45:
         return "high"
-    if s >= 55:
+    if s >= 40:
         return "moderate"
     return "low"
 
 
 def breakdown_signal(f):
-    base_rel = f.get("baseReliability", 0.5)
+    base_rel = f.get("baseReliability", 0.4)
     strength = f.get("signalStrength", 0.5)
     volume = f.get("volumeConfirm", 0)
-    recency = f.get("recencyBars", 0)
     rows = [
-        {"label": "Pattern reliability", "points": round(WEIGHTS["baseMin"] + base_rel * WEIGHTS["baseSpan"])},
+        {"label": "Base win rate", "points": round(base_rel * 100)},
         {"label": "Strength", "points": round(strength * WEIGHTS["strength"])},
         {"label": "Volume confirmation", "points": round(volume * WEIGHTS["volume"])},
-        {"label": "Recency", "points": -min(WEIGHTS["recencyCap"], round(recency * WEIGHTS["recency"]))},
     ]
+    p = max(0.0, min(1.0, base_rel + strength * WEIGHTS["strength"] / 100 + volume * WEIGHTS["volume"] / 100))
+    total = round(p * 100)
     summed = sum(r["points"] for r in rows)
-    total = max(0, min(100, summed))
     rows[-1]["points"] += total - summed
     return {"total": total, "band": band(total), "rows": rows, "meaning": MEANING}
 
@@ -343,40 +370,58 @@ def with_signal_confidence(sig):
     return {**sig, "confidence": bd["total"], "confidenceBreakdown": bd}
 
 
+def _atr_for(candles, opts):
+    opts = opts or {}
+    return opts.get("atr") or atr_series(candles, opts.get("atrPeriod", GRADE_DEFAULTS["atrPeriod"]))
+
+
 def grade_signal(sig, candles, idx_by_time, opts=None):
-    o = {**GRADE_DEFAULTS, **(opts or {})}
+    opts = opts or {}
+    o = {**GRADE_DEFAULTS, **opts}
     i = idx_by_time.get(sig["time"])
     if i is None or i >= len(candles) - 1 or sig["direction"] == "neutral":
         return {"status": "pending", "returnPct": 0, "bars": 0}
     d = -1 if sig["direction"] == "bearish" else 1
     entry = candles[i]["close"]
-    target = entry * (1 + d * o["target"])
-    stop = entry * (1 - d * o["stop"])
+    atr = opts["atr"][i] if opts.get("atr") else None
+    if atr is not None and atr > 0 and entry > 0:
+        target = entry + d * o["atrTarget"] * atr
+        stop = entry - d * o["atrStop"] * atr
+    else:
+        target = entry * (1 + d * o["target"])
+        stop = entry * (1 - d * o["stop"])
+    cost = o["costBps"] / 10000
+    win_ret = (d * (target - entry)) / entry - cost
+    loss_ret = (d * (stop - entry)) / entry - cost
     end = min(len(candles) - 1, i + o["horizon"])
     for j in range(i + 1, end + 1):
         c = candles[j]
         if d == 1:
-            if c["high"] >= target:
-                return {"status": "win", "returnPct": o["target"], "bars": j - i}
             if c["low"] <= stop:
-                return {"status": "loss", "returnPct": -o["stop"], "bars": j - i}
+                return {"status": "loss", "returnPct": loss_ret, "bars": j - i}
+            if c["high"] >= target:
+                return {"status": "win", "returnPct": win_ret, "bars": j - i}
         else:
-            if c["low"] <= target:
-                return {"status": "win", "returnPct": o["target"], "bars": j - i}
             if c["high"] >= stop:
-                return {"status": "loss", "returnPct": -o["stop"], "bars": j - i}
-    ret = (d * (candles[end]["close"] - entry)) / entry
+                return {"status": "loss", "returnPct": loss_ret, "bars": j - i}
+            if c["low"] <= target:
+                return {"status": "win", "returnPct": win_ret, "bars": j - i}
+    gross = (d * (candles[end]["close"] - entry)) / entry
     full = end - i >= o["horizon"]
-    return {"status": "flat" if full else "pending", "returnPct": ret, "bars": end - i}
+    if full:
+        return {"status": "flat", "returnPct": gross - cost, "bars": end - i}
+    return {"status": "pending", "returnPct": 0, "bars": end - i}
 
 
 def calibrate_reliabilities(raw, candles, opts=None):
-    k = (opts or {}).get("k", 5)
+    opts = opts or {}
+    k = opts.get("k", 5)
     idx_by_time = {c["time"]: i for i, c in enumerate(candles)}
+    o = {**opts, "atr": _atr_for(candles, opts)}
     by_type = {}
     for s in raw:
         t = by_type.setdefault(s["type"], {"prior": s["factors"].get("baseReliability", 0.5), "wins": 0, "resolved": 0})
-        g = grade_signal(s, candles, idx_by_time, opts)
+        g = grade_signal(s, candles, idx_by_time, o)
         if g["status"] == "pending":
             continue
         t["resolved"] += 1
@@ -401,7 +446,7 @@ def run_signals(candles, ctx=None):
     rsi = rsi_series(closes, 14)
     piv = pivots(candles, 3, 3)
     raw = detect_all(candles, closes, rsi, piv)
-    reliability = ctx.get("reliabilities") or calibrate_reliabilities(raw, candles, ctx.get("grade"))
+    reliability = ctx["reliabilities"] if ctx.get("reliabilities") is not None else calibrate_reliabilities(raw, candles, ctx.get("grade"))
     idx_by_time = {c["time"]: i for i, c in enumerate(candles)}
     by_time = {}
     for r in raw:
@@ -420,5 +465,18 @@ def run_signals(candles, ctx=None):
     for s in signals:
         uniq.setdefault(s["id"], s)
     signals = list(uniq.values())
+    if not ctx.get("includeSuppressed"):
+        signals = [s for s in signals if s["type"] not in SUPPRESSED_TYPES]
+    if ctx.get("trendFilter"):
+        tp = ctx.get("trendPeriod", 50)
+        kept = []
+        for s in signals:
+            i = idx_by_time.get(s["time"])
+            m = sma(closes, tp, i) if i is not None else None
+            if m is None or s["direction"] == "neutral" or (s["direction"] == "bullish") == (closes[i] > m):
+                kept.append(s)
+        signals = kept
+    if ctx.get("longOnly"):
+        signals = [s for s in signals if s["direction"] != "bearish"]
     signals.sort(key=lambda s: s["sortValue"], reverse=True)
     return {"symbol": symbol, "timeframe": timeframe, "interval": interval, "generatedAt": candles[last]["time"], "engine": ENGINE, "candleCount": len(candles), "signals": signals}

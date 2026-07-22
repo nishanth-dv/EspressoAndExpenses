@@ -1,5 +1,5 @@
-import { ENGINE, DIRECTION, signalId } from "./contract.js";
-import { rsiSeries, pivots } from "./indicators.js";
+import { ENGINE, DIRECTION, signalId, SUPPRESSED_TYPES } from "./contract.js";
+import { rsiSeries, pivots, sma } from "./indicators.js";
 import { detectAll } from "./detectors.js";
 import { withSignalConfidence } from "./confidence.js";
 import { calibrateReliabilities } from "./grade.js";
@@ -63,7 +63,20 @@ export function runSignals(candles, ctx = {}) {
 
   const byId = new Map();
   for (const s of signals) if (!byId.has(s.id)) byId.set(s.id, s);
-  const unique = [...byId.values()];
+  let unique = [...byId.values()];
+  if (!ctx.includeSuppressed) unique = unique.filter((s) => !SUPPRESSED_TYPES.has(s.type));
+  if (ctx.trendFilter) {
+    const tp = ctx.trendPeriod ?? 50;
+    unique = unique.filter((s) => {
+      if (s.direction === "neutral") return true;
+      const i = idxByTime.get(s.time);
+      if (i == null) return true;
+      const m = sma(closes, tp, i);
+      if (m == null) return true;
+      return (s.direction === "bullish") === (closes[i] > m);
+    });
+  }
+  if (ctx.longOnly) unique = unique.filter((s) => s.direction !== "bearish");
   unique.sort((a, b) => b.sortValue - a.sortValue);
 
   return {

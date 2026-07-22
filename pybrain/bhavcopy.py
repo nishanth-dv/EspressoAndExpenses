@@ -1,0 +1,138 @@
+import csv
+import datetime
+import http.cookiejar
+import io
+import time
+import urllib.request
+
+BASE = "https://nsearchives.nseindia.com/products/content/sec_bhavdata_full_{date}.csv"
+
+_HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0 Safari/537.36",
+    "Accept": "text/csv,application/csv,*/*",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Referer": "https://www.nseindia.com/",
+}
+_JAR = http.cookiejar.CookieJar()
+_OPENER = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(_JAR))
+_primed = False
+
+
+def _prime():
+    global _primed
+    if _primed:
+        return
+    try:
+        _OPENER.open(urllib.request.Request("https://www.nseindia.com/", headers=_HEADERS), timeout=20).read()
+        _primed = True
+    except Exception:
+        pass
+
+
+def _nse_get(url):
+    _prime()
+    req = urllib.request.Request(url, headers=_HEADERS)
+    with _OPENER.open(req, timeout=30) as r:
+        return r.read().decode("utf-8", "ignore")
+
+
+def _f(x):
+    try:
+        return float(str(x).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def parse_bhavcopy(text, series=("EQ",)):
+    out = []
+    for raw in csv.DictReader(io.StringIO(text)):
+        r = {(k.strip() if k else k): (v.strip() if isinstance(v, str) else v) for k, v in raw.items()}
+        if r.get("SERIES") not in series:
+            continue
+        o, h, l, c = _f(r.get("OPEN_PRICE")), _f(r.get("HIGH_PRICE")), _f(r.get("LOW_PRICE")), _f(r.get("CLOSE_PRICE"))
+        if None in (o, h, l, c) or not (o > 0 and h > 0 and l > 0 and c > 0):
+            continue
+        out.append({
+            "symbol": r["SYMBOL"].strip() + ".NS",
+            "open": o, "high": h, "low": l, "close": c,
+            "volume": _f(r.get("TTL_TRD_QNTY")) or 0,
+            "turnover": _f(r.get("TURNOVER_LACS")) or 0,
+            "deliv_per": _f(r.get("DELIV_PER")),
+        })
+    return out
+
+
+def bhavcopy_url(date):
+    return BASE.format(date=date.strftime("%d%m%Y"))
+
+
+def fetch_bhavcopy(date):
+    return parse_bhavcopy(_nse_get(bhavcopy_url(date)))
+
+
+def latest_bhavcopy(max_back=7):
+    d = datetime.date.today()
+    for _ in range(max_back):
+        if d.weekday() < 5:
+            try:
+                rows = fetch_bhavcopy(d)
+                if rows:
+                    return rows
+            except Exception:
+                pass
+        d -= datetime.timedelta(days=1)
+    return []
+
+
+def bhavcopy_universe(top=300, rows=None):
+    rows = rows if rows is not None else latest_bhavcopy()
+    ranked = sorted(rows, key=lambda r: r.get("turnover") or 0, reverse=True)
+    return [r["symbol"] for r in ranked[:top]]
+
+
+def assemble_history(daily, min_days=30, top=None):
+    series = {}
+    for d, rows in daily:
+        t = int(datetime.datetime(d.year, d.month, d.day).timestamp())
+        for r in rows:
+            series.setdefault(r["symbol"], []).append({
+                "time": t, "open": r["open"], "high": r["high"], "low": r["low"], "close": r["close"], "volume": r["volume"],
+            })
+    cache = []
+    for sym, cs in series.items():
+        cs.sort(key=lambda c: c["time"])
+        if len(cs) >= min_days:
+            cache.append((sym, cs))
+    if top:
+        cache.sort(key=lambda x: sum(c["volume"] for c in x[1]), reverse=True)
+        cache = cache[:top]
+    return cache
+
+
+def build_history(days_back=120, end=None, min_days=30, top=None, sleep=0.4):
+    end = end or datetime.date.today()
+    daily = []
+    d = end
+    fetched = 0
+    misses = 0
+    while fetched < days_back and misses < days_back:
+        if d.weekday() < 5:
+            try:
+                rows = fetch_bhavcopy(d)
+                if rows:
+                    daily.append((d, rows))
+                    fetched += 1
+                else:
+                    misses += 1
+                time.sleep(sleep)
+            except Exception:
+                misses += 1
+        d -= datetime.timedelta(days=1)
+    return assemble_history(daily, min_days=min_days, top=top)
+
+
+if __name__ == "__main__":
+    u = bhavcopy_universe(top=20)
+    print(f"bhavcopy universe (top 20 by turnover): {len(u)} names")
+    for s in u:
+        print("  " + s)

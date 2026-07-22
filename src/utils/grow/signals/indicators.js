@@ -29,6 +29,26 @@ export function rsiSeries(closes, period = 14) {
   return out;
 }
 
+export function atrSeries(candles, period = 14) {
+  const len = candles.length;
+  const out = new Array(len).fill(null);
+  if (len < period + 1) return out;
+  const tr = candles.map((c, i) => {
+    if (i === 0) return c.high - c.low;
+    const pc = candles[i - 1].close;
+    return Math.max(c.high - c.low, Math.abs(c.high - pc), Math.abs(c.low - pc));
+  });
+  let sum = 0;
+  for (let i = 1; i <= period; i++) sum += tr[i];
+  let atr = sum / period;
+  out[period] = atr;
+  for (let i = period + 1; i < len; i++) {
+    atr = (atr * (period - 1) + tr[i]) / period;
+    out[i] = atr;
+  }
+  return out;
+}
+
 export function avgBody(candles, end, period = 14) {
   const start = Math.max(0, end - period + 1);
   let s = 0;

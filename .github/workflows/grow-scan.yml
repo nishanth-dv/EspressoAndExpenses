@@ -2,20 +2,51 @@ name: Grow breadth scan
 
 on:
   schedule:
-    - cron: "30 13 * * 1-5" # 19:00 IST, weekdays (after NSE close + EOD settle)
-  workflow_dispatch: {}
+    - cron: "30 13 * * 1-5" # 19:00 IST — daily 1d scan + bhavcopy candle ingest (after NSE close + EOD settle)
+    - cron: "0 10 * * 1-5" # 15:30 IST — intraday scans (post-session snapshot)
+  workflow_dispatch:
+    inputs:
+      interval:
+        description: "Interval for a manual run"
+        default: "1d"
 
 jobs:
-  scan:
+  daily:
+    if: github.event_name == 'workflow_dispatch' || github.event.schedule == '30 13 * * 1-5'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Run breadth scan
+      - name: Ingest bhavcopy candle store (survivorship-free daily history)
         working-directory: pybrain
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
-        run: python batch.py
+        run: python batch.py --ingest
+      - name: Daily breadth scan (1d, long-only)
+        working-directory: pybrain
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python batch.py --interval ${{ github.event.inputs.interval || '1d' }}
+
+  intraday:
+    if: github.event.schedule == '0 10 * * 1-5'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        interval: ["5m", "15m", "1h"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Intraday breadth scan (${{ matrix.interval }}, long-only)
+        working-directory: pybrain
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python batch.py --interval ${{ matrix.interval }}

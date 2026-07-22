@@ -4,6 +4,10 @@ import { proxyFetch } from "../priceService";
 const API = import.meta.env.VITE_API_URL ?? "";
 
 export const TIMEFRAMES = [
+  { key: "1m", label: "1m", interval: "1m", range: "1d", intraday: true },
+  { key: "5m", label: "5m", interval: "5m", range: "5d", intraday: true },
+  { key: "15m", label: "15m", interval: "15m", range: "1mo", intraday: true },
+  { key: "1h", label: "1h", interval: "60m", range: "3mo", intraday: true },
   { key: "1D", label: "1D", interval: "5m", range: "1d", intraday: true },
   { key: "1W", label: "1W", interval: "30m", range: "5d", intraday: true },
   { key: "1M", label: "1M", interval: "1d", range: "1mo" },

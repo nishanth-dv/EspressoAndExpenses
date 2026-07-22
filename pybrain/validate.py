@@ -1,7 +1,7 @@
 import json
 import urllib.request
 
-from engine import run_signals, grade_signal
+from engine import run_signals, grade_signal, atr_series
 
 
 def yahoo(symbol, interval="1d", rng="1y"):
@@ -33,8 +33,9 @@ for s in SYMBOLS:
         candles = yahoo(s)
         rep = run_signals(candles, {"symbol": s, "interval": "1d", "timeframe": "1Y"})
         idx = {c["time"]: i for i, c in enumerate(candles)}
+        atr = atr_series(candles, 14)
         for sig in rep["signals"]:
-            oc = grade_signal(sig, candles, idx)
+            oc = grade_signal(sig, candles, idx, {"atr": atr})
             if oc["status"] != "pending":
                 pooled.append((sig, oc))
     except Exception as e:

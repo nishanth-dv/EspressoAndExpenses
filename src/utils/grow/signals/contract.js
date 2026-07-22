@@ -13,6 +13,15 @@ export const DIRECTION = {
 
 export const ENGINE = { source: "rules", version: "grow-signals-0.1.0" };
 
+export const SUPPRESSED_TYPES = new Set([
+  "double_top",
+  "breakdown",
+  "rsi_overbought",
+  "head_shoulders",
+  "shooting_star",
+  "bearish_engulfing",
+]);
+
 export const CATEGORY_META = {
   candlestick: { label: "Candlestick", icon: "fa-chart-column" },
   indicator: { label: "Indicator", icon: "fa-wave-square" },

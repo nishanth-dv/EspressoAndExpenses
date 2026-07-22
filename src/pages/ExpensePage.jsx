@@ -9,8 +9,6 @@ import { applyFilter, getFilterLabel } from "../utils/filterUtils";
 import { CATEGORIES, INCOME_CATEGORIES } from "../utils/constants";
 import { useLedger, useLedgerLoading } from "../hooks/useLedger";
 import Skeleton from "../components/Skeleton";
-import { motion } from "framer-motion";
-import useCountUp from "../hooks/useCountUp";
 
 
 const TYPE_OPTIONS = [
@@ -19,94 +17,6 @@ const TYPE_OPTIONS = [
   { value: "income",     label: "Income" },
   { value: "investment", label: "Investment" },
 ];
-
-const INR = new Intl.NumberFormat("en-IN", {
-  style: "currency",
-  currency: "INR",
-  maximumFractionDigits: 0,
-});
-
-// A filter-aware summary of the CURRENT view — the ledger's missing "what am I
-// looking at" total. Sums the already-filtered list (date/type/category/search).
-function LedgerSummary({ transactions }) {
-  const t = useMemo(() => {
-    let inc = 0;
-    let exp = 0;
-    let inv = 0;
-    for (const tx of transactions) {
-      const amt = parseFloat(tx.amount) || 0;
-      if (tx.transactionType === "income") inc += amt;
-      else if (tx.transactionType === "expense") exp += amt;
-      else if (tx.transactionType === "investment") inv += amt;
-    }
-    return { inc, exp, inv, net: inc - exp, count: transactions.length };
-  }, [transactions]);
-
-  const aCount = useCountUp(t.count, 600);
-  const aIn = useCountUp(t.inc);
-  const aOut = useCountUp(t.exp);
-  const aInv = useCountUp(t.inv);
-  const aNet = useCountUp(Math.abs(t.net));
-
-  if (t.count === 0) return null;
-  const netPos = t.net >= 0;
-
-  return (
-    <div className="ledger-summary">
-      <div className="ledger-summary-count">
-        <span className="ledger-summary-count-num">{Math.round(aCount)}</span>
-        <span className="ledger-summary-count-lbl">
-          {t.count === 1 ? "entry" : "entries"}
-        </span>
-      </div>
-      <div className="ledger-summary-stats">
-        <div className="ledger-summary-stat">
-          <span className="ledger-summary-stat-lbl">In</span>
-          <span
-            className="ledger-summary-stat-val"
-            style={{ color: "var(--amount-income)" }}
-          >
-            {INR.format(Math.round(aIn))}
-          </span>
-        </div>
-        <div className="ledger-summary-stat">
-          <span className="ledger-summary-stat-lbl">Out</span>
-          <span
-            className="ledger-summary-stat-val"
-            style={{ color: "var(--amount-expense)" }}
-          >
-            {INR.format(Math.round(aOut))}
-          </span>
-        </div>
-        {t.inv > 0 && (
-          <div className="ledger-summary-stat">
-            <span className="ledger-summary-stat-lbl">Invested</span>
-            <span
-              className="ledger-summary-stat-val"
-              style={{ color: "var(--amount-investment)" }}
-            >
-              {INR.format(Math.round(aInv))}
-            </span>
-          </div>
-        )}
-        <div className="ledger-summary-stat ledger-summary-stat--net">
-          <span className="ledger-summary-stat-lbl">Net</span>
-          <span
-            className="ledger-summary-stat-val"
-            style={{
-              color: netPos
-                ? "var(--amount-income)"
-                : "var(--amount-expense)",
-            }}
-          >
-            {netPos ? "+" : "−"}
-            {INR.format(Math.round(aNet))}
-          </span>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 const Expense = () => {
   // DB users: seeded from the page-wise `transactions` API into the blob.
@@ -234,20 +144,11 @@ const Expense = () => {
           <Skeleton className="transaction-card" count={7} lines={2} />
         </div>
       ) : (
-        <>
-          <motion.div
-            initial={{ opacity: 0, y: 12 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.35, ease: "easeOut" }}
-          >
-            <LedgerSummary transactions={transactions} />
-          </motion.div>
-          <TransactionList
-            transactions={transactions}
-            emptyMessage={emptyMessage}
-            highlightId={highlightId}
-          />
-        </>
+        <TransactionList
+          transactions={transactions}
+          emptyMessage={emptyMessage}
+          highlightId={highlightId}
+        />
       )}
     </>
   );

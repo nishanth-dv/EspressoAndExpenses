@@ -226,6 +226,89 @@ function CashFlowHero({ summary }) {
   );
 }
 
+// Filter-aware count + In/Out/Invested/Net strip that rides directly under the
+// balance carousel. Net is real net cash flow (In − Out − Invested), matching
+// how the app moves the balance — investments leave your wallet too.
+function LedgerSummary({ transactions }) {
+  const t = useMemo(() => {
+    let inc = 0;
+    let exp = 0;
+    let inv = 0;
+    for (const tx of transactions) {
+      const amt = parseFloat(tx.amount) || 0;
+      if (tx.transactionType === "income") inc += amt;
+      else if (tx.transactionType === "expense") exp += amt;
+      else if (tx.transactionType === "investment") inv += amt;
+    }
+    return { inc, exp, inv, net: inc - exp - inv, count: transactions.length };
+  }, [transactions]);
+
+  const aCount = useCountUp(t.count, 600);
+  const aIn = useCountUp(t.inc);
+  const aOut = useCountUp(t.exp);
+  const aInv = useCountUp(t.inv);
+  const aNet = useCountUp(Math.abs(t.net));
+
+  if (t.count === 0) return null;
+  const netPos = t.net >= 0;
+
+  return (
+    <div className="ledger-summary">
+      <div className="ledger-summary-count">
+        <span className="ledger-summary-count-num">{Math.round(aCount)}</span>
+        <span className="ledger-summary-count-lbl">
+          {t.count === 1 ? "entry" : "entries"}
+        </span>
+      </div>
+      <div className="ledger-summary-stats">
+        <div className="ledger-summary-stat">
+          <span className="ledger-summary-stat-lbl">In</span>
+          <span
+            className="ledger-summary-stat-val"
+            style={{ color: "var(--amount-income)" }}
+          >
+            {INR.format(Math.round(aIn))}
+          </span>
+        </div>
+        <div className="ledger-summary-stat">
+          <span className="ledger-summary-stat-lbl">Out</span>
+          <span
+            className="ledger-summary-stat-val"
+            style={{ color: "var(--amount-expense)" }}
+          >
+            {INR.format(Math.round(aOut))}
+          </span>
+        </div>
+        {t.inv > 0 && (
+          <div className="ledger-summary-stat">
+            <span className="ledger-summary-stat-lbl">Invested</span>
+            <span
+              className="ledger-summary-stat-val"
+              style={{ color: "var(--amount-investment)" }}
+            >
+              {INR.format(Math.round(aInv))}
+            </span>
+          </div>
+        )}
+        <div className="ledger-summary-stat ledger-summary-stat--net">
+          <span className="ledger-summary-stat-lbl">Net</span>
+          <span
+            className="ledger-summary-stat-val"
+            style={{
+              color: netPos
+                ? "var(--amount-income)"
+                : "var(--amount-expense)",
+            }}
+          >
+            {netPos ? "+" : "−"}
+            {INR.format(Math.round(aNet))}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SmartInsights({ insights }) {
   if (!insights.length) return null;
   return (
@@ -954,6 +1037,8 @@ const Dashboard = () => {
         {/* Hero — swipeable per-bank balance carousel. Falls back to the
             aggregate-only view when multi-bank tracking is off. */}
         <BalanceCarousel variant="hero" />
+        {/* Filter-aware count + In/Out/Invested/Net, docked to the carousel */}
+        <LedgerSummary transactions={transactions} />
         {/* Filter-aware: totals reflect selected period */}
         <CashFlowHero summary={summary} />
         {/* Spending-by-bank breakdown — only renders when multi-bank tracking

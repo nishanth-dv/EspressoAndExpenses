@@ -294,6 +294,10 @@ const ExpenseForm = ({
       missing.push({ key: "paymentMode", label: "Payment mode" });
     if (!form.occurredAt)
       missing.push({ key: "occurredAt", label: "Date & time" });
+    if (paidByCard && cards.length > 0 && !form.cardId)
+      missing.push({ key: "cardId", label: "Credit card" });
+    if (isRepayment && repaymentTargets.length > 0 && !form.repaymentFor)
+      missing.push({ key: "repaymentFor", label: "Repayment target" });
     if (missing.length > 0) {
       setFormError(missing);
       return;
@@ -390,36 +394,8 @@ const ExpenseForm = ({
     return [...cardTargets, ...emiTargets, ...lendingTargets];
   }, [cards, commitments, allTransactions, lendings]);
 
-  // These single-choice fields no longer offer a "None" — a card-paid expense
-  // is always on some card, and a repayment always settles something. Keep them
-  // on a valid selection by defaulting to the first sensible option when shown
-  // and nothing is chosen yet; existing (edited) values are left untouched.
-  useEffect(() => {
-    if (paidByCard && cards.length > 0 && !form.cardId) {
-      setForm((f) => ({ ...f, cardId: cards[0].id }));
-    }
-  }, [paidByCard, cards, form.cardId]);
-
-  // Auto-pick the first target once when Repayment is entered — but only
-  // once, so a deliberate "None" choice sticks instead of snapping back.
-  const repayInitRef = useRef(false);
-  useEffect(() => {
-    if (!isRepayment) {
-      repayInitRef.current = false;
-      return;
-    }
-    if (repayInitRef.current || repaymentTargets.length === 0) return;
-    if (!form.repaymentFor) {
-      const first = repaymentTargets[0];
-      setForm((f) => ({
-        ...f,
-        repaymentFor: first.id,
-        amount: !f.amount && first.amount > 0 ? String(first.amount) : f.amount,
-      }));
-    }
-    repayInitRef.current = true;
-  }, [isRepayment, repaymentTargets, form.repaymentFor]);
-
+  // Both the card and repayment pickers default to "None" — the user must
+  // consciously pick a target, and submit is blocked (validated) until they do.
   return (
     <form className="expense-form" onSubmit={handleSubmit} noValidate>
       {entryTabsEnabled &&
@@ -676,6 +652,7 @@ const ExpenseForm = ({
                   label: t.label,
                 })),
               ]}
+              invalid={invalidKeys.has("repaymentFor")}
             />
           )}
 
@@ -696,12 +673,16 @@ const ExpenseForm = ({
               value={form.cardId}
               onChange={handleChange}
               label="Credit card used"
-              options={cards.map((c) => ({
-                value: c.id,
-                label: `${c.name} (${c.bank})`,
-                bank: c.bank,
-                color: c.color,
-              }))}
+              options={[
+                { value: "", label: "None", dashed: true },
+                ...cards.map((c) => ({
+                  value: c.id,
+                  label: `${c.name} (${c.bank})`,
+                  bank: c.bank,
+                  color: c.color,
+                })),
+              ]}
+              invalid={invalidKeys.has("cardId")}
             />
           )}
 

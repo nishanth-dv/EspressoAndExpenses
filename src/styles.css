@@ -190,7 +190,7 @@ textarea {
 }
 
 .nav-desktop {
-  gap: 6px;
+  gap: 4px;
   display: none;
   flex-direction: row;
 }
@@ -204,8 +204,9 @@ textarea {
   position: relative;
   display: inline-flex;
   align-items: center;
+  padding: 8px 16px;
   opacity: 0.6;
-  font-size: 20px;
+  font-size: 16px;
   font-weight: 600;
   color: var(--bar-text);
   text-decoration: none;
@@ -11861,6 +11862,21 @@ html[data-skin="glass"] .adv-card {
   font-size: 0.78rem;
   color: var(--text-secondary);
 }
+.grow-chart-results li.grow-chart-res-state {
+  flex-direction: row;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  cursor: default;
+}
+.grow-chart-results li.grow-chart-res-fallback {
+  cursor: pointer;
+}
+.grow-chart-res-fallback b {
+  color: var(--text-primary);
+  font-weight: 700;
+}
 .grow-chart-title {
   display: flex;
   align-items: flex-end;
@@ -11901,15 +11917,26 @@ html[data-skin="glass"] .adv-card {
 }
 .grow-chart-tfs {
   display: flex;
+  flex-wrap: nowrap;
   gap: 4px;
   padding: 4px;
   border-radius: 12px;
   background: var(--surface-bg);
   align-self: flex-start;
+  width: max-content;
+  max-width: 100%;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-x: contain;
+}
+.grow-chart-tfs::-webkit-scrollbar {
+  display: none;
 }
 .grow-chart-tf {
   position: relative;
   z-index: 0;
+  flex: 0 0 auto;
   border: none;
   background: transparent;
   cursor: pointer;
@@ -11929,9 +11956,68 @@ html[data-skin="glass"] .adv-card {
   border-radius: 9px;
   background: color-mix(in srgb, var(--amount-income) 16%, transparent);
 }
+.grow-chart-inds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.grow-ind-chip {
+  border: 1px solid var(--surface-border);
+  background: var(--surface-bg);
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 4px 11px;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+.grow-ind-chip.is-on {
+  color: var(--amount-investment);
+  border-color: color-mix(in srgb, var(--amount-investment) 45%, transparent);
+  background: color-mix(in srgb, var(--amount-investment) 12%, transparent);
+}
+.grow-ind-editor-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--surface-border);
+  background: var(--surface-bg);
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 5px 13px;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  box-shadow: var(--levitate-shadow);
+}
+.grow-ind-editor-count {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  color: var(--amount-investment);
+  background: color-mix(in srgb, var(--amount-investment) 14%, transparent);
+}
+.grow-editor-sec-head {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-secondary);
+  margin-bottom: 10px;
+}
+.grow-editor-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
 .grow-chart-canvas {
   position: relative;
-  height: 420px;
+  height: 460px;
   border-radius: 16px;
   border: 1px solid var(--surface-border);
   background: var(--surface-bg);

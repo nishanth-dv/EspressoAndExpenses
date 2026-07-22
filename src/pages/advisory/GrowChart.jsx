@@ -1,13 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { motion } from "framer-motion";
-import { createChart, CandlestickSeries, LineSeries, createSeriesMarkers } from "lightweight-charts";
+import { createChart, CandlestickSeries, LineSeries, HistogramSeries, createSeriesMarkers } from "lightweight-charts";
 import { fetchCandles, TIMEFRAMES } from "../../utils/grow/growData";
 import { runSignals } from "../../utils/grow/signals";
 import { CATEGORY_META } from "../../utils/grow/signals/contract";
+import { INDICATORS } from "../../utils/grow/chartIndicators";
 import { scoreCard } from "../../utils/grow/signals/grade";
 import { searchStockTickers } from "../../utils/priceService";
 import { ConfidenceBadge, ConfidenceReveal } from "./ConfidenceControl";
+import Modal from "../../preStyledElements/modal/Modal";
 
 const DEFAULT = { symbol: "RELIANCE.NS", name: "Reliance Industries" };
 const PATTERN_COLOR = "#f59e0b";
@@ -82,9 +84,13 @@ export default function GrowChart() {
 
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [searchErr, setSearchErr] = useState(false);
   const [open, setOpen] = useState(false);
   const [openId, setOpenId] = useState(null);
   const [activeId, setActiveId] = useState(null);
+  const [ind, setInd] = useState({ ma: false, boll: false, rsi: false });
+  const [editorOpen, setEditorOpen] = useState(false);
 
   const holderRef = useRef(null);
   const chartRef = useRef(null);
@@ -92,13 +98,14 @@ export default function GrowChart() {
   const patternRef = useRef(null);
   const markersRef = useRef(null);
   const priceLineRef = useRef(null);
+  const indRef = useRef([]);
   const deepDone = useRef(false);
   const chartWrapRef = useRef(null);
 
   const signals = useMemo(() => {
     if (candles.length < 3) return [];
     const interval = TIMEFRAMES.find((t) => t.key === tf)?.interval ?? "1d";
-    return runSignals(candles, { symbol: symbol.symbol, timeframe: tf, interval }).signals;
+    return runSignals(candles, { symbol: symbol.symbol, timeframe: tf, interval, includeSuppressed: true }).signals;
   }, [candles, symbol, tf]);
 
   const card = useMemo(() => scoreCard(signals, candles), [signals, candles]);
@@ -161,6 +168,7 @@ export default function GrowChart() {
       seriesRef.current = null;
       patternRef.current = null;
       markersRef.current = null;
+      indRef.current = [];
     };
   }, []);
 
@@ -169,6 +177,53 @@ export default function GrowChart() {
     seriesRef.current.setData(candles);
     chartRef.current?.timeScale().fitContent();
   }, [candles]);
+
+  useEffect(() => {
+    const chart = chartRef.current;
+    if (!chart || !candles.length) return;
+    indRef.current.forEach((s) => {
+      try {
+        chart.removeSeries(s);
+      } catch {
+        s;
+      }
+    });
+    indRef.current = [];
+    let nextPane = 1;
+    for (const def of INDICATORS) {
+      if (!ind[def.key]) continue;
+      const pane = def.pane === "price" ? 0 : nextPane++;
+      def.build(candles).forEach((l, i) => {
+        const isHist = l.type === "histogram";
+        const s = chart.addSeries(
+          isHist ? HistogramSeries : LineSeries,
+          isHist
+            ? { color: l.color ?? "#94a3b8", priceFormat: { type: "volume" }, lastValueVisible: false, priceLineVisible: false }
+            : {
+                color: l.color,
+                lineWidth: l.width ?? 2,
+                lineStyle: l.style ?? 0,
+                lastValueVisible: false,
+                priceLineVisible: false,
+                crosshairMarkerVisible: false,
+              },
+          pane,
+        );
+        if (i === 0)
+          (def.priceLines ?? []).forEach((p) =>
+            s.createPriceLine({
+              price: p,
+              color: cssVar("--surface-border-open", "#888"),
+              lineWidth: 1,
+              lineStyle: 2,
+              axisLabelVisible: true,
+            }),
+          );
+        s.setData(l.data);
+        indRef.current.push(s);
+      });
+    }
+  }, [candles, ind]);
 
   useEffect(() => {
     const intraday = TIMEFRAMES.find((t) => t.key === tf)?.intraday ?? false;
@@ -303,13 +358,26 @@ export default function GrowChart() {
     if (q.length < 2) {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setResults([]);
+      setSearching(false);
+      setSearchErr(false);
       return undefined;
     }
     let alive = true;
+    setSearching(true);
+    setSearchErr(false);
     const id = setTimeout(() => {
       searchStockTickers(q, true)
-        .then((r) => alive && setResults(r))
-        .catch(() => alive && setResults([]));
+        .then((r) => {
+          if (!alive) return;
+          setResults(r);
+          setSearching(false);
+        })
+        .catch(() => {
+          if (!alive) return;
+          setResults([]);
+          setSearchErr(true);
+          setSearching(false);
+        });
     }, 250);
     return () => {
       alive = false;
@@ -379,16 +447,32 @@ export default function GrowChart() {
           onFocus={() => setOpen(true)}
           onBlur={() => setTimeout(() => setOpen(false), 150)}
         />
-        {open && results.length > 0 && (
+        {open && query.trim().length >= 2 && (
           <ul className="grow-chart-results">
-            {results.map((r) => (
-              <li key={r.symbol} onMouseDown={() => pick(r)}>
-                <span className="grow-chart-res-sym">
-                  {r.symbol.replace(/\.(NS|BO)$/i, "")}
-                </span>
-                <span className="grow-chart-res-name">{r.name}</span>
+            {searching ? (
+              <li className="grow-chart-res-state">
+                <i className="fa-solid fa-spinner fa-spin" /> Searching…
               </li>
-            ))}
+            ) : results.length > 0 ? (
+              results.map((r) => (
+                <li key={r.symbol} onMouseDown={() => pick(r)}>
+                  <span className="grow-chart-res-sym">
+                    {r.symbol.replace(/\.(NS|BO)$/i, "")}
+                  </span>
+                  <span className="grow-chart-res-name">{r.name}</span>
+                </li>
+              ))
+            ) : (
+              <li
+                className="grow-chart-res-state grow-chart-res-fallback"
+                onMouseDown={() =>
+                  pick({ symbol: query.trim().toUpperCase(), name: query.trim().toUpperCase() })
+                }
+              >
+                {searchErr ? "Search unavailable." : "No matches."} Tap to load{" "}
+                <b>{query.trim().toUpperCase()}</b> directly (add <b>.NS</b> for NSE).
+              </li>
+            )}
           </ul>
         )}
       </div>
@@ -428,6 +512,21 @@ export default function GrowChart() {
             <span>{t.label}</span>
           </button>
         ))}
+      </div>
+
+      <div className="grow-chart-inds">
+        <button
+          type="button"
+          className="grow-ind-editor-btn"
+          onClick={() => setEditorOpen(true)}
+        >
+          <i className="fa-solid fa-sliders" /> Chart editor
+          {Object.values(ind).filter(Boolean).length > 0 && (
+            <span className="grow-ind-editor-count">
+              {Object.values(ind).filter(Boolean).length}
+            </span>
+          )}
+        </button>
       </div>
 
       <div className="grow-chart-canvas" ref={chartWrapRef}>
@@ -514,8 +613,8 @@ export default function GrowChart() {
             </>
           )}
           <p className="grow-score-note">
-            Each past signal walked forward vs later candles (4% target / 3% stop, 10-bar horizon). One
-            symbol’s backtest — not advice.
+            Each past signal walked forward vs later candles (2× ATR target / 1.5× ATR stop, 10-bar
+            horizon, worst-case fills, net of costs). One symbol’s backtest — not advice.
           </p>
         </div>
       )}
@@ -556,6 +655,7 @@ export default function GrowChart() {
                   {outcomeChip(outcomeById.get(s.id))}
                   <ConfidenceBadge
                     score={s.confidence}
+                    band={s.confidenceBreakdown?.band}
                     open={openId === s.id}
                     onToggle={() => setOpenId(openId === s.id ? null : s.id)}
                   />
@@ -566,6 +666,31 @@ export default function GrowChart() {
           </ul>
         </div>
       )}
+
+      <Modal open={editorOpen} onClose={() => setEditorOpen(false)} title="Chart editor">
+        <div className="grow-editor">
+          <div className="grow-editor-sec">
+            <div className="grow-editor-sec-head">Indicators</div>
+            <div className="grow-editor-grid">
+              {INDICATORS.map((def) => (
+                <button
+                  key={def.key}
+                  type="button"
+                  className={`grow-ind-chip${ind[def.key] ? " is-on" : ""}`}
+                  onClick={() => setInd((p) => ({ ...p, [def.key]: !p[def.key] }))}
+                >
+                  {def.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          {/* NOTE: this modal is the single home for ALL chart editors. Every
+              future picker — pattern filters, drawing tools, extra overlays —
+              mounts as a new <section> here, each reading from its own registry
+              (indicators live in INDICATORS in utils/grow/chartIndicators.js).
+              Do not scatter chart controls back onto the toolbar. */}
+        </div>
+      </Modal>
     </div>
   );
 }

@@ -10,8 +10,10 @@ const EASE = [0.25, 0.46, 0.45, 0.94];
 
 // The clickable score pill. Pass onToggle to make it a button; omit it for a
 // static badge (e.g. the "Do this next" highlight).
-export function ConfidenceBadge({ score, open = false, onToggle }) {
-  const cls = `adv-conf ${confClass(score)}`;
+const BAND_CLASS = { high: "adv-conf--high", moderate: "adv-conf--mid", low: "adv-conf--low" };
+
+export function ConfidenceBadge({ score, band, open = false, onToggle }) {
+  const cls = `adv-conf ${(band && BAND_CLASS[band]) || confClass(score)}`;
   if (!onToggle) return <span className={cls}>{score}</span>;
   return (
     <button

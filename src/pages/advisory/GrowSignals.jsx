@@ -6,6 +6,14 @@ import { ConfidenceBadge, ConfidenceReveal } from "./ConfidenceControl";
 
 const API = import.meta.env.VITE_API_URL ?? "";
 
+const INTERVALS = [
+  { key: "1d", label: "1D" },
+  { key: "1h", label: "1H" },
+  { key: "15m", label: "15m" },
+  { key: "5m", label: "5m" },
+  { key: "1m", label: "1m" },
+];
+
 const fmtDate = (d) =>
   d ? new Date(d).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "";
 
@@ -17,17 +25,20 @@ export default function GrowSignals() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [dir, setDir] = useState("all");
+  const [iv, setIv] = useState("1d");
   const [actionableOnly, setActionableOnly] = useState(true);
   const [openId, setOpenId] = useState(null);
 
   useEffect(() => {
     let alive = true;
     (async () => {
+      setLoading(true);
+      setError("");
       try {
         if (!API) throw new Error("Signals service not configured");
         const token = await getAccessToken();
         if (!token) throw new Error("Not authenticated");
-        const res = await fetch(`${API}/grow/signals?limit=200`, {
+        const res = await fetch(`${API}/grow/signals?limit=200&interval=${encodeURIComponent(iv)}`, {
           headers: { Authorization: `Bearer ${token}` },
         });
         if (!res.ok) throw new Error(`Request failed (${res.status})`);
@@ -35,7 +46,9 @@ export default function GrowSignals() {
         if (!alive) return;
         setScan(data.scan);
         setSignals(Array.isArray(data.signals) ? data.signals : []);
-        const tr = await fetch(`${API}/grow/track`, { headers: { Authorization: `Bearer ${token}` } });
+        const tr = await fetch(`${API}/grow/track?interval=${encodeURIComponent(iv)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
         if (tr.ok && alive) {
           const td = await tr.json();
           setTrackRows(Array.isArray(td.track) ? td.track : []);
@@ -49,7 +62,7 @@ export default function GrowSignals() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [iv]);
 
   const shown = useMemo(
     () => signals.filter((s) => (dir === "all" || s.direction === dir) && (!actionableOnly || s.band !== "low")),
@@ -88,6 +101,19 @@ export default function GrowSignals() {
           </span>
         )}
         {stale && <span className="grow-sig-stale">stale</span>}
+      </div>
+
+      <div className="grow-sigflt grow-sig-intervals">
+        {INTERVALS.map((opt) => (
+          <button
+            key={opt.key}
+            type="button"
+            className={`grow-sigflt-chip${iv === opt.key ? " is-active" : ""}`}
+            onClick={() => setIv(opt.key)}
+          >
+            {opt.label}
+          </button>
+        ))}
       </div>
 
       {track.resolved > 0 ? (
@@ -208,6 +234,7 @@ export default function GrowSignals() {
                 </button>
                 <ConfidenceBadge
                   score={s.confidence ?? 0}
+                  band={s.band}
                   open={openId === s.id}
                   onToggle={() => setOpenId(openId === s.id ? null : s.id)}
                 />

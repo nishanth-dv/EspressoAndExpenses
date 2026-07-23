@@ -304,7 +304,7 @@ app.get("/grow/signals", requireToken, async (c) => {
   const interval = c.req.query("interval") ?? "1d";
   const { data: scan } = await db
     .from("grow_scans")
-    .select("scan_date, interval, universe_size, signal_count, generated_at")
+    .select("scan_date, interval, universe_size, signal_count, generated_at, vix, sentiment")
     .eq("interval", interval)
     .order("scan_date", { ascending: false })
     .limit(1)

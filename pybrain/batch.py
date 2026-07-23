@@ -288,7 +288,14 @@ def load_candles_db(interval="1d", min_days=60, top=300):
     if not (SUPABASE_URL and SUPABASE_KEY):
         return []
     rows = sb_get(f"grow_candles?interval=eq.{interval}&select=symbol,bar_time,open,high,low,close,volume&order=bar_time.asc")
-    return _db_to_cache(rows, min_days, top)
+    cache = _db_to_cache(rows, min_days, top)
+    if interval == "1d" and cache:
+        from bhavcopy import fetch_corp_actions, adjust_candles
+        actions = fetch_corp_actions()
+        if actions:
+            cache = [(sym, adjust_candles(cs, actions.get(sym, []))) for sym, cs in cache]
+            print(f"corporate-action adjusted: {sum(len(v) for v in actions.values())} splits/bonuses across {len(actions)} symbols")
+    return cache
 
 
 def main():

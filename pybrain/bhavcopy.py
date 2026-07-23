@@ -2,6 +2,8 @@ import csv
 import datetime
 import http.cookiejar
 import io
+import json
+import re
 import time
 import urllib.request
 
@@ -129,6 +131,77 @@ def build_history(days_back=120, end=None, min_days=30, top=None, sleep=0.4):
                 misses += 1
         d -= datetime.timedelta(days=1)
     return assemble_history(daily, min_days=min_days, top=top)
+
+
+def parse_corp_action(subject):
+    s = (subject or "").lower()
+    if "split" in s or "sub-division" in s or "sub division" in s:
+        m = re.search(r"from\s*rs\.?\s*([\d.]+).*?to\s*rs\.?\s*([\d.]+)", s)
+        if m:
+            old_fv, new_fv = float(m.group(1)), float(m.group(2))
+            if old_fv > 0 and new_fv > 0:
+                return new_fv / old_fv
+    if "bonus" in s:
+        b = re.search(r"(\d+)\s*:\s*(\d+)", s)
+        if b:
+            new_sh, held = float(b.group(1)), float(b.group(2))
+            if new_sh + held > 0:
+                return held / (new_sh + held)
+    return None
+
+
+def fetch_corp_actions(from_date=None, to_date=None):
+    to_d = to_date or datetime.date.today()
+    from_d = from_date or (to_d - datetime.timedelta(days=1500))
+    url = (
+        "https://www.nseindia.com/api/corporates-corporateActions?index=equities"
+        f"&from_date={from_d.strftime('%d-%m-%Y')}&to_date={to_d.strftime('%d-%m-%Y')}"
+    )
+    try:
+        data = json.loads(_nse_get(url))
+    except Exception:
+        return {}
+    records = data if isinstance(data, list) else (data.get("data") or [])
+    out = {}
+    for r in records:
+        sym = (r.get("symbol") or "").strip()
+        subject = r.get("subject") or r.get("purpose") or ""
+        ex = r.get("exDate") or r.get("ex_date") or ""
+        factor = parse_corp_action(subject)
+        if not sym or factor is None or not ex:
+            continue
+        try:
+            ex_dt = datetime.datetime.strptime(ex.strip(), "%d-%b-%Y")
+        except ValueError:
+            continue
+        key = (int(ex_dt.timestamp()), factor)
+        lst = out.setdefault(sym + ".NS", [])
+        if key not in lst:
+            lst.append(key)
+    return out
+
+
+def adjust_candles(candles, actions):
+    if not actions:
+        return candles
+    acts = sorted(actions, key=lambda a: a[0])
+    out = []
+    for c in candles:
+        f = 1.0
+        for ex_t, fac in acts:
+            if c["time"] < ex_t:
+                f *= fac
+        if f == 1.0:
+            out.append(c)
+            continue
+        adj = dict(c)
+        for k in ("open", "high", "low", "close"):
+            if adj.get(k) is not None:
+                adj[k] = adj[k] * f
+        if adj.get("volume"):
+            adj["volume"] = adj["volume"] / f
+        out.append(adj)
+    return out
 
 
 if __name__ == "__main__":

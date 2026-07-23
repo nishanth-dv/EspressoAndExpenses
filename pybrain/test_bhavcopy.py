@@ -62,3 +62,25 @@ topped = _db_to_cache(dbrows, min_days=30, top=1)
 assert topped[0][0] == "A.NS", "top-N by volume"
 
 print("ok — candle store transforms (bhavcopy -> rows, db -> cache)")
+
+from bhavcopy import parse_corp_action, adjust_candles
+
+assert abs(parse_corp_action("Face Value Split (Sub-Division) - From Rs 10/- Per Share To Rs 2/- Per Share") - 0.2) < 1e-9, "split 10->2 = 0.2 factor"
+assert abs(parse_corp_action("Bonus 1:1") - 0.5) < 1e-9, "bonus 1:1 halves"
+assert abs(parse_corp_action("Bonus issue in the ratio 1:2") - (2 / 3)) < 1e-9, "bonus 1:2"
+assert parse_corp_action("Dividend - Rs 5 Per Share") is None, "dividend is not a price split"
+assert parse_corp_action("Annual General Meeting") is None, "non-CA subject -> None"
+
+DAY = 86400
+raw = [
+    {"time": 100 * DAY, "open": 200, "high": 204, "low": 196, "close": 200, "volume": 1000},
+    {"time": 120 * DAY, "open": 200, "high": 204, "low": 196, "close": 200, "volume": 1000},
+    {"time": 200 * DAY, "open": 100, "high": 102, "low": 98, "close": 100, "volume": 2000},
+]
+adj = adjust_candles(raw, [(150 * DAY, 0.5)])
+assert abs(adj[0]["close"] - 100) < 1e-9 and abs(adj[1]["close"] - 100) < 1e-9, "pre-ex bars halved (bonus 1:1)"
+assert abs(adj[0]["volume"] - 2000) < 1e-9, "pre-ex volume scaled inversely"
+assert abs(adj[2]["close"] - 100) < 1e-9 and adj[2]["volume"] == 2000, "post-ex bar unchanged"
+assert adjust_candles(raw, []) == raw, "no actions -> unchanged"
+
+print("ok — corporate-action parse + back-adjustment")

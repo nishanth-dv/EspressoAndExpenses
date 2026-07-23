@@ -1,8 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useSelector, useDispatch } from "react-redux";
 import { getAccessToken } from "../../utils/googleDrive";
 import { CATEGORY_META } from "../../utils/grow/signals/contract";
+import { persistSetPreference } from "../../redux/slices/transactionSlice";
+import { isWatched, toggleWatch, readWatchlist } from "../../utils/grow/watchlist";
 import { ConfidenceBadge, ConfidenceReveal } from "./ConfidenceControl";
+import TradePlan from "./TradePlan";
 
 const API = import.meta.env.VITE_API_URL ?? "";
 
@@ -12,6 +16,7 @@ const INTERVALS = [
   { key: "15m", label: "15m" },
   { key: "5m", label: "5m" },
   { key: "1m", label: "1m" },
+  { key: "btst", label: "BTST" },
 ];
 
 const fmtDate = (d) =>
@@ -19,6 +24,9 @@ const fmtDate = (d) =>
 
 export default function GrowSignals() {
   const navigate = useNavigate();
+  const dispatch = useDispatch();
+  const prefs = useSelector((s) => s.transactions.transactionData?.preferences);
+  const [watchOnly, setWatchOnly] = useState(false);
   const [scan, setScan] = useState(null);
   const [signals, setSignals] = useState([]);
   const [trackRows, setTrackRows] = useState([]);
@@ -64,10 +72,15 @@ export default function GrowSignals() {
     };
   }, [iv]);
 
-  const shown = useMemo(
-    () => signals.filter((s) => (dir === "all" || s.direction === dir) && (!actionableOnly || s.band !== "low")),
-    [signals, dir, actionableOnly],
-  );
+  const shown = useMemo(() => {
+    const watch = new Set(readWatchlist(prefs));
+    return signals.filter(
+      (s) =>
+        (dir === "all" || s.direction === dir) &&
+        (!actionableOnly || s.band !== "low") &&
+        (!watchOnly || watch.has(s.symbol)),
+    );
+  }, [signals, dir, actionableOnly, watchOnly, prefs]);
 
   const stale = scan?.scan_date && scan.scan_date < new Date().toISOString().slice(0, 10);
 
@@ -182,6 +195,14 @@ export default function GrowSignals() {
         ))}
         <button
           type="button"
+          className={`grow-sigflt-chip${watchOnly ? " is-active" : ""}`}
+          onClick={() => setWatchOnly((v) => !v)}
+          aria-pressed={watchOnly}
+        >
+          <i className="fa-solid fa-star" /> Watchlist
+        </button>
+        <button
+          type="button"
           className="grow-sigflt-switch"
           onClick={() => setActionableOnly((v) => !v)}
           aria-pressed={actionableOnly}
@@ -232,6 +253,15 @@ export default function GrowSignals() {
                     </span>
                   </span>
                 </button>
+                <button
+                  type="button"
+                  className={`grow-watch-star${isWatched(prefs, s.symbol) ? " is-on" : ""}`}
+                  title={isWatched(prefs, s.symbol) ? "Remove from watchlist" : "Add to watchlist"}
+                  aria-pressed={isWatched(prefs, s.symbol)}
+                  onClick={() => dispatch(persistSetPreference("growWatchlist", toggleWatch(prefs, s.symbol)))}
+                >
+                  <i className={`fa-${isWatched(prefs, s.symbol) ? "solid" : "regular"} fa-star`} />
+                </button>
                 <ConfidenceBadge
                   score={s.confidence ?? 0}
                   band={s.band}
@@ -239,6 +269,7 @@ export default function GrowSignals() {
                   onToggle={() => setOpenId(openId === s.id ? null : s.id)}
                 />
               </div>
+              <TradePlan plan={s.plan} tradeType={s.trade_type} interval={s.interval || iv} />
               {s.breakdown && <ConfidenceReveal open={openId === s.id} card={{ confidenceBreakdown: s.breakdown }} />}
             </li>
           ))}

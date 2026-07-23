@@ -167,6 +167,14 @@ export const NOTIFICATION_TYPES = [
     icon: "fa-lightbulb",
     defaultOn: false,
   },
+  {
+    key: "growSignal",
+    group: "insights",
+    label: "Watchlist buy calls",
+    hint: "When fresh buy signals fire on stocks in your Grow watchlist (Advisory → Grow).",
+    icon: "fa-star",
+    defaultOn: false,
+  },
 ];
 
 const TYPE_BY_KEY = new Map(NOTIFICATION_TYPES.map((t) => [t.key, t]));
@@ -844,6 +852,34 @@ export function deriveNotifications(data, prefs, now = new Date()) {
       }
     } catch {
       /* advisory engine is best-effort here — never break notifications */
+    }
+  }
+
+  // Grow watchlist buy calls — fresh long signals on watched symbols. The
+  // matches are injected as data.growSignals by useNotifications (pre-filtered to
+  // the watchlist), keeping this derivation pure. One aggregate notification per
+  // scan date; a new scan is a new id, so a dismissal silences only that day.
+  if (isTypeEnabled(prefs, "growSignal")) {
+    const matches = data.growSignals ?? [];
+    if (matches.length > 0) {
+      const t = TYPE_BY_KEY.get("growSignal");
+      const scanDate = matches[0].scan_date || isoDay(now);
+      const names = [...new Set(matches.map((m) => m.symbol_name || m.symbol))];
+      const shown = names.slice(0, 3).join(", ");
+      out.push({
+        id: `growSignal:${scanDate}`,
+        type: "growSignal",
+        group: "insights",
+        icon: t.icon,
+        severity: "info",
+        title: `${matches.length} watchlist buy call${matches.length === 1 ? "" : "s"}`,
+        subtitle: names.length > 3 ? `${shown} +${names.length - 3} more` : shown,
+        amount: null,
+        dueOn: null,
+        daysLeft: null,
+        href: "/Advisory/grow/signals",
+        expiresAt: expiryFor(new Date(`${scanDate}T00:00:00`), 1),
+      });
     }
   }
 

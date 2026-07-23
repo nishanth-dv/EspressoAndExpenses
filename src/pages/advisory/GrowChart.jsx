@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
+import { useSelector, useDispatch } from "react-redux";
 import { motion } from "framer-motion";
 import { createChart, CandlestickSeries, LineSeries, HistogramSeries, createSeriesMarkers } from "lightweight-charts";
 import { fetchCandles, TIMEFRAMES } from "../../utils/grow/growData";
@@ -8,8 +9,11 @@ import { CATEGORY_META } from "../../utils/grow/signals/contract";
 import { INDICATORS } from "../../utils/grow/chartIndicators";
 import { scoreCard } from "../../utils/grow/signals/grade";
 import { searchStockTickers } from "../../utils/priceService";
+import { persistSetPreference } from "../../redux/slices/transactionSlice";
+import { isWatched, toggleWatch } from "../../utils/grow/watchlist";
 import { ConfidenceBadge, ConfidenceReveal } from "./ConfidenceControl";
 import Modal from "../../preStyledElements/modal/Modal";
+import TradePlan from "./TradePlan";
 
 const DEFAULT = { symbol: "RELIANCE.NS", name: "Reliance Industries" };
 const PATTERN_COLOR = "#f59e0b";
@@ -72,6 +76,8 @@ function outcomeChip(oc) {
 
 export default function GrowChart() {
   const [params] = useSearchParams();
+  const dispatch = useDispatch();
+  const prefs = useSelector((s) => s.transactions.transactionData?.preferences);
   const [symbol, setSymbol] = useState(() => {
     const s = params.get("symbol");
     return s ? { symbol: s, name: params.get("name") || s.replace(/\.(NS|BO)$/i, "") } : DEFAULT;
@@ -478,9 +484,20 @@ export default function GrowChart() {
       </div>
 
       <div className="grow-chart-title">
-        <div>
-          <span className="grow-chart-name">{symbol.name}</span>
-          <span className="grow-chart-sym">{symbol.symbol}</span>
+        <div className="grow-chart-titlehead">
+          <button
+            type="button"
+            className={`grow-watch-star${isWatched(prefs, symbol.symbol) ? " is-on" : ""}`}
+            title={isWatched(prefs, symbol.symbol) ? "Remove from watchlist" : "Add to watchlist"}
+            aria-pressed={isWatched(prefs, symbol.symbol)}
+            onClick={() => dispatch(persistSetPreference("growWatchlist", toggleWatch(prefs, symbol.symbol)))}
+          >
+            <i className={`fa-${isWatched(prefs, symbol.symbol) ? "solid" : "regular"} fa-star`} />
+          </button>
+          <div>
+            <span className="grow-chart-name">{symbol.name}</span>
+            <span className="grow-chart-sym">{symbol.symbol}</span>
+          </div>
         </div>
         {stat && (
           <div className={`grow-chart-quote ${stat.up ? "is-up" : "is-down"}`}>
@@ -660,6 +677,11 @@ export default function GrowChart() {
                     onToggle={() => setOpenId(openId === s.id ? null : s.id)}
                   />
                 </div>
+                <TradePlan
+                  plan={s.plan}
+                  tradeType={s.tradeType}
+                  interval={TIMEFRAMES.find((t) => t.key === tf)?.interval ?? "1d"}
+                />
                 <ConfidenceReveal open={openId === s.id} card={s} />
               </li>
             ))}

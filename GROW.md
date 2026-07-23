@@ -192,14 +192,27 @@ All interval-aware, defaulting to `1d`.
 
 ---
 
+## Cross-regime validation (5 years)
+`backtest.py --walkforward --longonly --range 5y` tags every trade by the symbol's
+regime (above/below its 200-DMA at entry) and reports expectancy per regime. Over
+~26k out-of-sample trades spanning the 2020 crash and 2022 correction:
+
+| Regime (symbol vs its 200-DMA at entry) | Expectancy | Hit |
+|---|---|---|
+| Uptrend | +0.4% | 34.8% |
+| Downtrend | +0.4% | 34.5% |
+
+**The long edge survives bear regimes** — identical +0.4%/trade in up- and down-trends.
+The +1.2% from the single bull year was regime-flattered; **+0.4% is the durable,
+regime-robust number**, holding because the edge is mean-reversion at levels (works in
+any trend). Spearman train→OOS = +0.60 over 5 years.
+
 ## Honest caveats
-- **One bull year.** The +1.2% is validated out-of-sample but on a single rising period;
-  hit rate (39.7%) is still below the ~42% break-even, so part of the edge leans on
-  held-to-horizon drift. The **relative** findings (long-only removes an anti-signal and
-  makes the system coherent) are regime-independent; the **magnitude** is bull-flattered
-  until stress-tested on bear/longer history.
-- **Long-only is regime-specific** — right for now, would miss a downturn. The trend filter
-  is retained as the mechanism to re-admit shorts when a real downtrend regime appears.
+- **The durable edge is ~+0.4%/trade**, not the bull-year +1.2%. Hit rate (~34%) sits
+  below break-even, so some of it is held-to-horizon drift — but it survives 5 years incl.
+  downtrends, so it is not purely a bull-market artifact.
+- **Long-only stays the default** — validated across regimes above. The trend filter is
+  retained as the mechanism to re-admit shorts if a sustained downtrend regime warrants it.
 - **Scan still uses Yahoo candles** until the `grow_candles` store fills (~60 days), then
   cut over to `--source db` for true survivorship-free scanning.
 - **Delayed data.** Yahoo intraday (5m/15m/60m) is delayed — fine for the POC; a real-time

@@ -1,7 +1,7 @@
 import sys
 from collections import defaultdict
 
-from engine import run_signals, atr_series, grade_signal, detect_all, btst_signals, pivots, rsi_series, SUPPRESSED_TYPES
+from engine import run_signals, atr_series, grade_signal, detect_all, btst_signals, pivots, rsi_series, sma, SUPPRESSED_TYPES
 from batch import load_universe, fetch_all, pooled_reliabilities, INTERVAL_RANGE
 
 
@@ -52,6 +52,7 @@ def grade_all(cache, reliabilities, interval, grade_opts=None, include_suppresse
     rows = []
     for sym, candles in cache:
         cut = int(len(candles) * split) if split else 0
+        closes = [c["close"] for c in candles]
         rep = run_signals(candles, {
             "symbol": sym, "interval": interval, "timeframe": interval,
             "reliabilities": reliabilities, "includeSuppressed": include_suppressed,
@@ -60,11 +61,14 @@ def grade_all(cache, reliabilities, interval, grade_opts=None, include_suppresse
         idx = {c["time"]: i for i, c in enumerate(candles)}
         atr = atr_series(candles, 14)
         for s in rep["signals"]:
-            if idx.get(s["time"], 0) < cut:
+            i = idx.get(s["time"], 0)
+            if i < cut:
                 continue
             oc = grade_signal(s, candles, idx, {**(grade_opts or {}), "atr": atr})
             if oc["status"] == "pending":
                 continue
+            m200 = sma(closes, 200, i)
+            regime = "n/a" if m200 is None else ("up" if closes[i] > m200 else "down")
             rows.append({
                 "type": s["type"],
                 "band": s["confidenceBreakdown"]["band"],
@@ -73,6 +77,7 @@ def grade_all(cache, reliabilities, interval, grade_opts=None, include_suppresse
                 "status": oc["status"],
                 "ret": oc["returnPct"],
                 "bars": oc["bars"],
+                "regime": regime,
             })
     return rows
 
@@ -166,6 +171,13 @@ def report(all_rows, interval, nsym, header="BACKTEST"):
         if a and a["n"]:
             print(f"  {d.ljust(8)} hit {pct(a['hit'])}  exp {pct(a['exp'])}  n={str(a['n']).rjust(5)}")
 
+    print("\n-- gated: by market regime (symbol vs its 200-DMA at entry — does the edge survive downtrends?) --")
+    for rg in ("up", "down", "n/a"):
+        a = agg([r for r in gated_rows if r.get("regime") == rg])
+        if a["n"]:
+            label = {"up": "uptrend", "down": "downtrend", "n/a": "no-200DMA"}[rg]
+            print(f"  {label.ljust(10)} exp {pct(a['exp'])}  hit {pct(a['hit'])}  n={str(a['n']).rjust(6)}")
+
     print("\n-- by pattern (all, sorted by expectancy; (GATED) = suppressed from calls) --")
     by_type = {k: agg(v) for k, v in group(all_rows, "type").items()}
     for t, a in sorted(by_type.items(), key=lambda x: -x[1]["exp"]):
@@ -225,6 +237,8 @@ def main():
         print(f"unsupported interval '{interval}'. Supported: {', '.join(INTERVAL_RANGE)}.")
         sys.exit(1)
     rng = INTERVAL_RANGE[interval]
+    if "--range" in sys.argv:
+        rng = sys.argv[sys.argv.index("--range") + 1]
     universe = load_universe()
     print(f"universe: {len(universe)} symbols · interval {interval} · range {rng}")
     cache = fetch_all(universe, interval, rng, limit)

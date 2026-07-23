@@ -116,6 +116,31 @@ export default function GrowSignals() {
         {stale && <span className="grow-sig-stale">stale</span>}
       </div>
 
+      {scan?.sentiment && (
+        <div className={`grow-sentiment grow-sentiment--${scan.sentiment}`}>
+          <i
+            className={`fa-solid ${
+              scan.sentiment === "fear"
+                ? "fa-face-frown-open"
+                : scan.sentiment === "calm"
+                  ? "fa-face-smile"
+                  : "fa-face-meh"
+            }`}
+          />
+          <span className="grow-sentiment-label">
+            Market {scan.sentiment === "fear" ? "fearful" : scan.sentiment === "calm" ? "calm" : "neutral"}
+          </span>
+          {scan.vix != null && <span className="grow-sentiment-vix">VIX {Number(scan.vix).toFixed(1)}</span>}
+          <span className="grow-sentiment-note">
+            {scan.sentiment === "fear"
+              ? "Mean-reversion setups historically strongest now (+3% avg in backtest)"
+              : scan.sentiment === "calm"
+                ? "Thin conditions — setups pay less in calm markets"
+                : "Ordinary conditions"}
+          </span>
+        </div>
+      )}
+
       <div className="grow-sigflt grow-sig-intervals">
         {INTERVALS.map((opt) => (
           <button

@@ -226,6 +226,55 @@ app.get("/quote", requireToken, async (c) => {
   return c.json({ symbol, price });
 });
 
+// Best-effort fundamentals for the long-term investing lane. Yahoo's v7 quote
+// carries valuation + income fields without a chart fetch. Degrades to {} if
+// Yahoo declines (it sometimes gates this endpoint) — callers must tolerate gaps.
+async function fetchYahooFundamentals(symbols: string[]): Promise<Record<string, unknown>> {
+  const num = (v: unknown) => (typeof v === "number" && isFinite(v) ? v : null);
+  try {
+    const res = await fetch(
+      `https://query1.finance.yahoo.com/v7/finance/quote?symbols=${encodeURIComponent(symbols.join(","))}`,
+      { headers: { "User-Agent": "Mozilla/5.0" } },
+    );
+    if (!res.ok) return {};
+    const data = (await res.json()) as {
+      quoteResponse?: {
+        result?: Array<{
+          symbol?: string;
+          trailingPE?: number;
+          forwardPE?: number;
+          priceToBook?: number;
+          marketCap?: number;
+          epsTrailingTwelveMonths?: number;
+          trailingAnnualDividendYield?: number;
+          dividendYield?: number;
+          fiftyTwoWeekHigh?: number;
+          fiftyTwoWeekLow?: number;
+          regularMarketPrice?: number;
+        }>;
+      };
+    };
+    const out: Record<string, unknown> = {};
+    for (const r of data?.quoteResponse?.result ?? []) {
+      if (!r?.symbol) continue;
+      out[r.symbol] = {
+        pe: num(r.trailingPE),
+        forwardPe: num(r.forwardPE),
+        pb: num(r.priceToBook),
+        marketCap: num(r.marketCap),
+        eps: num(r.epsTrailingTwelveMonths),
+        divYield: num(r.trailingAnnualDividendYield) ?? (num(r.dividendYield) != null ? (r.dividendYield as number) / 100 : null),
+        high52: num(r.fiftyTwoWeekHigh),
+        low52: num(r.fiftyTwoWeekLow),
+        price: num(r.regularMarketPrice),
+      };
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
 const CANDLE_INTERVALS = new Set(["1m", "5m", "15m", "30m", "60m", "1d", "1wk", "1mo"]);
 const CANDLE_RANGES = new Set(["1d", "5d", "1mo", "3mo", "6mo", "1y", "2y", "5y", "max"]);
 app.get("/candles", requireToken, async (c) => {
@@ -238,6 +287,15 @@ app.get("/candles", requireToken, async (c) => {
   const candles = await fetchYahooCandles(symbol, interval, range);
   if (!candles) return c.json({ error: "no candle data" }, 502);
   return c.json({ symbol, interval, range, candles });
+});
+
+app.get("/fundamentals", requireToken, async (c) => {
+  const raw = String(c.req.query("symbols") ?? "").trim();
+  if (!raw) return c.json({ fundamentals: {} });
+  const symbols = raw.split(",").map((s) => s.trim()).filter(Boolean).slice(0, 50);
+  if (symbols.length === 0) return c.json({ fundamentals: {} });
+  const fundamentals = await fetchYahooFundamentals(symbols);
+  return c.json({ fundamentals });
 });
 
 // Grow breadth scan — ranked signals from the nightly pybrain batch (Supabase).

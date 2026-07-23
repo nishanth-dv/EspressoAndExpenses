@@ -1,8 +1,23 @@
-import { ENGINE, DIRECTION, signalId, SUPPRESSED_TYPES } from "./contract.js";
-import { rsiSeries, pivots, sma } from "./indicators.js";
+import { ENGINE, DIRECTION, signalId, SUPPRESSED_TYPES, tradeType } from "./contract.js";
+import { rsiSeries, pivots, sma, atrSeries } from "./indicators.js";
 import { detectAll } from "./detectors.js";
 import { withSignalConfidence } from "./confidence.js";
-import { calibrateReliabilities } from "./grade.js";
+import { calibrateReliabilities, GRADE_DEFAULTS } from "./grade.js";
+
+function planFor(direction, entry, atr) {
+  const useAtr = atr != null && atr > 0 && entry > 0;
+  const t = useAtr ? GRADE_DEFAULTS.atrTarget * atr : entry * GRADE_DEFAULTS.target;
+  const s = useAtr ? GRADE_DEFAULTS.atrStop * atr : entry * GRADE_DEFAULTS.stop;
+  const dir = direction === "bearish" ? -1 : 1;
+  const r2 = (x) => Math.round(x * 100) / 100;
+  return {
+    entry: r2(entry),
+    target: r2(entry + dir * t),
+    stop: r2(entry - dir * s),
+    rr: s > 0 ? Math.round((t / s) * 100) / 100 : 0,
+    horizonBars: GRADE_DEFAULTS.horizon,
+  };
+}
 
 const COLORS = { bullish: "#16a34a", bearish: "#ef4444", neutral: "#9ca3af" };
 
@@ -27,6 +42,7 @@ export function runSignals(candles, ctx = {}) {
   const closes = candles.map((c) => c.close);
   const rsi = rsiSeries(closes, 14);
   const piv = pivots(candles, 3, 3);
+  const atr = atrSeries(candles, GRADE_DEFAULTS.atrPeriod);
   const raw = detectAll(candles, closes, { rsi, piv });
   const reliability = calibrateReliabilities(raw, candles, ctx.grade);
 
@@ -57,6 +73,8 @@ export function runSignals(candles, ctx = {}) {
     };
     const scored = withSignalConfidence(withMeta);
     scored.marker = markerFor(scored);
+    scored.plan = planFor(scored.direction, scored.price, atr[idx]);
+    scored.tradeType = tradeType(interval);
     scored.sortValue = Math.round(scored.factors.signalStrength * scored.confidence);
     return scored;
   });

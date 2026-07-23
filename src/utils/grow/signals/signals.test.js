@@ -30,6 +30,10 @@ assert.strictEqual(sum, be.confidence, "breakdown rows sum to confidence");
 assert.strictEqual(typeof be.marker.text, "string", "marker has a text code");
 assert.strictEqual(be.marker.shape, "arrowUp", "bullish marker points up");
 assert.strictEqual(be.id, "TEST.NS:1d:bullish_engulfing:" + be.time, "deterministic id");
+assert(be.plan && be.plan.entry === be.price, "signal carries a trade plan anchored at entry");
+assert(be.plan.target > be.plan.entry && be.plan.stop < be.plan.entry, "bullish plan: target above, stop below entry");
+assert(Math.abs(be.plan.rr - 2 / 1.5) < 0.01, "R:R = atrTarget/atrStop");
+assert.strictEqual(be.tradeType, "Swing", "1d interval -> Swing trade type");
 
 const gated = runSignals(candles, { symbol: "TEST.NS", interval: "1d", timeframe: "6M" });
 assert(gated.signals.every((s) => !SUPPRESSED_TYPES.has(s.type)), "default run excludes suppressed patterns");
@@ -96,6 +100,12 @@ const strad = [candle(t0, 100, 100.5, 99.5, 100), candle(t0 + DAY, 100, 105, 96,
 const stradIdx = new Map(strad.map((c, k) => [c.time, k]));
 const ocStrad = gradeSignal({ time: strad[0].time, direction: "bullish" }, strad, stradIdx, { horizon: 10, target: 0.04, stop: 0.03 });
 assert.strictEqual(ocStrad.status, "loss", "a bar hitting BOTH target and stop is booked a loss (worst-case), not a win");
+
+const nd = [candle(t0, 100, 101, 99, 100), candle(t0 + DAY, 100, 103, 100, 102)];
+const ndIdx = new Map(nd.map((c, k) => [c.time, k]));
+const ocNd = gradeSignal({ time: nd[0].time, direction: "bullish" }, nd, ndIdx, { horizon: 1, exit: "nextday" });
+assert.strictEqual(ocNd.status, "win", "next-day close above entry -> win");
+assert(Math.abs(ocNd.returnPct - ((102 - 100) / 100 - costPct)) < 1e-9, "next-day return = close-to-close minus cost");
 
 console.log(`ok — ATR grade win ${(expected * 100).toFixed(1)}% net of ${(costPct * 100).toFixed(2)}% cost; intrabar straddle → loss`);
 

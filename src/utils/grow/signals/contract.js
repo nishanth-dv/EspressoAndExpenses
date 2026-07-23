@@ -27,8 +27,15 @@ export const CATEGORY_META = {
   indicator: { label: "Indicator", icon: "fa-wave-square" },
   structure: { label: "Structure", icon: "fa-ruler-horizontal" },
   chart: { label: "Chart pattern", icon: "fa-shapes" },
+  btst: { label: "BTST", icon: "fa-bolt" },
 };
 
 export function signalId(symbol, interval, type, time) {
   return `${symbol}:${interval}:${type}:${time}`;
+}
+
+export function tradeType(interval) {
+  if (interval === "1d") return "Swing";
+  if (interval === "1wk" || interval === "1mo") return "Positional";
+  return "Day";
 }

@@ -18,6 +18,11 @@ export function gradeSignal(signal, candles, idxByTime, opts = {}) {
   }
   const dir = signal.direction === "bearish" ? -1 : 1;
   const entry = candles[i].close;
+  if (o.exit === "nextday") {
+    const j = Math.min(candles.length - 1, i + o.horizon);
+    const ret = (dir * (candles[j].close - entry)) / entry - o.costBps / 10000;
+    return { status: ret > 0 ? "win" : "loss", returnPct: ret, bars: j - i };
+  }
   const atr = opts.atr ? opts.atr[i] : null;
   let targetPrice;
   let stopPrice;

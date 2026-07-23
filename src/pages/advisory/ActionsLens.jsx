@@ -5,6 +5,7 @@ import { persistSetPreference } from "../../redux/slices/transactionSlice";
 import { mergeProfile, glidePath } from "../../utils/advisory/profile";
 import { runAdvisory } from "../../utils/advisory/engine";
 import { fetchMarket } from "../../utils/advisory/market";
+import { fetchFundamentals } from "../../utils/advisory/fundamentals";
 import {
   statusOf,
   isSuppressed,
@@ -173,9 +174,26 @@ export default function ActionsLens() {
     };
   }, []);
 
+  const tickers = useMemo(
+    () => [...new Set((data.investments ?? []).map((i) => i.ticker).filter(Boolean))],
+    [data.investments],
+  );
+  const [funda, setFunda] = useState({});
+  const tickerKey = tickers.join(",");
+  useEffect(() => {
+    let alive = true;
+    fetchFundamentals(tickerKey ? tickerKey.split(",") : [])
+      .then((f) => alive && setFunda(f))
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [tickerKey]);
+
+  const advData = useMemo(() => ({ ...data, fundamentals: funda }), [data, funda]);
   const { cards } = useMemo(
-    () => runAdvisory(data, profile, market, advisoryFeedback),
-    [data, profile, market, advisoryFeedback],
+    () => runAdvisory(advData, profile, market, advisoryFeedback),
+    [advData, profile, market, advisoryFeedback],
   );
 
   const [filter, setFilter] = useState("all");

@@ -946,7 +946,79 @@ function taxRegimeModule(data, profile) {
   ];
 }
 
+function fundamentalsModule(data) {
+  const funda = data.fundamentals || {};
+  const cards = [];
+  for (const inv of data.investments ?? []) {
+    if (assetClassOf(inv.type, data.investmentTypes) !== "equity") continue;
+    const f = inv.ticker ? funda[inv.ticker] : null;
+    if (!f) continue;
+    const value = valueOf(inv);
+    if (value < 5000) continue;
+    const name = inv.name || inv.ticker;
+
+    if (f.pe != null && f.pe >= 40) {
+      cards.push({
+        id: `funda-rich-${inv.id}`,
+        stream: "personalized",
+        category: "risk",
+        title: `${name} is richly valued`,
+        action: `It trades at about ${f.pe.toFixed(0)}× earnings${f.pb != null ? ` and ${f.pb.toFixed(1)}× book` : ""} — a premium. Hold quality, but think twice before adding here; trimming into strength locks in some gain.`,
+        impactLabel: `${f.pe.toFixed(0)}× P/E`,
+        saving: 0,
+        sortValue: value * 0.02,
+        factors: { kind: "fact", signalStrength: Math.min(1, (f.pe - 40) / 40) },
+      });
+    } else if (f.pe != null && f.pe > 0 && f.pe <= 15) {
+      cards.push({
+        id: `funda-cheap-${inv.id}`,
+        stream: "personalized",
+        category: "allocation",
+        title: `${name} looks reasonably priced`,
+        action: `At about ${f.pe.toFixed(0)}× earnings it isn't stretched. If your thesis holds, this is a fair level to accumulate on dips.`,
+        impactLabel: `${f.pe.toFixed(0)}× P/E`,
+        saving: 0,
+        sortValue: value * 0.01,
+        factors: { kind: "fact", signalStrength: 0.5 },
+      });
+    }
+
+    if (f.divYield != null && f.divYield >= 0.03) {
+      cards.push({
+        id: `funda-income-${inv.id}`,
+        stream: "personalized",
+        category: "cash",
+        title: `${name} pays a healthy dividend`,
+        action: `Yielding about ${(f.divYield * 100).toFixed(1)}% — a steady income stream on top of any price gain. Reinvesting it compounds the position.`,
+        impactLabel: `${(f.divYield * 100).toFixed(1)}% yield`,
+        saving: 0,
+        sortValue: value * 0.008,
+        factors: { kind: "fact", signalStrength: Math.min(1, f.divYield / 0.06) },
+      });
+    }
+
+    if (f.high52 != null && f.low52 != null && f.price != null && f.high52 > f.low52) {
+      const pos = (f.price - f.low52) / (f.high52 - f.low52);
+      if (pos >= 0.95) {
+        cards.push({
+          id: `funda-high-${inv.id}`,
+          stream: "personalized",
+          category: "risk",
+          title: `${name} is near its 52-week high`,
+          action: `It's in the top of its yearly range — strong momentum, but limited margin of safety. Trail a stop rather than chasing it higher.`,
+          impactLabel: "near 52w high",
+          saving: 0,
+          sortValue: value * 0.005,
+          factors: { kind: "fact", signalStrength: 0.5 },
+        });
+      }
+    }
+  }
+  return cards;
+}
+
 const MODULES = [
+  fundamentalsModule,
   allocationModule,
   debtModule,
   subscriptionAuditModule,

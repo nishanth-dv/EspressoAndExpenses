@@ -92,3 +92,7 @@ language sql stable as $$
          round(avg((outcome = 'win')::int), 3), round(avg(outcome_return), 4)
   from grow_signals where outcome is not null and outcome <> 'pending' and interval = p_interval group by type;
 $$;
+
+-- Force PostgREST to pick up any new columns immediately (avoids PGRST204
+-- "could not find column in the schema cache" after adding columns above).
+notify pgrst, 'reload schema';

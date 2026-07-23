@@ -31,6 +31,12 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: python batch.py --interval ${{ github.event.inputs.interval || '1d' }}
+      - name: BTST scan (next-day, delivery-filtered)
+        working-directory: pybrain
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python batch.py --btst
 
   intraday:
     if: github.event.schedule == '0 10 * * 1-5'

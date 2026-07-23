@@ -7,7 +7,7 @@ import sys
 import time
 import urllib.request
 
-from engine import run_signals, avg_volume, detect_all, pivots, rsi_series, grade_signal, atr_series
+from engine import run_signals, avg_volume, detect_all, pivots, rsi_series, grade_signal, atr_series, btst_signals
 
 NIFTY200_CSV = "https://niftyindices.com/IndexConstituent/ind_nifty200list.csv"
 BANDRANK = {"high": 2, "moderate": 1, "low": 0}
@@ -97,14 +97,14 @@ def fetch_all(symbols, interval="1d", rng="1y", limit=None):
     return cache
 
 
-def pooled_reliabilities(cache, k=8, grade_opts=None):
+def pooled_reliabilities(cache, k=8, grade_opts=None, mode=None):
     stat = {}
     tot_wins = tot_resolved = 0
     for _sym, candles in cache:
         closes = [c["close"] for c in candles]
         rsi = rsi_series(closes, 14)
         piv = pivots(candles, 3, 3)
-        raw = detect_all(candles, closes, rsi, piv)
+        raw = btst_signals(candles, closes) if mode == "btst" else detect_all(candles, closes, rsi, piv)
         idx = {c["time"]: i for i, c in enumerate(candles)}
         atr = atr_series(candles, 14)
         for s in raw:
@@ -121,10 +121,10 @@ def pooled_reliabilities(cache, k=8, grade_opts=None):
     return {t: (v["wins"] + k * base) / (v["resolved"] + k) for t, v in stat.items()}
 
 
-def collect_signals(cache, today, reliabilities, interval="1d", long_only=True):
+def collect_signals(cache, today, reliabilities, interval="1d", long_only=True, mode=None):
     collected = []
     for sym, candles in cache:
-        rep = run_signals(candles, {"symbol": sym, "interval": interval, "timeframe": interval, "reliabilities": reliabilities, "longOnly": long_only})
+        rep = run_signals(candles, {"symbol": sym, "interval": interval, "timeframe": interval, "reliabilities": reliabilities, "longOnly": long_only, "mode": mode})
         liquidity = round(avg_volume(candles, len(candles) - 1, 20) * candles[-1]["close"])
         display = sym.replace(".NS", "")
         for s in rep["signals"]:
@@ -136,7 +136,7 @@ def collect_signals(cache, today, reliabilities, interval="1d", long_only=True):
                 "bar_time": s["time"], "price": s["price"], "title": s["title"],
                 "confidence": s["confidence"], "band": s["confidenceBreakdown"]["band"], "sort_value": s["sortValue"],
                 "liquidity": liquidity, "factors": s["factors"], "meta": s.get("meta", {}),
-                "breakdown": s["confidenceBreakdown"],
+                "breakdown": s["confidenceBreakdown"], "plan": s.get("plan"), "trade_type": s.get("tradeType"),
             })
     return collected
 
@@ -169,7 +169,7 @@ def sb_get(path):
         return json.loads(r.read())
 
 
-def grade_past(cache, today, interval="1d"):
+def grade_past(cache, today, interval="1d", grade_opts=None):
     if not SUPABASE_URL or not SUPABASE_KEY:
         return
     by_sym = {sym: candles for sym, candles in cache}
@@ -182,7 +182,7 @@ def grade_past(cache, today, interval="1d"):
         if not candles:
             continue
         idx = {c["time"]: i for i, c in enumerate(candles)}
-        oc = grade_signal({"time": r["bar_time"], "direction": r["direction"]}, candles, idx, {"atr": atr_by_sym[r["symbol"]]})
+        oc = grade_signal({"time": r["bar_time"], "direction": r["direction"]}, candles, idx, {**(grade_opts or {}), "atr": atr_by_sym[r["symbol"]]})
         if oc["status"] == "pending":
             continue
         updates.append({
@@ -264,6 +264,26 @@ def _db_to_cache(rows, min_days=60, top=None):
     return cache
 
 
+def enrich_delivery(cache):
+    try:
+        from bhavcopy import latest_bhavcopy
+        rows = latest_bhavcopy()
+    except Exception as e:
+        print(f"btst: bhavcopy delivery fetch failed ({e}); scanning without delivery filter")
+        return 0
+    if not rows:
+        print("btst: no bhavcopy delivery data; scanning without delivery filter")
+        return 0
+    deliv = {r["symbol"]: r["deliv_per"] for r in rows if r.get("deliv_per") is not None}
+    n = 0
+    for sym, candles in cache:
+        if candles and sym in deliv:
+            candles[-1]["deliv_per"] = deliv[sym]
+            n += 1
+    print(f"btst: attached delivery % to {n} symbols' latest bar")
+    return n
+
+
 def load_candles_db(interval="1d", min_days=60, top=300):
     if not (SUPABASE_URL and SUPABASE_KEY):
         return []
@@ -291,21 +311,26 @@ def main():
         rng = sys.argv[sys.argv.index("--range") + 1]
     long_only = "--allow-shorts" not in sys.argv
     source = sys.argv[sys.argv.index("--source") + 1] if "--source" in sys.argv else "yahoo"
+    mode = "btst" if "--btst" in sys.argv else None
+    scan_interval = "btst" if mode == "btst" else interval
+    grade_opts = {"horizon": 1, "exit": "nextday"} if mode == "btst" else None
     today = datetime.date.today().isoformat()
     if source == "db":
         cache = load_candles_db(interval, top=300)
         universe = [s for s, _ in cache]
-        print(f"source: bhavcopy DB store · {len(cache)} symbols · {interval} · {'long-only' if long_only else 'long+short'}")
+        print(f"source: bhavcopy DB store · {len(cache)} symbols · {scan_interval} · {'long-only' if long_only else 'long+short'}")
     else:
         universe = load_universe()
         cache = fetch_all(universe, interval, rng, limit)
-        print(f"universe: {len(universe)} · fetched {len(cache)} · {interval} · {rng} · {'long-only' if long_only else 'long+short'}")
+        print(f"universe: {len(universe)} · fetched {len(cache)} · {scan_interval} · {rng} · {'long-only' if long_only else 'long+short'}")
     if not cache:
         print("no candles to scan")
         return
-    pooled = pooled_reliabilities(cache)
+    if mode == "btst" and source != "db":
+        enrich_delivery(cache)
+    pooled = pooled_reliabilities(cache, grade_opts=grade_opts, mode=mode)
     print("pooled reliabilities:", {t: round(r, 2) for t, r in sorted(pooled.items(), key=lambda x: -x[1])})
-    collected = collect_signals(cache, today, pooled, interval, long_only=long_only)
+    collected = collect_signals(cache, today, pooled, scan_interval, long_only=long_only, mode=mode)
     collected.sort(key=lambda r: (BANDRANK[r["band"]], r["confidence"], r["liquidity"]), reverse=True)
     seen = set()
     unique = []
@@ -315,8 +340,8 @@ def main():
         seen.add(r["id"])
         unique.append(r)
     collected = unique[:200]
-    write(collected, len(universe), today, interval)
-    grade_past(cache, today, interval)
+    write(collected, len(universe), today, scan_interval)
+    grade_past(cache, today, scan_interval, grade_opts)
 
 
 if __name__ == "__main__":

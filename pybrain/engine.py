@@ -329,6 +329,35 @@ def geometric_signals(candles, closes, piv):
     return out
 
 
+def btst_signals(candles, closes):
+    out = []
+    for i in range(20, len(candles)):
+        c = candles[i]
+        rng = (c["high"] - c["low"]) or 1e-9
+        strength = (c["close"] - c["low"]) / rng
+        if strength < 0.7 or c["close"] <= closes[i - 1]:
+            continue
+        av = avg_volume(candles, i - 1, 20)
+        rvol = (c.get("volume") or 0) / av if av else 0
+        if rvol < 1.5:
+            continue
+        deliv = c.get("deliv_per")
+        if deliv is not None and deliv < 55:
+            continue
+        ss = clamp01(
+            0.4 * (strength - 0.7) / 0.3
+            + 0.3 * min(1.0, (rvol - 1.5) / 1.5)
+            + 0.3 * min(1.0, (deliv if deliv is not None else 55) / 80)
+        )
+        title = "Strong close · high volume" + (f" · {round(deliv)}% delivery" if deliv is not None else "")
+        out.append(mk(candles, closes, i, {
+            "type": "btst", "name": "BTST setup", "category": "btst", "direction": "bullish",
+            "title": title, "code": "BT", "baseReliability": 0.5, "signalStrength": ss,
+            "meta": {"strength": round(strength, 2), "rvol": round(rvol, 2), "deliv": deliv},
+        }))
+    return out
+
+
 def detect_all(candles, closes, rsi, piv):
     return (
         engulfing(candles, closes)
@@ -383,6 +412,10 @@ def grade_signal(sig, candles, idx_by_time, opts=None):
         return {"status": "pending", "returnPct": 0, "bars": 0}
     d = -1 if sig["direction"] == "bearish" else 1
     entry = candles[i]["close"]
+    if o.get("exit") == "nextday":
+        j = min(len(candles) - 1, i + o["horizon"])
+        ret = (d * (candles[j]["close"] - entry)) / entry - o["costBps"] / 10000
+        return {"status": "win" if ret > 0 else "loss", "returnPct": ret, "bars": j - i}
     atr = opts["atr"][i] if opts.get("atr") else None
     if atr is not None and atr > 0 and entry > 0:
         target = entry + d * o["atrTarget"] * atr
@@ -434,6 +467,28 @@ def signal_id(symbol, interval, type_, time):
     return f"{symbol}:{interval}:{type_}:{time}"
 
 
+def trade_type(interval):
+    if interval == "1d":
+        return "Swing"
+    if interval in ("1wk", "1mo"):
+        return "Positional"
+    return "Day"
+
+
+def plan_for(direction, entry, atr, horizon=None):
+    use_atr = atr is not None and atr > 0 and entry > 0
+    t = GRADE_DEFAULTS["atrTarget"] * atr if use_atr else entry * GRADE_DEFAULTS["target"]
+    s = GRADE_DEFAULTS["atrStop"] * atr if use_atr else entry * GRADE_DEFAULTS["stop"]
+    d = -1 if direction == "bearish" else 1
+    return {
+        "entry": round(entry, 2),
+        "target": round(entry + d * t, 2),
+        "stop": round(entry - d * s, 2),
+        "rr": round(t / s, 2) if s > 0 else 0,
+        "horizonBars": horizon if horizon is not None else GRADE_DEFAULTS["horizon"],
+    }
+
+
 def run_signals(candles, ctx=None):
     ctx = ctx or {}
     symbol = ctx.get("symbol", "")
@@ -445,7 +500,9 @@ def run_signals(candles, ctx=None):
     closes = [c["close"] for c in candles]
     rsi = rsi_series(closes, 14)
     piv = pivots(candles, 3, 3)
-    raw = detect_all(candles, closes, rsi, piv)
+    atr = atr_series(candles, GRADE_DEFAULTS["atrPeriod"])
+    is_btst = ctx.get("mode") == "btst"
+    raw = btst_signals(candles, closes) if is_btst else detect_all(candles, closes, rsi, piv)
     reliability = ctx["reliabilities"] if ctx.get("reliabilities") is not None else calibrate_reliabilities(raw, candles, ctx.get("grade"))
     idx_by_time = {c["time"]: i for i, c in enumerate(candles)}
     by_time = {}
@@ -459,6 +516,8 @@ def run_signals(candles, ctx=None):
         recency = last - idx
         factors = {**r["factors"], "baseReliability": reliability.get(r["type"], r["factors"]["baseReliability"]), "confluence": confluence, "recencyBars": recency}
         scored = with_signal_confidence({**r, "id": signal_id(symbol, interval, r["type"], r["time"]), "factors": factors})
+        scored["plan"] = plan_for(scored["direction"], scored["price"], atr[idx], 1 if is_btst else None)
+        scored["tradeType"] = "BTST" if is_btst else trade_type(interval)
         scored["sortValue"] = round(scored["factors"]["signalStrength"] * scored["confidence"])
         signals.append(scored)
     uniq = {}

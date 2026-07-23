@@ -1,11 +1,11 @@
 import sys
 from collections import defaultdict
 
-from engine import run_signals, atr_series, grade_signal, detect_all, pivots, rsi_series, SUPPRESSED_TYPES
+from engine import run_signals, atr_series, grade_signal, detect_all, btst_signals, pivots, rsi_series, SUPPRESSED_TYPES
 from batch import load_universe, fetch_all, pooled_reliabilities, INTERVAL_RANGE
 
 
-def pooled_expectancy(cache, grade_opts=None, k=20):
+def pooled_expectancy(cache, grade_opts=None, k=20, mode=None):
     by_type = {}
     tot_ret = 0.0
     tot_n = 0
@@ -13,7 +13,7 @@ def pooled_expectancy(cache, grade_opts=None, k=20):
         closes = [c["close"] for c in candles]
         rsi = rsi_series(closes, 14)
         piv = pivots(candles, 3, 3)
-        raw = detect_all(candles, closes, rsi, piv)
+        raw = btst_signals(candles, closes) if mode == "btst" else detect_all(candles, closes, rsi, piv)
         idx = {c["time"]: i for i, c in enumerate(candles)}
         atr = atr_series(candles, 14)
         for s in raw:
@@ -48,14 +48,14 @@ def spearman(xs, ys):
     return num / den if den else 0.0
 
 
-def grade_all(cache, reliabilities, interval, grade_opts=None, include_suppressed=False, split=None, trend_filter=False, long_only=False):
+def grade_all(cache, reliabilities, interval, grade_opts=None, include_suppressed=False, split=None, trend_filter=False, long_only=False, mode=None):
     rows = []
     for sym, candles in cache:
         cut = int(len(candles) * split) if split else 0
         rep = run_signals(candles, {
             "symbol": sym, "interval": interval, "timeframe": interval,
             "reliabilities": reliabilities, "includeSuppressed": include_suppressed,
-            "trendFilter": trend_filter, "longOnly": long_only,
+            "trendFilter": trend_filter, "longOnly": long_only, "mode": mode,
         })
         idx = {c["time"]: i for i, c in enumerate(candles)}
         atr = atr_series(candles, 14)
@@ -112,21 +112,21 @@ def summarize(rows):
     }
 
 
-def evaluate(cache, interval="1d", grade_opts=None, include_suppressed=False):
-    reliabilities = pooled_reliabilities(cache, grade_opts=grade_opts)
-    rows = grade_all(cache, reliabilities, interval, grade_opts, include_suppressed)
+def evaluate(cache, interval="1d", grade_opts=None, include_suppressed=False, mode=None):
+    reliabilities = pooled_reliabilities(cache, grade_opts=grade_opts, mode=mode)
+    rows = grade_all(cache, reliabilities, interval, grade_opts, include_suppressed, mode=mode)
     return {**summarize(rows), "reliabilities": reliabilities, "rows": rows}
 
 
-def evaluate_walkforward(cache, interval="1d", split=0.7, grade_opts=None, include_suppressed=False, trend_filter=False, long_only=False):
+def evaluate_walkforward(cache, interval="1d", split=0.7, grade_opts=None, include_suppressed=False, trend_filter=False, long_only=False, mode=None):
     train_cache = []
     for sym, candles in cache:
         cut = int(len(candles) * split)
         if cut >= 30:
             train_cache.append((sym, candles[:cut]))
-    reliabilities = pooled_reliabilities(train_cache, grade_opts=grade_opts)
-    train_exp = pooled_expectancy(train_cache, grade_opts=grade_opts)
-    rows = grade_all(cache, reliabilities, interval, grade_opts, include_suppressed, split=split, trend_filter=trend_filter, long_only=long_only)
+    reliabilities = pooled_reliabilities(train_cache, grade_opts=grade_opts, mode=mode)
+    train_exp = pooled_expectancy(train_cache, grade_opts=grade_opts, mode=mode)
+    rows = grade_all(cache, reliabilities, interval, grade_opts, include_suppressed, split=split, trend_filter=trend_filter, long_only=long_only, mode=mode)
     for r in rows:
         r["train_exp"] = train_exp.get(r["type"], 0.0)
     return {**summarize(rows), "reliabilities": reliabilities, "train_exp": train_exp, "rows": rows}
@@ -229,6 +229,17 @@ def main():
     print(f"universe: {len(universe)} symbols · interval {interval} · range {rng}")
     cache = fetch_all(universe, interval, rng, limit)
     print(f"fetched {len(cache)} symbols")
+
+    if "--btst" in sys.argv:
+        opts = {"horizon": 1, "exit": "nextday"}
+        if walkforward:
+            wf = evaluate_walkforward(cache, "btst", split, grade_opts=opts, mode="btst")
+            report(wf["rows"], "btst", len(cache), header=f"BTST OUT-OF-SAMPLE (next-day exit · {int(split * 100)}/{int((1 - split) * 100)})")
+        else:
+            res = evaluate(cache, "btst", grade_opts=opts, mode="btst")
+            report(res["rows"], "btst", len(cache), header="BTST IN-SAMPLE (next-day exit)")
+        return
+
     trendfilter = "--trendfilter" in sys.argv
     if not walkforward:
         res = evaluate(cache, interval, include_suppressed=True)

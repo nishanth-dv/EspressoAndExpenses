@@ -28,10 +28,30 @@ assert not any(s["type"] == "bullish_engulfing" for s in tf["signals"]), "trend 
 
 lo = run_signals(candles, {"symbol": "TEST.NS", "interval": "1d", "timeframe": "6M", "includeSuppressed": True, "longOnly": True})
 assert all(s["direction"] != "bearish" for s in lo["signals"]), "long-only drops bearish signals"
+
+bt = [candle(T0 + k * DAY, 100.0, 100.5, 99.5, 100.0, 1000) for k in range(28)]
+bt.append(candle(T0 + 28 * DAY, 100.2, 103.0, 100.0, 102.8, 3000))
+bt.append(candle(T0 + 29 * DAY, 103.0, 104.0, 102.5, 103.5, 1200))
+rep_bt = run_signals(bt, {"symbol": "X.NS", "interval": "btst", "mode": "btst"})
+b = next((s for s in rep_bt["signals"] if s["type"] == "btst"), None)
+assert b, "BTST setup detected (strong close + high volume, up day)"
+assert b["direction"] == "bullish" and b["tradeType"] == "BTST", "BTST is a bullish next-day call"
+assert b["plan"]["horizonBars"] == 1, "BTST plan is a next-day (1-bar) hold"
+assert not any(s["type"] == "btst" for s in run_signals(bt, {"symbol": "X.NS", "interval": "1d"})["signals"]), "btst only in btst mode"
+
+nd = [candle(T0, 100, 101, 99, 100), candle(T0 + DAY, 100, 103, 100, 102)]
+nd_idx = {c["time"]: k for k, c in enumerate(nd)}
+oc_nd = grade_signal({"time": nd[0]["time"], "direction": "bullish"}, nd, nd_idx, {"horizon": 1, "exit": "nextday"})
+assert oc_nd["status"] == "win", "next-day close above entry -> win"
+assert abs(oc_nd["returnPct"] - ((102 - 100) / 100 - 15 / 10000)) < 1e-9, "next-day return = close-to-close minus cost"
 assert be["time"] == candles[-1]["time"], "engulfing on the last bar"
 assert 0 <= be["confidence"] <= 100
 assert sum(r["points"] for r in be["confidenceBreakdown"]["rows"]) == be["confidence"], "breakdown sums to confidence"
 assert be["id"] == f"TEST.NS:1d:bullish_engulfing:{be['time']}"
+assert be["plan"]["entry"] == be["price"], "signal carries a trade plan anchored at entry"
+assert be["plan"]["target"] > be["plan"]["entry"] > be["plan"]["stop"], "bullish plan: target above, stop below entry"
+assert abs(be["plan"]["rr"] - 2 / 1.5) < 0.01, "R:R = atrTarget/atrStop"
+assert be["tradeType"] == "Swing", "1d interval -> Swing trade type"
 
 rising = []
 for k in range(15):

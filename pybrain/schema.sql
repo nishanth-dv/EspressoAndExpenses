@@ -32,6 +32,8 @@ create table if not exists grow_scans (
 
 alter table grow_signals add column if not exists interval text default '1d';
 update grow_signals set interval = '1d' where interval is null;
+alter table grow_signals add column if not exists plan jsonb;
+alter table grow_signals add column if not exists trade_type text;
 
 alter table grow_scans add column if not exists interval text default '1d';
 update grow_scans set interval = '1d' where interval is null;

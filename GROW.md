@@ -144,6 +144,30 @@ Nifty 200 CSV → hardcoded list as fallbacks.
 trading day) at a time, accumulating **point-in-time, survivorship-free** history (each
 day's file contains exactly what traded that day, including since-delisted names).
 `batch.py --source db` scans that store instead of Yahoo once ~60+ days have accrued.
+On read, `--source db` **back-adjusts for splits/bonuses** using NSE's corporate-actions
+feed (`bhavcopy.fetch_corp_actions` / `adjust_candles`) — raw stays stored, adjusted on
+read. Delivery % is carried on every bar (for BTST conviction).
+
+### Candle-store cutover plan (Yahoo → `--source db`)
+The scan defaults to Yahoo (a delayed, unofficial POC feed). The store is the accuracy
+upgrade: official NSE, survivorship-free, corporate-action-adjusted, delivery-carrying —
+free, no broker account. Cut over when it has enough history for the indicators
+(~200 bars for SMA200; practically ~60–200 trading days ingested).
+
+1. **Check readiness**: the daily cron already ingests via `batch.py --ingest`. Verify
+   depth with `select interval, count(*), count(distinct symbol) from grow_candles`
+   (want ≥ ~60 days across the universe; more is better — 200+ unlocks SMA200/regime).
+2. **Cut over**: in `.github/workflows/grow-scan.yml`, add `--source db` to the daily scan
+   step (`python batch.py --interval 1d --source db`) and the BTST step
+   (`python batch.py --btst --source db`). The BTST detector then gets **delivery %**
+   (it's on every stored bar), which the Yahoo path can't provide.
+3. **Verify** with one **Run workflow**: the log prints `source: bhavcopy DB store · N
+   symbols` and `corporate-action adjusted: …`. Confirm the Signals tab still populates.
+4. **Then**: BTST becomes backtestable *with* delivery (`backtest.py --btst` on db data),
+   and every scan runs on clean, official data. Yahoo remains the fallback if `db` is empty.
+
+Only the EOD (`1d`) and BTST lanes cut over — intraday (5m/15m/1h) stays on Yahoo until a
+real-time feed replaces it (that needs a broker/vendor; see caveats).
 
 **Nightly scan** (`batch.py`): fetch universe → universe-pooled reliabilities
 (empirical-Bayes toward the global base rate) → run **long-only** → keep fresh signals
@@ -213,8 +237,9 @@ any trend). Spearman train→OOS = +0.60 over 5 years.
   downtrends, so it is not purely a bull-market artifact.
 - **Long-only stays the default** — validated across regimes above. The trend filter is
   retained as the mechanism to re-admit shorts if a sustained downtrend regime warrants it.
-- **Scan still uses Yahoo candles** until the `grow_candles` store fills (~60 days), then
-  cut over to `--source db` for true survivorship-free scanning.
+- **Scan still uses Yahoo candles** (delayed POC feed) until the `grow_candles` store fills,
+  then cut over to `--source db` for official, survivorship-free, **corporate-action-adjusted**
+  data — see the *Candle-store cutover plan* above.
 - **Delayed data.** Yahoo intraday (5m/15m/60m) is delayed — fine for the POC; a real-time
   feed is the eventual upgrade for day/scalping.
 

@@ -37,6 +37,8 @@ alter table grow_signals add column if not exists trade_type text;
 
 alter table grow_scans add column if not exists interval text default '1d';
 update grow_scans set interval = '1d' where interval is null;
+alter table grow_scans add column if not exists vix numeric;
+alter table grow_scans add column if not exists sentiment text;
 alter table grow_scans drop constraint if exists grow_scans_pkey;
 alter table grow_scans add constraint grow_scans_pkey primary key (scan_date, interval);
 

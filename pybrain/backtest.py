@@ -2,7 +2,27 @@ import sys
 from collections import defaultdict
 
 from engine import run_signals, atr_series, grade_signal, detect_all, btst_signals, pivots, rsi_series, sma, SUPPRESSED_TYPES
-from batch import load_universe, fetch_all, pooled_reliabilities, INTERVAL_RANGE
+from batch import load_universe, fetch_all, pooled_reliabilities, INTERVAL_RANGE, yahoo
+
+VIX = {}
+
+
+def fetch_vix(rng="5y"):
+    try:
+        candles = yahoo("^INDIAVIX", "1d", rng)
+    except Exception:
+        return {}
+    return {c["time"] // 86400: c["close"] for c in candles}
+
+
+def _vix_bucket(v):
+    if v is None:
+        return None
+    if v < 14:
+        return "calm (<14)"
+    if v <= 20:
+        return "normal (14-20)"
+    return "fear (>20)"
 
 
 def pooled_expectancy(cache, grade_opts=None, k=20, mode=None):
@@ -78,6 +98,7 @@ def grade_all(cache, reliabilities, interval, grade_opts=None, include_suppresse
                 "ret": oc["returnPct"],
                 "bars": oc["bars"],
                 "regime": regime,
+                "time": s["time"],
             })
     return rows
 
@@ -178,6 +199,19 @@ def report(all_rows, interval, nsym, header="BACKTEST"):
             label = {"up": "uptrend", "down": "downtrend", "n/a": "no-200DMA"}[rg]
             print(f"  {label.ljust(10)} exp {pct(a['exp'])}  hit {pct(a['hit'])}  n={str(a['n']).rjust(6)}")
 
+    if VIX:
+        print("\n-- gated: by market sentiment (India VIX at entry — does fear predict outcomes?) --")
+        buckets = {}
+        for r in gated_rows:
+            b = _vix_bucket(VIX.get(r.get("time", 0) // 86400))
+            if b:
+                buckets.setdefault(b, []).append(r)
+        for b in ("calm (<14)", "normal (14-20)", "fear (>20)"):
+            rs = buckets.get(b)
+            if rs:
+                a = agg(rs)
+                print(f"  {b.ljust(15)} exp {pct(a['exp'])}  hit {pct(a['hit'])}  n={str(a['n']).rjust(6)}")
+
     print("\n-- by pattern (all, sorted by expectancy; (GATED) = suppressed from calls) --")
     by_type = {k: agg(v) for k, v in group(all_rows, "type").items()}
     for t, a in sorted(by_type.items(), key=lambda x: -x[1]["exp"]):
@@ -239,6 +273,9 @@ def main():
     rng = INTERVAL_RANGE[interval]
     if "--range" in sys.argv:
         rng = sys.argv[sys.argv.index("--range") + 1]
+    if "--vix" in sys.argv:
+        VIX.update(fetch_vix(rng))
+        print(f"India VIX loaded: {len(VIX)} days")
     universe = load_universe()
     print(f"universe: {len(universe)} symbols · interval {interval} · range {rng}")
     cache = fetch_all(universe, interval, rng, limit)

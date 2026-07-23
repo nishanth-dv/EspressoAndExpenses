@@ -194,7 +194,7 @@ def grade_past(cache, today, interval="1d", grade_opts=None):
     print(f"forward-graded {len(updates)} past {interval} signals")
 
 
-def write(collected, universe_size, today, interval="1d"):
+def write(collected, universe_size, today, interval="1d", vix=None, sentiment=None):
     if not SUPABASE_URL or not SUPABASE_KEY:
         print(f"\nDRY RUN — no Supabase creds set. Top 20 ranked ({interval}):")
         for r in collected[:20]:
@@ -206,7 +206,7 @@ def write(collected, universe_size, today, interval="1d"):
     sb("DELETE", f"grow_signals?scan_date=eq.{today}&interval=eq.{interval}")
     for i in range(0, len(collected), 500):
         sb("POST", "grow_signals?on_conflict=id,scan_date", collected[i : i + 500], upsert=True)
-    sb("POST", "grow_scans?on_conflict=scan_date,interval", {"scan_date": today, "interval": interval, "universe_size": universe_size, "signal_count": len(collected)}, upsert=True)
+    sb("POST", "grow_scans?on_conflict=scan_date,interval", {"scan_date": today, "interval": interval, "universe_size": universe_size, "signal_count": len(collected), "vix": vix, "sentiment": sentiment}, upsert=True)
     print(f"wrote {len(collected)} {interval} signals for {today} ({universe_size} names)")
 
 
@@ -262,6 +262,18 @@ def _db_to_cache(rows, min_days=60, top=None):
         cache.sort(key=lambda x: sum(c["volume"] for c in x[1]), reverse=True)
         cache = cache[:top]
     return cache
+
+
+def market_sentiment():
+    try:
+        candles = yahoo("^INDIAVIX", "1d", "1mo")
+    except Exception:
+        return None, None
+    if not candles:
+        return None, None
+    vix = round(candles[-1]["close"], 2)
+    regime = "fear" if vix > 20 else "calm" if vix < 14 else "normal"
+    return vix, regime
 
 
 def enrich_delivery(cache):
@@ -347,7 +359,10 @@ def main():
         seen.add(r["id"])
         unique.append(r)
     collected = unique[:200]
-    write(collected, len(universe), today, scan_interval)
+    vix, sentiment = market_sentiment()
+    if vix is not None:
+        print(f"market sentiment: {sentiment} (India VIX {vix})")
+    write(collected, len(universe), today, scan_interval, vix, sentiment)
     grade_past(cache, today, scan_interval, grade_opts)
 
 

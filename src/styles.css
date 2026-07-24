@@ -11976,6 +11976,10 @@ html[data-skin="glass"] .adv-card {
   border-color: color-mix(in srgb, var(--amount-investment) 45%, transparent);
   background: color-mix(in srgb, var(--amount-investment) 12%, transparent);
 }
+.grow-sig-earnings {
+  color: #d9822b;
+  font-weight: 600;
+}
 .grow-sentiment {
   display: flex;
   align-items: center;

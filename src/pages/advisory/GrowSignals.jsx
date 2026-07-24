@@ -275,6 +275,13 @@ export default function GrowSignals() {
                     </span>
                     <span className="grow-sig-meta">
                       {s.title} · ₹{Number(s.price).toFixed(2)}
+                      {s.earnings_in != null && (
+                        <span className="grow-sig-earnings">
+                          {" · "}
+                          <i className="fa-solid fa-triangle-exclamation" /> results in {s.earnings_in}
+                          {s.earnings_in === 1 ? " day" : " days"}
+                        </span>
+                      )}
                     </span>
                   </span>
                 </button>

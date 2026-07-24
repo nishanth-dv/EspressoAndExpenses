@@ -121,12 +121,20 @@ def pooled_reliabilities(cache, k=8, grade_opts=None, mode=None):
     return {t: (v["wins"] + k * base) / (v["resolved"] + k) for t, v in stat.items()}
 
 
-def collect_signals(cache, today, reliabilities, interval="1d", long_only=True, mode=None):
+def collect_signals(cache, today, reliabilities, interval="1d", long_only=True, mode=None, earnings=None):
+    earnings = earnings or {}
+    today_epoch = int(datetime.datetime.strptime(today, "%Y-%m-%d").timestamp())
     collected = []
     for sym, candles in cache:
         rep = run_signals(candles, {"symbol": sym, "interval": interval, "timeframe": interval, "reliabilities": reliabilities, "longOnly": long_only, "mode": mode})
         liquidity = round(avg_volume(candles, len(candles) - 1, 20) * candles[-1]["close"])
         display = sym.replace(".NS", "")
+        e_day = earnings.get(sym)
+        earnings_in = None
+        if e_day is not None:
+            dd = round((e_day - today_epoch) / 86400)
+            if 0 <= dd <= 10:
+                earnings_in = dd
         for s in rep["signals"]:
             if s["factors"]["recencyBars"] > RECENCY_MAX:
                 continue
@@ -137,6 +145,7 @@ def collect_signals(cache, today, reliabilities, interval="1d", long_only=True, 
                 "confidence": s["confidence"], "band": s["confidenceBreakdown"]["band"], "sort_value": s["sortValue"],
                 "liquidity": liquidity, "factors": s["factors"], "meta": s.get("meta", {}),
                 "breakdown": s["confidenceBreakdown"], "plan": s.get("plan"), "trade_type": s.get("tradeType"),
+                "earnings_in": earnings_in,
             })
     return collected
 
@@ -349,7 +358,13 @@ def main():
         enrich_delivery(cache)
     pooled = pooled_reliabilities(cache, grade_opts=grade_opts, mode=mode)
     print("pooled reliabilities:", {t: round(r, 2) for t, r in sorted(pooled.items(), key=lambda x: -x[1])})
-    collected = collect_signals(cache, today, pooled, scan_interval, long_only=long_only, mode=mode)
+    earnings = {}
+    if scan_interval in ("1d", "btst"):
+        from bhavcopy import fetch_earnings_calendar
+        earnings = fetch_earnings_calendar()
+        if earnings:
+            print(f"earnings calendar: {len(earnings)} symbols with upcoming results")
+    collected = collect_signals(cache, today, pooled, scan_interval, long_only=long_only, mode=mode, earnings=earnings)
     collected.sort(key=lambda r: (BANDRANK[r["band"]], r["confidence"], r["liquidity"]), reverse=True)
     seen = set()
     unique = []

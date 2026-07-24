@@ -181,6 +181,36 @@ def fetch_corp_actions(from_date=None, to_date=None):
     return out
 
 
+def fetch_earnings_calendar(days_ahead=30):
+    today = datetime.date.today()
+    end = today + datetime.timedelta(days=days_ahead)
+    url = (
+        "https://www.nseindia.com/api/corporate-board-meetings?index=equities"
+        f"&from_date={today.strftime('%d-%m-%Y')}&to_date={end.strftime('%d-%m-%Y')}"
+    )
+    try:
+        data = json.loads(_nse_get(url))
+    except Exception:
+        return {}
+    records = data if isinstance(data, list) else (data.get("data") or [])
+    out = {}
+    for r in records:
+        sym = (r.get("bm_symbol") or r.get("symbol") or "").strip()
+        text = ((r.get("bm_purpose") or "") + " " + (r.get("bm_desc") or "")).lower()
+        raw = r.get("bm_date") or r.get("meetingdate") or r.get("meetingDate") or ""
+        if not sym or ("result" not in text and "financial" not in text):
+            continue
+        try:
+            d = datetime.datetime.strptime(raw.strip(), "%d-%b-%Y")
+        except (ValueError, AttributeError):
+            continue
+        key = sym + ".NS"
+        day = int(d.timestamp())
+        if key not in out or day < out[key]:
+            out[key] = day
+    return out
+
+
 def adjust_candles(candles, actions):
     if not actions:
         return candles

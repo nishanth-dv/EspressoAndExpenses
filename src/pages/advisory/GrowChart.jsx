@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useSelector, useDispatch } from "react-redux";
 import { motion } from "framer-motion";
 import { createChart, CandlestickSeries, LineSeries, HistogramSeries, createSeriesMarkers } from "lightweight-charts";
-import { fetchCandles, TIMEFRAMES } from "../../utils/grow/growData";
+import { fetchCandles, TIMEFRAMES, DEFAULT_TF, INTERVAL_TF } from "../../utils/grow/growData";
 import { runSignals } from "../../utils/grow/signals";
 import { CATEGORY_META } from "../../utils/grow/signals/contract";
 import { INDICATORS } from "../../utils/grow/chartIndicators";
@@ -16,6 +16,17 @@ import Modal from "../../preStyledElements/modal/Modal";
 import TradePlan from "./TradePlan";
 
 const DEFAULT = { symbol: "RELIANCE.NS", name: "Reliance Industries" };
+const LS_LAST = "grow-chart-last";
+
+function readLast() {
+  try {
+    const v = JSON.parse(localStorage.getItem(LS_LAST));
+    return v?.symbol ? v : null;
+  } catch {
+    return null;
+  }
+}
+
 const PATTERN_COLOR = "#f59e0b";
 const CANDLE_BARS = {
   hammer: 1,
@@ -37,6 +48,23 @@ function cssVar(name, fallback) {
   return v || fallback;
 }
 
+const IST = "Asia/Kolkata";
+const istFmt = (opts) => new Intl.DateTimeFormat("en-IN", { timeZone: IST, ...opts });
+const FMT_YEAR = istFmt({ year: "numeric" });
+const FMT_MONTH = istFmt({ month: "short", year: "2-digit" });
+const FMT_DAY = istFmt({ day: "numeric", month: "short" });
+const FMT_TIME = istFmt({ hour: "2-digit", minute: "2-digit", hour12: false });
+const FMT_STAMP = istFmt({ day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hour12: false });
+const FMT_FULLDAY = istFmt({ day: "numeric", month: "short", year: "numeric" });
+
+function tickMark(time, type) {
+  const d = new Date(time * 1000);
+  if (type <= 0) return FMT_YEAR.format(d);
+  if (type === 1) return FMT_MONTH.format(d);
+  if (type === 2) return FMT_DAY.format(d);
+  return FMT_TIME.format(d);
+}
+
 function chartOptions() {
   const grid = cssVar("--surface-border", "rgba(128,128,128,0.12)");
   return {
@@ -47,7 +75,8 @@ function chartOptions() {
     },
     grid: { vertLines: { color: grid }, horzLines: { color: grid } },
     rightPriceScale: { borderColor: grid },
-    timeScale: { borderColor: grid },
+    timeScale: { borderColor: grid, tickMarkFormatter: tickMark },
+    localization: { locale: "en-IN" },
   };
 }
 
@@ -80,9 +109,12 @@ export default function GrowChart() {
   const prefs = useSelector((s) => s.transactions.transactionData?.preferences);
   const [symbol, setSymbol] = useState(() => {
     const s = params.get("symbol");
-    return s ? { symbol: s, name: params.get("name") || s.replace(/\.(NS|BO)$/i, "") } : DEFAULT;
+    if (s) return { symbol: s, name: params.get("name") || s.replace(/\.(NS|BO)$/i, "") };
+    const last = readLast();
+    return last ? { symbol: last.symbol, name: last.name || last.symbol } : DEFAULT;
   });
-  const [tf, setTf] = useState("6M");
+  const [tf, setTf] = useState(() => INTERVAL_TF[params.get("i")] || DEFAULT_TF);
+  const [picked, setPicked] = useState(null);
   const [candles, setCandles] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -108,11 +140,20 @@ export default function GrowChart() {
   const deepDone = useRef(false);
   const chartWrapRef = useRef(null);
 
+  const viewFrom = useMemo(() => {
+    const bars = TIMEFRAMES.find((t) => t.key === tf)?.viewBars ?? 0;
+    if (!bars || candles.length <= bars) return 0;
+    return candles.length - bars;
+  }, [candles, tf]);
+
   const signals = useMemo(() => {
     if (candles.length < 3) return [];
     const interval = TIMEFRAMES.find((t) => t.key === tf)?.interval ?? "1d";
-    return runSignals(candles, { symbol: symbol.symbol, timeframe: tf, interval, includeSuppressed: true }).signals;
-  }, [candles, symbol, tf]);
+    const all = runSignals(candles, { symbol: symbol.symbol, timeframe: tf, interval, includeSuppressed: true }).signals;
+    if (!viewFrom) return all;
+    const cut = candles[viewFrom].time;
+    return all.filter((s) => s.time >= cut);
+  }, [candles, symbol, tf, viewFrom]);
 
   const card = useMemo(() => scoreCard(signals, candles), [signals, candles]);
   const outcomeById = useMemo(() => {
@@ -135,6 +176,7 @@ export default function GrowChart() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setLoading(true);
     setError("");
+    setPicked(null);
     fetchCandles(symbol.symbol, tf)
       .then((c) => alive && setCandles(c))
       .catch((e) => {
@@ -147,6 +189,14 @@ export default function GrowChart() {
       alive = false;
     };
   }, [symbol, tf]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(LS_LAST, JSON.stringify(symbol));
+    } catch {
+      /* empty */
+    }
+  }, [symbol]);
 
   useEffect(() => {
     if (!holderRef.current) return undefined;
@@ -168,6 +218,7 @@ export default function GrowChart() {
     seriesRef.current = series;
     patternRef.current = pattern;
     markersRef.current = createSeriesMarkers(series, []);
+    chart.subscribeClick((p) => setPicked(typeof p.time === "number" ? p.time : null));
     return () => {
       chart.remove();
       chartRef.current = null;
@@ -181,8 +232,10 @@ export default function GrowChart() {
   useEffect(() => {
     if (!seriesRef.current || !candles.length) return;
     seriesRef.current.setData(candles);
-    chartRef.current?.timeScale().fitContent();
-  }, [candles]);
+    const ts = chartRef.current?.timeScale();
+    if (viewFrom) ts?.setVisibleLogicalRange({ from: viewFrom, to: candles.length - 1 });
+    else ts?.fitContent();
+  }, [candles, viewFrom]);
 
   useEffect(() => {
     const chart = chartRef.current;
@@ -233,7 +286,12 @@ export default function GrowChart() {
 
   useEffect(() => {
     const intraday = TIMEFRAMES.find((t) => t.key === tf)?.intraday ?? false;
-    chartRef.current?.applyOptions({ timeScale: { timeVisible: intraday, secondsVisible: false } });
+    chartRef.current?.applyOptions({
+      timeScale: { timeVisible: intraday, secondsVisible: false },
+      localization: {
+        timeFormatter: (t) => (intraday ? FMT_STAMP : FMT_FULLDAY).format(new Date(t * 1000)),
+      },
+    });
   }, [tf]);
 
   useEffect(() => {
@@ -391,6 +449,22 @@ export default function GrowChart() {
     };
   }, [query]);
 
+  const spanLabel = useMemo(() => {
+    if (!candles.length) return "";
+    const intraday = TIMEFRAMES.find((t) => t.key === tf)?.intraday ?? false;
+    if (picked != null) {
+      const d = new Date(picked * 1000);
+      return intraday ? `${FMT_FULLDAY.format(d)}, ${FMT_TIME.format(d)}` : FMT_FULLDAY.format(d);
+    }
+    const a = new Date(candles[viewFrom].time * 1000);
+    const b = new Date(candles[candles.length - 1].time * 1000);
+    const end = FMT_FULLDAY.format(b);
+    const sameDay = FMT_FULLDAY.format(a) === end;
+    if (!intraday) return sameDay ? end : `${FMT_DAY.format(a)} – ${end}`;
+    if (sameDay) return `${end}, ${FMT_TIME.format(a)}–${FMT_TIME.format(b)}`;
+    return `${FMT_DAY.format(a)}, ${FMT_TIME.format(a)} – ${end}, ${FMT_TIME.format(b)}`;
+  }, [candles, tf, picked, viewFrom]);
+
   const stat = useMemo(() => {
     if (candles.length < 2) return null;
     const last = candles[candles.length - 1].close;
@@ -512,26 +586,42 @@ export default function GrowChart() {
       </div>
 
       <div className="grow-chart-tfs">
-        {TIMEFRAMES.map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            className={`grow-chart-tf${tf === t.key ? " is-active" : ""}`}
-            onClick={() => setTf(t.key)}
-          >
-            {tf === t.key && (
-              <motion.span
-                layoutId="growTfPill"
-                className="grow-chart-tf-pill"
-                transition={{ type: "spring", stiffness: 480, damping: 38 }}
-              />
+        {TIMEFRAMES.map((t, i) => (
+          <Fragment key={t.key}>
+            {i > 0 && t.group !== TIMEFRAMES[i - 1].group && (
+              <span className="grow-chart-tf-sep" aria-hidden="true" />
             )}
-            <span>{t.label}</span>
-          </button>
+            <button
+              type="button"
+              className={`grow-chart-tf${tf === t.key ? " is-active" : ""}`}
+              title={
+                t.group !== "range"
+                  ? `${t.interval} bars`
+                  : t.viewBars
+                    ? `${t.label} of ${t.interval} bars · ${t.range} loaded for indicators`
+                    : `${t.range} of ${t.interval} bars`
+              }
+              onClick={() => setTf(t.key)}
+            >
+              {tf === t.key && (
+                <motion.span
+                  layoutId="growTfPill"
+                  className="grow-chart-tf-pill"
+                  transition={{ type: "spring", stiffness: 480, damping: 38 }}
+                />
+              )}
+              <span>{t.label}</span>
+            </button>
+          </Fragment>
         ))}
       </div>
 
       <div className="grow-chart-inds">
+        {spanLabel && (
+          <span className={`grow-chart-span${picked != null ? " is-picked" : ""}`}>
+            <i className="fa-regular fa-calendar" /> {spanLabel}
+          </span>
+        )}
         <button
           type="button"
           className="grow-ind-editor-btn"

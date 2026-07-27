@@ -4,17 +4,28 @@ import { proxyFetch } from "../priceService";
 const API = import.meta.env.VITE_API_URL ?? "";
 
 export const TIMEFRAMES = [
-  { key: "1m", label: "1m", interval: "1m", range: "1d", intraday: true },
-  { key: "5m", label: "5m", interval: "5m", range: "5d", intraday: true },
-  { key: "15m", label: "15m", interval: "15m", range: "1mo", intraday: true },
-  { key: "1h", label: "1h", interval: "60m", range: "3mo", intraday: true },
-  { key: "1D", label: "1D", interval: "5m", range: "1d", intraday: true },
-  { key: "1W", label: "1W", interval: "30m", range: "5d", intraday: true },
-  { key: "1M", label: "1M", interval: "1d", range: "1mo" },
-  { key: "6M", label: "6M", interval: "1d", range: "6mo" },
-  { key: "1Y", label: "1Y", interval: "1d", range: "1y" },
-  { key: "5Y", label: "5Y", interval: "1wk", range: "5y" },
+  { key: "1m", label: "1m", interval: "1m", range: "1d", intraday: true, group: "interval" },
+  { key: "5m", label: "5m", interval: "5m", range: "5d", intraday: true, group: "interval" },
+  { key: "15m", label: "15m", interval: "15m", range: "1mo", intraday: true, group: "interval" },
+  { key: "1h", label: "1h", interval: "60m", range: "3mo", intraday: true, group: "interval" },
+  { key: "1D", label: "Today", interval: "5m", range: "1d", intraday: true, group: "range" },
+  { key: "1W", label: "5D", interval: "30m", range: "5d", intraday: true, group: "range" },
+  { key: "1M", label: "1M", interval: "1d", range: "1y", viewBars: 21, group: "range" },
+  { key: "6M", label: "6M", interval: "1d", range: "2y", viewBars: 126, group: "range" },
+  { key: "1Y", label: "1Y", interval: "1d", range: "1y", group: "range" },
+  { key: "5Y", label: "5Y", interval: "1wk", range: "5y", group: "range" },
 ];
+
+export const DEFAULT_TF = "1D";
+
+export const INTERVAL_TF = {
+  "1m": "1m",
+  "5m": "5m",
+  "15m": "15m",
+  "1h": "1h",
+  "1d": "1Y",
+  btst: "1Y",
+};
 
 function parseChart(json) {
   const r = json?.chart?.result?.[0];
@@ -47,8 +58,10 @@ async function fromBackend(symbol, interval, range) {
   }
 }
 
-export async function fetchCandles(symbol, timeframeKey = "6M") {
-  const tf = TIMEFRAMES.find((t) => t.key === timeframeKey) ?? TIMEFRAMES[3];
+export async function fetchCandles(symbol, timeframeKey = DEFAULT_TF) {
+  const tf =
+    TIMEFRAMES.find((t) => t.key === timeframeKey) ??
+    TIMEFRAMES.find((t) => t.key === DEFAULT_TF);
   const sym = symbol.trim().toUpperCase();
   if (!sym) throw new Error("No symbol");
 

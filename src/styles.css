@@ -11933,6 +11933,14 @@ html[data-skin="glass"] .adv-card {
 .grow-chart-tfs::-webkit-scrollbar {
   display: none;
 }
+.grow-chart-tf-sep {
+  flex: 0 0 auto;
+  align-self: center;
+  width: 1px;
+  height: 16px;
+  margin: 0 4px;
+  background: var(--surface-border-open, var(--surface-border));
+}
 .grow-chart-tf {
   position: relative;
   z-index: 0;
@@ -11960,6 +11968,23 @@ html[data-skin="glass"] .adv-card {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  align-items: center;
+}
+.grow-chart-span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-right: auto;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-variant-numeric: tabular-nums;
+}
+.grow-chart-span i {
+  opacity: 0.7;
+}
+.grow-chart-span.is-picked {
+  color: var(--text-primary);
+  font-weight: 600;
 }
 .grow-ind-chip {
   border: 1px solid var(--surface-border);

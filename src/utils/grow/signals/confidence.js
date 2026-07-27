@@ -46,10 +46,10 @@ export function reasonForSignal(factors = {}, total = 0) {
   const b = band(total);
   const lead =
     b === "high"
-      ? "Higher-probability setup — above the break-even win rate."
+      ? "Top bucket over 5 years of out-of-sample testing (38.8% hit, +0.7%/trade) — a thin edge, not a likely win."
       : b === "moderate"
-        ? "Middling setup — around break-even; weigh it with your own read."
-        : "Lower-probability setup — historically below break-even; treat it as a prompt, not a trade.";
+        ? "Middling bucket (~34% hit, +0.3%/trade in testing); weigh it with your own read."
+        : "Weakest bucket — treat it as a prompt, not a trade.";
   const { baseReliability = 0.4, signalStrength = 0.5, volumeConfirm = 0 } = factors;
   const why = [`this pattern reached target first about ${Math.round(baseReliability * 100)}% of the time in testing`];
   why.push(

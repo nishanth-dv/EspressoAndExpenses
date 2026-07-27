@@ -18,11 +18,12 @@ function horizonLabel(interval, bars) {
   return `~${bars} bars`;
 }
 
-export default function TradePlan({ plan, tradeType, interval }) {
+export default function TradePlan({ plan, tradeType, interval, direction }) {
   if (!plan) return null;
+  const bear = direction === "bearish";
   return (
     <div className="grow-plan">
-      <span className="grow-plan-action">BUY</span>
+      <span className={`grow-plan-action${bear ? " grow-plan-action--bear" : ""}`}>{bear ? "Bearish" : "Bullish"}</span>
       <span className="grow-plan-cell">
         <span className="grow-plan-k">Entry</span>
         <span className="grow-plan-v">{INR.format(plan.entry)}</span>

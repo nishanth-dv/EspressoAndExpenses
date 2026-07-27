@@ -12084,6 +12084,10 @@ html[data-skin="glass"] .adv-card {
   border-radius: 999px;
   background: color-mix(in srgb, var(--amount-income) 14%, transparent);
 }
+.grow-plan-action--bear {
+  color: var(--amount-expense);
+  background: color-mix(in srgb, var(--amount-expense) 14%, transparent);
+}
 .grow-plan-cell {
   display: flex;
   flex-direction: column;
@@ -12367,6 +12371,65 @@ html[data-skin="glass"] .adv-card {
   color: var(--amount-income);
   border-color: color-mix(in srgb, var(--amount-income) 40%, transparent);
   background: color-mix(in srgb, var(--amount-income) 12%, transparent);
+}
+.grow-hist {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 8px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--text-secondary) 7%, transparent);
+  font-size: 0.74rem;
+  color: var(--text-secondary);
+  line-height: 1.35;
+}
+.grow-hist i {
+  flex-shrink: 0;
+  opacity: 0.7;
+}
+.grow-hist strong {
+  color: var(--text-primary);
+  font-weight: 700;
+}
+.grow-hist-warn {
+  flex-shrink: 0;
+  margin-left: auto;
+  font-size: 0.66rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--amount-expense);
+}
+.grow-hist--thin strong {
+  color: var(--text-secondary);
+}
+.grow-sigflt--cats {
+  margin-top: -6px;
+}
+.grow-sigflt-cat {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  font-size: 0.74rem;
+}
+.grow-sigflt-cat i {
+  color: var(--cat, var(--text-secondary));
+}
+.grow-sigflt-cat em {
+  font-style: normal;
+  font-weight: 700;
+  font-size: 0.7rem;
+  color: var(--cat, var(--text-secondary));
+  background: color-mix(in srgb, var(--cat, var(--text-secondary)) 14%, transparent);
+  padding: 0 6px;
+  border-radius: 999px;
+}
+.grow-sigflt-cat.is-picked {
+  color: var(--cat, var(--text-primary));
+  border-color: color-mix(in srgb, var(--cat, var(--text-secondary)) 45%, transparent);
+  background: color-mix(in srgb, var(--cat, var(--text-secondary)) 12%, transparent);
 }
 .grow-sigflt-switch {
   margin-left: auto;

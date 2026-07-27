@@ -2,6 +2,7 @@ import assert from "node:assert";
 import { runSignals } from "./index.js";
 import { gradeSignal, scoreCard } from "./grade.js";
 import { atrSeries } from "./indicators.js";
+import { band as bandOf } from "./confidence.js";
 import { SUPPRESSED_TYPES } from "./contract.js";
 
 function candle(time, o, h, l, c, v = 1000) {
@@ -65,6 +66,62 @@ for (let i = 1; i < db.meta.shape.length; i++) {
 assert.strictEqual(db.meta.shape[db.meta.shape.length - 1].value, db.meta.neckline, "double bottom ends ON its neckline, not past the breakout close");
 
 console.log(`ok — double_bottom confidence ${db.confidence}`);
+
+const MIN = 300;
+const tick = (arr, k) => candle(t0 + k * MIN, k ? arr[k - 1] : arr[k], arr[k] + 0.04, arr[k] - 0.07, arr[k]);
+
+const shallowSeq = [213.1, 213.05, 212.95, 212.85, 212.7, 212.8, 213.0, 213.25, 213.45, 213.55, 213.45, 213.35, 213.28, 213.2, 213.25];
+for (let k = 0; k < 25; k++) shallowSeq.push(213.25 + k * 0.02);
+const shallow = shallowSeq.map((p, k) => tick(shallowSeq, k));
+const noDb = runSignals(shallow, { symbol: "SHALLOW.NS", interval: "5m", timeframe: "1D", includeSuppressed: true }).signals.find(
+  (s) => s.type === "double_bottom",
+);
+assert(!noDb, "lows 0.50 apart inside a 0.96-tall pattern are not a double bottom, however small the % of price");
+
+const twinSeq = [213.6, 213.45, 213.35, 213.25, 213.17, 213.28, 213.4, 213.5, 213.52, 213.55, 213.45, 213.35, 213.25, 213.2, 213.3, 213.45, 213.58, 213.65];
+const twin = twinSeq.map((p, k) => tick(twinSeq, k));
+const okDb = runSignals(twin, { symbol: "TWIN.NS", interval: "5m", timeframe: "1D", includeSuppressed: true }).signals.find(
+  (s) => s.type === "double_bottom",
+);
+assert(okDb, "lows within 6% of the pattern height, breaking out promptly, still qualify");
+assert.strictEqual(okDb.time, twin[17].time, "confirms on the first close above the neckline");
+
+console.log("ok — twin level tolerance scales with pattern height, not price");
+
+assert.strictEqual(bandOf(45), "high", "top of the scale is the best bucket over 5y OOS (38.8% hit)");
+assert.strictEqual(bandOf(44), "moderate", "44 sits below the high cut");
+assert.strictEqual(bandOf(40), "moderate", "40 is the moderate floor");
+assert.strictEqual(bandOf(39), "low", "below 40 is the weakest bucket");
+
+const zig = [];
+for (let k = 0; k < 160; k++) {
+  const p = 100 + Math.sin(k / 2.5) * 3 + Math.sin(k / 11) * 4 + (k % 3) * 0.3;
+  zig.push(candle(t0 + k * DAY, k ? 100 + Math.sin((k - 1) / 2.5) * 3 : p, p + 0.6, p - 0.6, p, 1000 + (k % 5) * 400));
+}
+const noCd = runSignals(zig, { symbol: "ZIG.NS", interval: "1d", includeSuppressed: true, cooldownBars: 0 });
+const withCd = runSignals(zig, { symbol: "ZIG.NS", interval: "1d", includeSuppressed: true });
+assert(noCd.signals.length > withCd.signals.length, "cooldown must collapse same-type repeats");
+
+const seen = new Map();
+for (const s of [...withCd.signals].sort((a, b) => a.time - b.time)) {
+  const bar = (s.time - t0) / DAY;
+  const prev = seen.get(s.type);
+  assert(prev == null || bar - prev > 10, `${s.type} refired ${bar - prev} bars apart, inside the 10-bar cooldown`);
+  seen.set(s.type, bar);
+}
+
+const withHist = withCd.signals.find((s) => s.history);
+assert(withHist, "signals carry this symbol's history for their own pattern");
+assert(withHist.history.resolved > 0 && withHist.history.wins <= withHist.history.resolved, "history counts are coherent");
+assert(
+  withHist.history.medianWinBars == null ||
+    (withHist.history.medianWinBars >= 1 && withHist.history.medianWinBars <= withHist.history.horizon),
+  "median bars-to-target falls inside the graded horizon",
+);
+
+console.log(
+  `ok — cooldown ${noCd.signals.length} → ${withCd.signals.length} signals; history ${withHist.history.wins}/${withHist.history.resolved} in ~${withHist.history.medianWinBars} bars`,
+);
 
 const dtSeq = [
   100, 104, 108, 112, 108, 104, 100, 96, 98, 100, 102, 104, 106, 108, 106, 104, 102, 104, 106, 108,

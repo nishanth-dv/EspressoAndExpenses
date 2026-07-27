@@ -7,6 +7,7 @@ import { persistSetPreference } from "../../redux/slices/transactionSlice";
 import { isWatched, toggleWatch, readWatchlist } from "../../utils/grow/watchlist";
 import { ConfidenceBadge, ConfidenceReveal } from "./ConfidenceControl";
 import TradePlan from "./TradePlan";
+import SignalHistory from "./SignalHistory";
 
 const API = import.meta.env.VITE_API_URL ?? "";
 
@@ -35,6 +36,7 @@ export default function GrowSignals() {
   const [dir, setDir] = useState("all");
   const [iv, setIv] = useState("1d");
   const [actionableOnly, setActionableOnly] = useState(true);
+  const [cat, setCat] = useState("all");
   const [openId, setOpenId] = useState(null);
 
   useEffect(() => {
@@ -77,10 +79,17 @@ export default function GrowSignals() {
     return signals.filter(
       (s) =>
         (dir === "all" || s.direction === dir) &&
+        (cat === "all" || s.category === cat) &&
         (!actionableOnly || s.band !== "low") &&
         (!watchOnly || watch.has(s.symbol)),
     );
-  }, [signals, dir, actionableOnly, watchOnly, prefs]);
+  }, [signals, dir, cat, actionableOnly, watchOnly, prefs]);
+
+  const cats = useMemo(() => {
+    const m = new Map();
+    for (const s of signals) m.set(s.category, (m.get(s.category) ?? 0) + 1);
+    return [...m.entries()].sort((a, b) => b[1] - a[1]);
+  }, [signals]);
 
   const stale = scan?.scan_date && scan.scan_date < new Date().toISOString().slice(0, 10);
 
@@ -239,6 +248,23 @@ export default function GrowSignals() {
         </button>
       </div>
 
+      {cats.length > 1 && (
+        <div className="grow-sigflt grow-sigflt--cats">
+          {cats.map(([k, n]) => (
+            <button
+              key={k}
+              type="button"
+              className={`grow-sigflt-chip grow-sigflt-cat grow-cat--${k}${cat === k ? " is-picked" : ""}`}
+              aria-pressed={cat === k}
+              onClick={() => setCat(cat === k ? "all" : k)}
+            >
+              <i className={`fa-solid ${CATEGORY_META[k]?.icon ?? ""}`} /> {CATEGORY_META[k]?.label ?? k}
+              <em>{n}</em>
+            </button>
+          ))}
+        </div>
+      )}
+
       {loading && (
         <div className="grow-sig-empty">
           <i className="fa-solid fa-spinner fa-spin" /> Loading…
@@ -301,7 +327,8 @@ export default function GrowSignals() {
                   onToggle={() => setOpenId(openId === s.id ? null : s.id)}
                 />
               </div>
-              <TradePlan plan={s.plan} tradeType={s.trade_type} interval={s.interval || iv} />
+              <TradePlan plan={s.plan} tradeType={s.trade_type} interval={s.interval || iv} direction={s.direction} />
+              <SignalHistory history={s.history} name={s.name} />
               {s.breakdown && <ConfidenceReveal open={openId === s.id} card={{ confidenceBreakdown: s.breakdown }} />}
             </li>
           ))}

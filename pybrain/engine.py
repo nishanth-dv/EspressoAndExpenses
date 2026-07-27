@@ -273,7 +273,11 @@ def _mk_geo(candles, closes, i, s):
     }
 
 
-def _twin_pairs(piv, is_top):
+TWIN_LEVEL_TOL = 0.35
+SHOULDER_TOL = 0.5
+
+
+def _twin_pairs(candles, piv, is_top):
     pairs = []
     i = 0
     while i < len(piv) - 1:
@@ -291,7 +295,15 @@ def _twin_pairs(piv, is_top):
             bound = min(a["price"], b["price"]) if is_top else max(a["price"], b["price"])
             if any((m["price"] > bound) if is_top else (m["price"] < bound) for m in piv[i + 1 : j]):
                 continue
-            pairs.append((a, b, diff))
+            if is_top:
+                neck = _min_low(candles, a["index"], b["index"])
+                height = max(a["price"], b["price"]) - neck
+            else:
+                neck = _max_high(candles, a["index"], b["index"])
+                height = neck - min(a["price"], b["price"])
+            if height <= 0 or abs(a["price"] - b["price"]) > TWIN_LEVEL_TOL * height:
+                continue
+            pairs.append((a, b, gap, diff, neck))
             matched = j
             break
         i = matched + 1 if matched >= 0 else i + 1
@@ -301,15 +313,13 @@ def _twin_pairs(piv, is_top):
 def geometric_signals(candles, closes, piv):
     out = []
     lows, highs = piv["lows"], piv["highs"]
-    for a, b, diff in _twin_pairs(lows, False):
-        neck = _max_high(candles, a["index"], b["index"])
+    for a, b, gap, diff, neck in _twin_pairs(candles, lows, False):
         conf = _first_close_above(candles, b["index"] + 1, neck)
-        if conf >= 0:
+        if conf >= 0 and conf - b["index"] <= gap:
             out.append(_mk_geo(candles, closes, conf, {"type": "double_bottom", "name": "Double Bottom", "direction": "bullish", "title": f"Double bottom near ₹{round((a['price']+b['price'])/2)}", "code": "W", "fromTime": candles[a["index"]]["time"], "baseReliability": 0.62, "signalStrength": (1 - diff / 0.03) * 0.6 + ((candles[conf]["close"] / neck - 1) / 0.03) * 0.4, "meta": {"level": round((a["price"] + b["price"]) / 2)}}))
-    for a, b, diff in _twin_pairs(highs, True):
-        neck = _min_low(candles, a["index"], b["index"])
+    for a, b, gap, diff, neck in _twin_pairs(candles, highs, True):
         conf = _first_close_below(candles, b["index"] + 1, neck)
-        if conf >= 0:
+        if conf >= 0 and conf - b["index"] <= gap:
             out.append(_mk_geo(candles, closes, conf, {"type": "double_top", "name": "Double Top", "direction": "bearish", "title": f"Double top near ₹{round((a['price']+b['price'])/2)}", "code": "M", "fromTime": candles[a["index"]]["time"], "baseReliability": 0.62, "signalStrength": (1 - diff / 0.03) * 0.6 + ((1 - candles[conf]["close"] / neck) / 0.03) * 0.4, "meta": {"level": round((a["price"] + b["price"]) / 2)}}))
     for k in range(2, len(highs)):
         l, h, r = highs[k - 2], highs[k - 1], highs[k]
@@ -320,8 +330,10 @@ def geometric_signals(candles, closes, piv):
         if abs(l["price"] - r["price"]) / min(l["price"], r["price"]) > 0.05:
             continue
         neck = min(_min_low(candles, l["index"], h["index"]), _min_low(candles, h["index"], r["index"]))
+        if abs(l["price"] - r["price"]) > SHOULDER_TOL * (h["price"] - neck):
+            continue
         conf = _first_close_below(candles, r["index"] + 1, neck)
-        if conf >= 0:
+        if conf >= 0 and conf - r["index"] <= r["index"] - l["index"]:
             sd = abs(l["price"] - r["price"]) / min(l["price"], r["price"])
             out.append(_mk_geo(candles, closes, conf, {"type": "head_shoulders", "name": "Head & Shoulders", "direction": "bearish", "title": "Head & shoulders top", "code": "HS", "fromTime": candles[l["index"]]["time"], "baseReliability": 0.66, "signalStrength": (1 - sd / 0.05) * 0.5 + ((h["price"] / max(l["price"], r["price"]) - 1) / 0.05) * 0.5, "meta": {"neckline": round(neck)}}))
     for k in range(2, len(lows)):
@@ -333,8 +345,10 @@ def geometric_signals(candles, closes, piv):
         if abs(l["price"] - r["price"]) / min(l["price"], r["price"]) > 0.05:
             continue
         neck = max(_max_high(candles, l["index"], h["index"]), _max_high(candles, h["index"], r["index"]))
+        if abs(l["price"] - r["price"]) > SHOULDER_TOL * (neck - h["price"]):
+            continue
         conf = _first_close_above(candles, r["index"] + 1, neck)
-        if conf >= 0:
+        if conf >= 0 and conf - r["index"] <= r["index"] - l["index"]:
             sd = abs(l["price"] - r["price"]) / min(l["price"], r["price"])
             out.append(_mk_geo(candles, closes, conf, {"type": "inverse_head_shoulders", "name": "Inverse Head & Shoulders", "direction": "bullish", "title": "Inverse head & shoulders", "code": "iHS", "fromTime": candles[l["index"]]["time"], "baseReliability": 0.66, "signalStrength": (1 - sd / 0.05) * 0.5 + ((min(l["price"], r["price"]) / h["price"] - 1) / 0.05) * 0.5, "meta": {"neckline": round(neck)}}))
     return out
@@ -474,6 +488,47 @@ def calibrate_reliabilities(raw, candles, opts=None):
     return {t: (v["wins"] + k * v["prior"]) / (v["resolved"] + k) for t, v in by_type.items()}
 
 
+def type_history(signals, candles, opts=None):
+    opts = opts or {}
+    idx_by_time = {c["time"]: i for i, c in enumerate(candles)}
+    o = {**opts, "atr": _atr_for(candles, opts)}
+    horizon = o.get("horizon", GRADE_DEFAULTS["horizon"])
+    by_type = {}
+    for s in signals:
+        g = grade_signal(s, candles, idx_by_time, o)
+        if g["status"] == "pending":
+            continue
+        t = by_type.setdefault(s["type"], {"resolved": 0, "wins": 0, "winBars": []})
+        t["resolved"] += 1
+        if g["status"] == "win":
+            t["wins"] += 1
+            t["winBars"].append(g["bars"])
+    out = {}
+    for t, v in by_type.items():
+        bars = sorted(v["winBars"])
+        m = len(bars) // 2
+        median = None if not bars else (bars[m] if len(bars) % 2 else round((bars[m - 1] + bars[m]) / 2))
+        out[t] = {"resolved": v["resolved"], "wins": v["wins"], "hitRate": v["wins"] / v["resolved"], "medianWinBars": median, "horizon": horizon}
+    return out
+
+
+def apply_cooldown(signals, idx_by_time, bars):
+    if not bars:
+        return signals
+    last_idx = {}
+    kept = []
+    for s in sorted(signals, key=lambda x: x["time"]):
+        i = idx_by_time.get(s["time"])
+        if i is None:
+            continue
+        prev = last_idx.get(s["type"])
+        if prev is not None and i - prev <= bars:
+            continue
+        last_idx[s["type"]] = i
+        kept.append(s)
+    return kept
+
+
 def signal_id(symbol, interval, type_, time):
     return f"{symbol}:{interval}:{type_}:{time}"
 
@@ -548,5 +603,10 @@ def run_signals(candles, ctx=None):
         signals = kept
     if ctx.get("longOnly"):
         signals = [s for s in signals if s["direction"] != "bearish"]
+    cooldown = ctx.get("cooldownBars", GRADE_DEFAULTS["horizon"])
+    signals = apply_cooldown(signals, idx_by_time, cooldown)
+    history = type_history(signals, candles, ctx.get("grade"))
+    for s in signals:
+        s["history"] = history.get(s["type"])
     signals.sort(key=lambda s: s["sortValue"], reverse=True)
     return {"symbol": symbol, "timeframe": timeframe, "interval": interval, "generatedAt": candles[last]["time"], "engine": ENGINE, "candleCount": len(candles), "signals": signals}

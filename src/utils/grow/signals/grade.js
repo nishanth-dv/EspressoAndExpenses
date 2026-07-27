@@ -60,17 +60,43 @@ function atrFor(candles, opts) {
   return opts.atr ?? atrSeries(candles, opts.atrPeriod ?? GRADE_DEFAULTS.atrPeriod);
 }
 
+function median(nums) {
+  if (!nums.length) return null;
+  const s = [...nums].sort((a, b) => a - b);
+  const m = Math.floor(s.length / 2);
+  return s.length % 2 ? s[m] : Math.round((s[m - 1] + s[m]) / 2);
+}
+
 function aggregate(items) {
   const res = items.filter((g) => g.outcome.status !== "pending");
-  const wins = res.filter((g) => g.outcome.status === "win").length;
+  const won = res.filter((g) => g.outcome.status === "win");
   const ret = res.reduce((s, g) => s + g.outcome.returnPct, 0);
   return {
     count: items.length,
     resolved: res.length,
-    wins,
-    hitRate: res.length ? wins / res.length : 0,
+    wins: won.length,
+    hitRate: res.length ? won.length / res.length : 0,
     avgReturn: res.length ? ret / res.length : 0,
+    medianWinBars: median(won.map((g) => g.outcome.bars)),
   };
+}
+
+export function typeHistory(signals, candles, opts = {}) {
+  const idxByTime = new Map();
+  candles.forEach((c, i) => idxByTime.set(c.time, i));
+  const o = { ...opts, atr: atrFor(candles, opts) };
+  const byType = new Map();
+  for (const s of signals) {
+    const outcome = gradeSignal(s, candles, idxByTime, o);
+    if (!byType.has(s.type)) byType.set(s.type, []);
+    byType.get(s.type).push({ signal: s, outcome });
+  }
+  const out = new Map();
+  for (const [type, items] of byType) {
+    const a = aggregate(items);
+    if (a.resolved > 0) out.set(type, { resolved: a.resolved, wins: a.wins, hitRate: a.hitRate, medianWinBars: a.medianWinBars, horizon: o.horizon ?? GRADE_DEFAULTS.horizon });
+  }
+  return out;
 }
 
 export function scoreCard(signals, candles, opts = {}) {

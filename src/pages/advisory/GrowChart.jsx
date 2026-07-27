@@ -14,6 +14,7 @@ import { isWatched, toggleWatch } from "../../utils/grow/watchlist";
 import { ConfidenceBadge, ConfidenceReveal } from "./ConfidenceControl";
 import Modal from "../../preStyledElements/modal/Modal";
 import TradePlan from "./TradePlan";
+import SignalHistory from "./SignalHistory";
 
 const DEFAULT = { symbol: "RELIANCE.NS", name: "Reliance Industries" };
 const LS_LAST = "grow-chart-last";
@@ -771,7 +772,9 @@ export default function GrowChart() {
                   plan={s.plan}
                   tradeType={s.tradeType}
                   interval={TIMEFRAMES.find((t) => t.key === tf)?.interval ?? "1d"}
+                  direction={s.direction}
                 />
+                <SignalHistory history={s.history} name={s.name} />
                 <ConfidenceReveal open={openId === s.id} card={s} />
               </li>
             ))}

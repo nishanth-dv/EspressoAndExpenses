@@ -145,7 +145,7 @@ def collect_signals(cache, today, reliabilities, interval="1d", long_only=True, 
                 "confidence": s["confidence"], "band": s["confidenceBreakdown"]["band"], "sort_value": s["sortValue"],
                 "liquidity": liquidity, "factors": s["factors"], "meta": s.get("meta", {}),
                 "breakdown": s["confidenceBreakdown"], "plan": s.get("plan"), "trade_type": s.get("tradeType"),
-                "earnings_in": earnings_in,
+                "earnings_in": earnings_in, "history": s.get("history"),
             })
     return collected
 

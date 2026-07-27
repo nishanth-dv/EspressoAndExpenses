@@ -2,7 +2,7 @@ import { ENGINE, DIRECTION, signalId, SUPPRESSED_TYPES, tradeType } from "./cont
 import { rsiSeries, pivots, sma, atrSeries } from "./indicators.js";
 import { detectAll } from "./detectors.js";
 import { withSignalConfidence } from "./confidence.js";
-import { calibrateReliabilities, GRADE_DEFAULTS } from "./grade.js";
+import { calibrateReliabilities, typeHistory, GRADE_DEFAULTS } from "./grade.js";
 
 function planFor(direction, entry, atr) {
   const useAtr = atr != null && atr > 0 && entry > 0;
@@ -17,6 +17,21 @@ function planFor(direction, entry, atr) {
     rr: s > 0 ? Math.round((t / s) * 100) / 100 : 0,
     horizonBars: GRADE_DEFAULTS.horizon,
   };
+}
+
+function applyCooldown(list, idxByTime, bars) {
+  if (!bars) return list;
+  const last = new Map();
+  const kept = [];
+  for (const s of [...list].sort((a, b) => a.time - b.time)) {
+    const i = idxByTime.get(s.time);
+    if (i == null) continue;
+    const prev = last.get(s.type);
+    if (prev != null && i - prev <= bars) continue;
+    last.set(s.type, i);
+    kept.push(s);
+  }
+  return kept;
 }
 
 const COLORS = { bullish: "#16a34a", bearish: "#ef4444", neutral: "#9ca3af" };
@@ -95,6 +110,9 @@ export function runSignals(candles, ctx = {}) {
     });
   }
   if (ctx.longOnly) unique = unique.filter((s) => s.direction !== "bearish");
+  unique = applyCooldown(unique, idxByTime, ctx.cooldownBars ?? GRADE_DEFAULTS.horizon);
+  const history = typeHistory(unique, candles, { ...ctx.grade, atr });
+  for (const s of unique) s.history = history.get(s.type) ?? null;
   unique.sort((a, b) => b.sortValue - a.sortValue);
 
   return {

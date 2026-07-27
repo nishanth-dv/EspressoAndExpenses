@@ -79,9 +79,12 @@ resistance, range breakout/breakdown), and geometric chart patterns (double top/
 head-&-shoulders, inverse H&S).
 
 **Geometric pairing & shapes** (`geometric.js`, mirrored in `engine.py`). Twin patterns pair
-pivots through `twinPairs(piv, isTop)` / `_twin_pairs`: 5–80 bars apart, peaks within 3%, and
-**no intervening pivot beyond the pair** (a higher peak between two tops is a *head*, not a
-twin). Pairs may be **non-consecutive** — previously only adjacent pivots were compared, so
+pivots through `twinPairs(candles, piv, isTop)` / `_twin_pairs`: 5–80 bars apart, peaks within
+**0.35 × the pattern's own height** (a %-of-price test is meaningless intraday — accuracy
+note 8), **no intervening pivot beyond the pair** (a higher peak between two tops is a *head*,
+not a twin), and a neckline break inside the pattern's own width. H&S applies the same idea:
+shoulders within 0.5 × head height, break within the shoulder-to-shoulder span.
+Pairs may be **non-consecutive** — previously only adjacent pivots were compared, so
 any twin with a minor pivot between its two peaks was invisible. On a match the scan resumes
 past the second pivot, so twins never overlap.
 
@@ -96,7 +99,8 @@ The Python engine emits no `shape` (it never draws); the pairing logic is what's
 
 **Confidence** (`confidence.js`) is an **estimated win probability**: the pattern's
 tested win rate (`baseReliability`) plus small strength/volume nudges, on a 0–100 scale.
-Bands are anchored at break-even: **high ≥ 45, moderate ≥ 40, low < 40**. Recency was
+Bands: **high ≥ 45, moderate ≥ 40, low < 40** — validated against 5y out-of-sample
+outcomes (accuracy note 10), not just the break-even reasoning they were designed on. Recency was
 **removed** from the score (it isn't predictive and corrupted backtests). The breakdown
 sums exactly to the score — the number can't be faked.
 
@@ -180,6 +184,101 @@ python backtest.py [--limit N] [--interval 1d] [--range 5y] \
    34.6% hit, +0.4%, payoff 1.32 — identical to baseline), as expected from ~4% of trades.
    Spearman moved +0.52 → +0.57 on 5y and +0.67 → +0.52 on 1y: a rank correlation over 8
    patterns is noisy in both directions and neither move is evidence either way.
+
+8. **Amplitude-relative tolerances** (2026-07-27) — the twin/shoulder equality tests measured
+   the gap between the two extremes as a **% of price** (3% twins, 5% shoulders). On a ₹213
+   name whose whole session spans 0.7%, everything passes: two lows 0.5 apart inside a
+   0.99-tall pattern scored 0.25% and drew a "double bottom" that looked nothing like one.
+   Both are now measured against the **pattern's own height** (twins ≤ 0.35 × height,
+   shoulders ≤ 0.5 × head height), and the neckline break must land within the pattern's own
+   width — an 8-bar pattern "confirming" 40 bars later is drift, not a breakout.
+
+   | `double_bottom`, OOS long-only, 1y, 296 names | trades | hit | expectancy |
+   |---|---|---|---|
+   | %-of-price tolerance, unbounded break | 504 | 35.5% | **+0.7%** |
+   | amplitude-relative + bounded break | 242 | 33.9% | **+0.6%** |
+
+   **This is a correctness fix, not an edge fix.** It removes half the double bottoms and
+   expectancy does not improve — 0.1% on n=242 is well inside noise. The honest reading: a
+   *visually valid* double bottom is no more predictive than a loosely paired one. It ships
+   because a chart whose drawing contradicts its label costs more trust than the signals are
+   worth. `inverse_head_shoulders` moved the same way (203 → 122 trades, +0.3% → +0.2%).
+   Overall long-only is unchanged (9,434 → 9,091 trades, 37.1% → 37.2% hit, +0.9% both).
+
+9. **Signal cooldown** (2026-07-27) — measured on 79 names over a year: **0.455 signals per
+   symbol per bar**, of which **63% were the same symbol+type refiring within 5 bars**, and
+   61% of all output was one detector (`support_bounce`). Dedupe was keyed on
+   `symbol:interval:type:time`, so a level held for three bars became three signals with three
+   plans — one trade. `runSignals` \ `run_signals` now collapse repeats inside
+   `GRADE_DEFAULTS.horizon` (10 bars) to the **first** firing. First, not
+   highest-confidence-in-window: picking the best of the next 10 bars needs future bars, which
+   would bake lookahead into a tradeable number. First firing is when a human could act.
+
+   | OOS long-only, 1y, 296 names | trades | hit | expectancy | payoff |
+   |---|---|---|---|---|
+   | no cooldown | 9091 | 37.2% | +0.9% | 1.35 |
+   | 10-bar cooldown | **3626** | 37.4% | +0.9% | 1.36 |
+
+   60% fewer trades at identical per-trade edge — the duplicates carried no information.
+   `support_bounce` *improved*: 5189 @ +1.2% (37.5% hit) → 1160 @ **+1.5%** (40.3% hit). The
+   repeats weren't neutral, they were worse than the first touch and were diluting the
+   pattern's measured edge. This matters most for live intraday data: cooldown is counted in
+   bars, and 5m bars are 75× denser than daily.
+
+   **Open defect this exposed:** the `high` confidence band is now n=32, **28.1% hit, −0.5%
+   expectancy** — worse than `moderate` (38.1%, +1.1%) and `low` (37.1%, +0.8%). It was
+   already miscalibrated pre-cooldown (n=136, 35.3%); the cooldown just made the top band small
+   enough to see clearly. The top of the confidence scale is not earning its label. Unfixed.
+
+10. **Confidence thresholds — 1y and 5y disagree; 5y wins** (2026-07-27). Question asked: should
+    a confidence floor decide what qualifies as a signal? Threshold sweeps, OOS long-only,
+    296 names, gated:
+
+    | keep conf ≥ t | 1y kept | 1y hit | 1y exp | 5y kept | 5y hit | 5y exp |
+    |---|---|---|---|---|---|---|
+    | all | 3626 | 37.4% | +0.9% | 18941 | 34.0% | +0.3% |
+    | 38 | 2198 | 37.9% | +1.0% | 15412 | 34.1% | +0.3% |
+    | 40 | 1444 | 37.9% | **+1.1%** | 7536 | 34.3% | +0.3% |
+    | 42 | 663 | 35.7% | +0.8% | 4202 | 35.8% | +0.4% |
+    | 44 | 110 | 31.8% | +0.6% | 2061 | 37.6% | +0.5% |
+    | 46 | — | — | — | 1126 | 38.8% | **+0.7%** |
+
+    **1y shows an inverted U peaking at 40; 5y is monotonically increasing to the top.** They
+    are not reconcilable, and 5y is the one to believe: 18,941 rows vs 3,626, across five
+    market regimes instead of one. The 1y "top band is the worst thing in the dataset" verdict
+    rested on **n=110** — the thinnest cell in that table. Bands were briefly re-cut to
+    `high ≥ 40 / moderate ≥ 36` on the 1y evidence and **reverted** once 5y landed. The
+    original `high ≥ 45, moderate ≥ 40` stands, now with 5y support: top decile (conf 44–47)
+    is the best bucket at 37.7% hit, and ≥46 reaches 38.8% hit / +0.7%.
+
+    **The durable finding is that fixed cut points are fragile.** The score's range is not
+    stable across datasets — 30–45 on the 1y calibration, 35–47 on 5y — because
+    `baseReliability` is recalibrated per run, so the same numeric cut selects a different
+    slice of the distribution each time. A percentile-based band would be scale-stable (but
+    would always label a top X% "high", however bad the whole scan is). Unresolved.
+
+    A floor is **not** worth shipping on this evidence: on 5y, ≥40 buys nothing (+0.3% → +0.3%
+    while discarding 60% of signals), and the thresholds that do help (≥44, ≥46) keep 5–11% of
+    signals — too few to fill a scan.
+
+    **Root cause left standing:** `confidence = baseReliability×100 + strength×3 + volume×4`,
+    so strength and volume can only move the score ±7 and the composite is ~95% pattern
+    identity. Any threshold on it is a pattern-type filter in disguise; nothing in the score
+    discriminates between two instances of the *same* pattern. Confluence, regime and the new
+    per-symbol `history` are the candidates for fixing that.
+
+**Per-symbol pattern history.** Every signal carries `history` — how that same pattern resolved
+on that same symbol's own past: `{resolved, wins, hitRate, medianWinBars, horizon}`.
+`medianWinBars` answers "how many bars did it take to get there", which `gradeSignal` was
+already computing (`bars`) and `aggregate()` was discarding. Rendered per card by
+`SignalHistory.jsx`; persisted by the batch into `grow_signals.history` (jsonb).
+
+It is **context, not score**. Per-symbol sample sizes are thin — `double_bottom` fires ~2.9× per
+symbol per year, `inverse_head_shoulders` ~1.3× — so under 5 resolved instances the card renders
+greyed with "too few to lean on" instead of dressing n=3 up as a probability. Confidence keeps
+using the empirical-Bayes shrunk reliability (`calibrateReliabilities`, k=5), which pulls a thin
+per-symbol record toward the pooled prior; feeding the raw per-symbol rate into the score would
+just amplify noise. Only `support_bounce` (~69/symbol/year) has n to stand alone.
 
 The **durable edge**: long-side mean-reversion at levels — `support_bounce` (the workhorse,
 ~5k trades, +1.4% OOS), `double_bottom`, `rsi_oversold`, `inverse_head_shoulders`, plus

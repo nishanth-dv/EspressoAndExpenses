@@ -64,7 +64,10 @@ function prevPivotIdx(piv, before) {
   return idx;
 }
 
-function twinPairs(piv, isTop) {
+const TWIN_LEVEL_TOL = 0.35;
+const SHOULDER_TOL = 0.5;
+
+function twinPairs(candles, piv, isTop) {
   const pairs = [];
   for (let i = 0; i < piv.length - 1; i++) {
     for (let j = i + 1; j < piv.length; j++) {
@@ -78,7 +81,12 @@ function twinPairs(piv, isTop) {
       const bound = isTop ? Math.min(a.price, b.price) : Math.max(a.price, b.price);
       const between = piv.slice(i + 1, j);
       if (between.some((m) => (isTop ? m.price > bound : m.price < bound))) continue;
-      pairs.push({ a, b, gap, diff });
+      const neckIdx = isTop ? argMinLow(candles, a.index, b.index) : argMaxHigh(candles, a.index, b.index);
+      const neck = isTop ? candles[neckIdx].low : candles[neckIdx].high;
+      const height = isTop ? Math.max(a.price, b.price) - neck : neck - Math.min(a.price, b.price);
+      if (height <= 0) continue;
+      if (Math.abs(a.price - b.price) > TWIN_LEVEL_TOL * height) continue;
+      pairs.push({ a, b, gap, diff, neckIdx, neck });
       i = j;
       break;
     }
@@ -88,13 +96,11 @@ function twinPairs(piv, isTop) {
 
 function doubleBottoms(candles, closes, lows, highs) {
   const out = [];
-  for (const { a, b, diff } of twinPairs(lows, false)) {
-    const peakIdx = argMaxHigh(candles, a.index, b.index);
-    const neck = candles[peakIdx].high;
+  for (const { a, b, gap, diff, neckIdx, neck } of twinPairs(candles, lows, false)) {
     const conf = firstCloseAbove(candles, b.index + 1, neck);
-    if (conf < 0) continue;
+    if (conf < 0 || conf - b.index > gap) continue;
     const leadIdx = prevPivotIdx(highs, a.index);
-    const shape = [pt(candles, a.index, a.price), pt(candles, peakIdx, neck), pt(candles, b.index, b.price), pt(candles, conf, neck)];
+    const shape = [pt(candles, a.index, a.price), pt(candles, neckIdx, neck), pt(candles, b.index, b.price), pt(candles, conf, neck)];
     if (leadIdx >= 0) shape.unshift(pt(candles, leadIdx, candles[leadIdx].high));
     out.push(
       mkAt(candles, closes, conf, {
@@ -115,13 +121,11 @@ function doubleBottoms(candles, closes, lows, highs) {
 
 function doubleTops(candles, closes, highs, lows) {
   const out = [];
-  for (const { a, b, diff } of twinPairs(highs, true)) {
-    const troughIdx = argMinLow(candles, a.index, b.index);
-    const neck = candles[troughIdx].low;
+  for (const { a, b, gap, diff, neckIdx, neck } of twinPairs(candles, highs, true)) {
     const conf = firstCloseBelow(candles, b.index + 1, neck);
-    if (conf < 0) continue;
+    if (conf < 0 || conf - b.index > gap) continue;
     const leadIdx = prevPivotIdx(lows, a.index);
-    const shape = [pt(candles, a.index, a.price), pt(candles, troughIdx, neck), pt(candles, b.index, b.price), pt(candles, conf, neck)];
+    const shape = [pt(candles, a.index, a.price), pt(candles, neckIdx, neck), pt(candles, b.index, b.price), pt(candles, conf, neck)];
     if (leadIdx >= 0) shape.unshift(pt(candles, leadIdx, candles[leadIdx].low));
     out.push(
       mkAt(candles, closes, conf, {
@@ -153,8 +157,9 @@ function headShoulders(candles, closes, highs, lows) {
     const t1 = argMinLow(candles, l.index, h.index);
     const t2 = argMinLow(candles, h.index, r.index);
     const neck = Math.min(candles[t1].low, candles[t2].low);
+    if (Math.abs(l.price - r.price) > SHOULDER_TOL * (h.price - neck)) continue;
     const conf = firstCloseBelow(candles, r.index + 1, neck);
-    if (conf < 0) continue;
+    if (conf < 0 || conf - r.index > r.index - l.index) continue;
     const leadIdx = prevPivotIdx(lows, l.index);
     const shape = [pt(candles, l.index, l.price), pt(candles, t1, candles[t1].low), pt(candles, h.index, h.price), pt(candles, t2, candles[t2].low), pt(candles, r.index, r.price), pt(candles, conf, neck)];
     if (leadIdx >= 0) shape.unshift(pt(candles, leadIdx, candles[leadIdx].low));
@@ -188,8 +193,9 @@ function invHeadShoulders(candles, closes, lows, highs) {
     const p1 = argMaxHigh(candles, l.index, h.index);
     const p2 = argMaxHigh(candles, h.index, r.index);
     const neck = Math.max(candles[p1].high, candles[p2].high);
+    if (Math.abs(l.price - r.price) > SHOULDER_TOL * (neck - h.price)) continue;
     const conf = firstCloseAbove(candles, r.index + 1, neck);
-    if (conf < 0) continue;
+    if (conf < 0 || conf - r.index > r.index - l.index) continue;
     const leadIdx = prevPivotIdx(highs, l.index);
     const shape = [pt(candles, l.index, l.price), pt(candles, p1, candles[p1].high), pt(candles, h.index, h.price), pt(candles, p2, candles[p2].high), pt(candles, r.index, r.price), pt(candles, conf, neck)];
     if (leadIdx >= 0) shape.unshift(pt(candles, leadIdx, candles[leadIdx].high));

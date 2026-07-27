@@ -289,6 +289,22 @@ app.get("/candles", requireToken, async (c) => {
   return c.json({ symbol, interval, range, candles });
 });
 
+app.get("/search", requireToken, async (c) => {
+  const q = String(c.req.query("q") ?? "").trim();
+  if (!q) return c.json({ quotes: [] });
+  try {
+    const res = await fetch(
+      `https://query1.finance.yahoo.com/v1/finance/search?q=${encodeURIComponent(q)}&quotesCount=10&newsCount=0`,
+      { headers: { "User-Agent": "Mozilla/5.0" } },
+    );
+    if (!res.ok) return c.json({ error: "search unavailable" }, 502);
+    const data = (await res.json()) as { quotes?: unknown[] };
+    return c.json({ quotes: Array.isArray(data?.quotes) ? data.quotes : [] });
+  } catch {
+    return c.json({ error: "search unavailable" }, 502);
+  }
+});
+
 app.get("/fundamentals", requireToken, async (c) => {
   const raw = String(c.req.query("symbols") ?? "").trim();
   if (!raw) return c.json({ fundamentals: {} });

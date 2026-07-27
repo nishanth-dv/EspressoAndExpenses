@@ -160,16 +160,36 @@ async function fetchYahooPrice(ticker) {
   return price;
 }
 
-async function searchYahooQuotes(query) {
-  const path = `/v1/finance/search?q=${encodeURIComponent(query.trim())}&quotesCount=10&newsCount=0`;
-  let res;
+async function fetchBackendSearch(query) {
+  if (!API) return null;
   try {
-    res = await proxyFetch(path);
+    const token = await getAccessToken();
+    if (!token) return null;
+    const res = await fetch(`${API}/search?q=${encodeURIComponent(query)}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return Array.isArray(data?.quotes) ? data.quotes : null;
   } catch {
-    throw new Error("Search failed. Try entering the ticker directly.");
+    return null;
   }
-  const data = await res.json();
-  const quotes = data?.quotes ?? [];
+}
+
+async function searchYahooQuotes(query) {
+  const term = query.trim();
+  let quotes = await fetchBackendSearch(term);
+  if (!quotes) {
+    const path = `/v1/finance/search?q=${encodeURIComponent(term)}&quotesCount=10&newsCount=0`;
+    let res;
+    try {
+      res = await proxyFetch(path);
+    } catch {
+      throw new Error("Search failed. Try entering the ticker directly.");
+    }
+    const data = await res.json();
+    quotes = data?.quotes ?? [];
+  }
   const excluded = new Set(["CURRENCY", "FUTURE", "OPTION", "INDEX"]);
   return quotes
     .filter((q) => q.symbol && !excluded.has(q.quoteType))

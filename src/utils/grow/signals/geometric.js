@@ -55,20 +55,47 @@ function argMinLow(candles, a, b) {
 }
 const pt = (candles, i, value) => ({ time: candles[i].time, value });
 
-function doubleBottoms(candles, closes, lows) {
+function prevPivotIdx(piv, before) {
+  let idx = -1;
+  for (const p of piv) {
+    if (p.index >= before) break;
+    idx = p.index;
+  }
+  return idx;
+}
+
+function twinPairs(piv, isTop) {
+  const pairs = [];
+  for (let i = 0; i < piv.length - 1; i++) {
+    for (let j = i + 1; j < piv.length; j++) {
+      const a = piv[i];
+      const b = piv[j];
+      const gap = b.index - a.index;
+      if (gap < 5) continue;
+      if (gap > 80) break;
+      const diff = Math.abs(a.price - b.price) / Math.min(a.price, b.price);
+      if (diff > 0.03) continue;
+      const bound = isTop ? Math.min(a.price, b.price) : Math.max(a.price, b.price);
+      const between = piv.slice(i + 1, j);
+      if (between.some((m) => (isTop ? m.price > bound : m.price < bound))) continue;
+      pairs.push({ a, b, gap, diff });
+      i = j;
+      break;
+    }
+  }
+  return pairs;
+}
+
+function doubleBottoms(candles, closes, lows, highs) {
   const out = [];
-  for (let k = 1; k < lows.length; k++) {
-    const a = lows[k - 1];
-    const b = lows[k];
-    const gap = b.index - a.index;
-    if (gap < 5 || gap > 80) continue;
-    const diff = Math.abs(a.price - b.price) / Math.min(a.price, b.price);
-    if (diff > 0.03) continue;
+  for (const { a, b, diff } of twinPairs(lows, false)) {
     const peakIdx = argMaxHigh(candles, a.index, b.index);
     const neck = candles[peakIdx].high;
     const conf = firstCloseAbove(candles, b.index + 1, neck);
     if (conf < 0) continue;
-    const leadIdx = argMaxHigh(candles, Math.max(0, a.index - gap), a.index);
+    const leadIdx = prevPivotIdx(highs, a.index);
+    const shape = [pt(candles, a.index, a.price), pt(candles, peakIdx, neck), pt(candles, b.index, b.price), pt(candles, conf, neck)];
+    if (leadIdx >= 0) shape.unshift(pt(candles, leadIdx, candles[leadIdx].high));
     out.push(
       mkAt(candles, closes, conf, {
         type: "double_bottom",
@@ -76,34 +103,26 @@ function doubleBottoms(candles, closes, lows) {
         direction: DIRECTION.BULL,
         title: `Double bottom near ₹${Math.round((a.price + b.price) / 2)}`,
         code: "W",
-        fromTime: candles[leadIdx].time,
+        fromTime: shape[0].time,
         baseReliability: 0.62,
         signalStrength: (1 - diff / 0.03) * 0.6 + ((candles[conf].close / neck - 1) / 0.03) * 0.4,
-        meta: {
-          level: Math.round((a.price + b.price) / 2),
-          shape: [pt(candles, leadIdx, candles[leadIdx].high), pt(candles, a.index, a.price), pt(candles, peakIdx, neck), pt(candles, b.index, b.price), pt(candles, conf, candles[conf].close)],
-        },
+        meta: { neckline: neck, level: (a.price + b.price) / 2, shape },
       }),
     );
-    k++;
   }
   return out;
 }
 
-function doubleTops(candles, closes, highs) {
+function doubleTops(candles, closes, highs, lows) {
   const out = [];
-  for (let k = 1; k < highs.length; k++) {
-    const a = highs[k - 1];
-    const b = highs[k];
-    const gap = b.index - a.index;
-    if (gap < 5 || gap > 80) continue;
-    const diff = Math.abs(a.price - b.price) / Math.min(a.price, b.price);
-    if (diff > 0.03) continue;
+  for (const { a, b, diff } of twinPairs(highs, true)) {
     const troughIdx = argMinLow(candles, a.index, b.index);
     const neck = candles[troughIdx].low;
     const conf = firstCloseBelow(candles, b.index + 1, neck);
     if (conf < 0) continue;
-    const leadIdx = argMinLow(candles, Math.max(0, a.index - gap), a.index);
+    const leadIdx = prevPivotIdx(lows, a.index);
+    const shape = [pt(candles, a.index, a.price), pt(candles, troughIdx, neck), pt(candles, b.index, b.price), pt(candles, conf, neck)];
+    if (leadIdx >= 0) shape.unshift(pt(candles, leadIdx, candles[leadIdx].low));
     out.push(
       mkAt(candles, closes, conf, {
         type: "double_top",
@@ -111,21 +130,17 @@ function doubleTops(candles, closes, highs) {
         direction: DIRECTION.BEAR,
         title: `Double top near ₹${Math.round((a.price + b.price) / 2)}`,
         code: "M",
-        fromTime: candles[leadIdx].time,
+        fromTime: shape[0].time,
         baseReliability: 0.62,
         signalStrength: (1 - diff / 0.03) * 0.6 + ((1 - candles[conf].close / neck) / 0.03) * 0.4,
-        meta: {
-          level: Math.round((a.price + b.price) / 2),
-          shape: [pt(candles, leadIdx, candles[leadIdx].low), pt(candles, a.index, a.price), pt(candles, troughIdx, neck), pt(candles, b.index, b.price), pt(candles, conf, candles[conf].close)],
-        },
+        meta: { neckline: neck, level: (a.price + b.price) / 2, shape },
       }),
     );
-    k++;
   }
   return out;
 }
 
-function headShoulders(candles, closes, highs) {
+function headShoulders(candles, closes, highs, lows) {
   const out = [];
   for (let k = 2; k < highs.length; k++) {
     const l = highs[k - 2];
@@ -140,6 +155,9 @@ function headShoulders(candles, closes, highs) {
     const neck = Math.min(candles[t1].low, candles[t2].low);
     const conf = firstCloseBelow(candles, r.index + 1, neck);
     if (conf < 0) continue;
+    const leadIdx = prevPivotIdx(lows, l.index);
+    const shape = [pt(candles, l.index, l.price), pt(candles, t1, candles[t1].low), pt(candles, h.index, h.price), pt(candles, t2, candles[t2].low), pt(candles, r.index, r.price), pt(candles, conf, neck)];
+    if (leadIdx >= 0) shape.unshift(pt(candles, leadIdx, candles[leadIdx].low));
     out.push(
       mkAt(candles, closes, conf, {
         type: "head_shoulders",
@@ -147,20 +165,17 @@ function headShoulders(candles, closes, highs) {
         direction: DIRECTION.BEAR,
         title: "Head & shoulders top",
         code: "HS",
-        fromTime: candles[l.index].time,
+        fromTime: shape[0].time,
         baseReliability: 0.66,
         signalStrength: (1 - shoulderDiff / 0.05) * 0.5 + ((h.price / Math.max(l.price, r.price) - 1) / 0.05) * 0.5,
-        meta: {
-          neckline: Math.round(neck),
-          shape: [pt(candles, l.index, l.price), pt(candles, t1, candles[t1].low), pt(candles, h.index, h.price), pt(candles, t2, candles[t2].low), pt(candles, r.index, r.price)],
-        },
+        meta: { neckline: neck, shape },
       }),
     );
   }
   return out;
 }
 
-function invHeadShoulders(candles, closes, lows) {
+function invHeadShoulders(candles, closes, lows, highs) {
   const out = [];
   for (let k = 2; k < lows.length; k++) {
     const l = lows[k - 2];
@@ -175,6 +190,9 @@ function invHeadShoulders(candles, closes, lows) {
     const neck = Math.max(candles[p1].high, candles[p2].high);
     const conf = firstCloseAbove(candles, r.index + 1, neck);
     if (conf < 0) continue;
+    const leadIdx = prevPivotIdx(highs, l.index);
+    const shape = [pt(candles, l.index, l.price), pt(candles, p1, candles[p1].high), pt(candles, h.index, h.price), pt(candles, p2, candles[p2].high), pt(candles, r.index, r.price), pt(candles, conf, neck)];
+    if (leadIdx >= 0) shape.unshift(pt(candles, leadIdx, candles[leadIdx].high));
     out.push(
       mkAt(candles, closes, conf, {
         type: "inverse_head_shoulders",
@@ -182,13 +200,10 @@ function invHeadShoulders(candles, closes, lows) {
         direction: DIRECTION.BULL,
         title: "Inverse head & shoulders",
         code: "iHS",
-        fromTime: candles[l.index].time,
+        fromTime: shape[0].time,
         baseReliability: 0.66,
         signalStrength: (1 - shoulderDiff / 0.05) * 0.5 + ((Math.min(l.price, r.price) / h.price - 1) / 0.05) * 0.5,
-        meta: {
-          neckline: Math.round(neck),
-          shape: [pt(candles, l.index, l.price), pt(candles, p1, candles[p1].high), pt(candles, h.index, h.price), pt(candles, p2, candles[p2].high), pt(candles, r.index, r.price)],
-        },
+        meta: { neckline: neck, shape },
       }),
     );
   }
@@ -197,9 +212,9 @@ function invHeadShoulders(candles, closes, lows) {
 
 export function geometricSignals(candles, closes, piv) {
   return [
-    ...doubleBottoms(candles, closes, piv.lows),
-    ...doubleTops(candles, closes, piv.highs),
-    ...headShoulders(candles, closes, piv.highs),
-    ...invHeadShoulders(candles, closes, piv.lows),
+    ...doubleBottoms(candles, closes, piv.lows, piv.highs),
+    ...doubleTops(candles, closes, piv.highs, piv.lows),
+    ...headShoulders(candles, closes, piv.highs, piv.lows),
+    ...invHeadShoulders(candles, closes, piv.lows, piv.highs),
   ];
 }

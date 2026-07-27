@@ -273,33 +273,44 @@ def _mk_geo(candles, closes, i, s):
     }
 
 
+def _twin_pairs(piv, is_top):
+    pairs = []
+    i = 0
+    while i < len(piv) - 1:
+        matched = -1
+        for j in range(i + 1, len(piv)):
+            a, b = piv[i], piv[j]
+            gap = b["index"] - a["index"]
+            if gap < 5:
+                continue
+            if gap > 80:
+                break
+            diff = abs(a["price"] - b["price"]) / min(a["price"], b["price"])
+            if diff > 0.03:
+                continue
+            bound = min(a["price"], b["price"]) if is_top else max(a["price"], b["price"])
+            if any((m["price"] > bound) if is_top else (m["price"] < bound) for m in piv[i + 1 : j]):
+                continue
+            pairs.append((a, b, diff))
+            matched = j
+            break
+        i = matched + 1 if matched >= 0 else i + 1
+    return pairs
+
+
 def geometric_signals(candles, closes, piv):
     out = []
     lows, highs = piv["lows"], piv["highs"]
-    k = 1
-    while k < len(lows):
-        a, b = lows[k - 1], lows[k]
-        gap = b["index"] - a["index"]
-        diff = abs(a["price"] - b["price"]) / min(a["price"], b["price"])
-        if 5 <= gap <= 80 and diff <= 0.03:
-            neck = _max_high(candles, a["index"], b["index"])
-            conf = _first_close_above(candles, b["index"] + 1, neck)
-            if conf >= 0:
-                out.append(_mk_geo(candles, closes, conf, {"type": "double_bottom", "name": "Double Bottom", "direction": "bullish", "title": f"Double bottom near ₹{round((a['price']+b['price'])/2)}", "code": "W", "fromTime": candles[a["index"]]["time"], "baseReliability": 0.62, "signalStrength": (1 - diff / 0.03) * 0.6 + ((candles[conf]["close"] / neck - 1) / 0.03) * 0.4, "meta": {"level": round((a["price"] + b["price"]) / 2)}}))
-                k += 1
-        k += 1
-    k = 1
-    while k < len(highs):
-        a, b = highs[k - 1], highs[k]
-        gap = b["index"] - a["index"]
-        diff = abs(a["price"] - b["price"]) / min(a["price"], b["price"])
-        if 5 <= gap <= 80 and diff <= 0.03:
-            neck = _min_low(candles, a["index"], b["index"])
-            conf = _first_close_below(candles, b["index"] + 1, neck)
-            if conf >= 0:
-                out.append(_mk_geo(candles, closes, conf, {"type": "double_top", "name": "Double Top", "direction": "bearish", "title": f"Double top near ₹{round((a['price']+b['price'])/2)}", "code": "M", "fromTime": candles[a["index"]]["time"], "baseReliability": 0.62, "signalStrength": (1 - diff / 0.03) * 0.6 + ((1 - candles[conf]["close"] / neck) / 0.03) * 0.4, "meta": {"level": round((a["price"] + b["price"]) / 2)}}))
-                k += 1
-        k += 1
+    for a, b, diff in _twin_pairs(lows, False):
+        neck = _max_high(candles, a["index"], b["index"])
+        conf = _first_close_above(candles, b["index"] + 1, neck)
+        if conf >= 0:
+            out.append(_mk_geo(candles, closes, conf, {"type": "double_bottom", "name": "Double Bottom", "direction": "bullish", "title": f"Double bottom near ₹{round((a['price']+b['price'])/2)}", "code": "W", "fromTime": candles[a["index"]]["time"], "baseReliability": 0.62, "signalStrength": (1 - diff / 0.03) * 0.6 + ((candles[conf]["close"] / neck - 1) / 0.03) * 0.4, "meta": {"level": round((a["price"] + b["price"]) / 2)}}))
+    for a, b, diff in _twin_pairs(highs, True):
+        neck = _min_low(candles, a["index"], b["index"])
+        conf = _first_close_below(candles, b["index"] + 1, neck)
+        if conf >= 0:
+            out.append(_mk_geo(candles, closes, conf, {"type": "double_top", "name": "Double Top", "direction": "bearish", "title": f"Double top near ₹{round((a['price']+b['price'])/2)}", "code": "M", "fromTime": candles[a["index"]]["time"], "baseReliability": 0.62, "signalStrength": (1 - diff / 0.03) * 0.6 + ((1 - candles[conf]["close"] / neck) / 0.03) * 0.4, "meta": {"level": round((a["price"] + b["price"]) / 2)}}))
     for k in range(2, len(highs)):
         l, h, r = highs[k - 2], highs[k - 1], highs[k]
         if not (h["price"] > l["price"] and h["price"] > r["price"]):

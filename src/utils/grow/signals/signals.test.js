@@ -62,7 +62,86 @@ for (let i = 1; i < db.meta.shape.length; i++) {
   assert(db.meta.shape[i].time >= db.meta.shape[i - 1].time, "shape points are time-ordered");
 }
 
+assert.strictEqual(db.meta.shape[db.meta.shape.length - 1].value, db.meta.neckline, "double bottom ends ON its neckline, not past the breakout close");
+
 console.log(`ok — double_bottom confidence ${db.confidence}`);
+
+const dtSeq = [
+  100, 104, 108, 112, 108, 104, 100, 96, 98, 100, 102, 104, 106, 108, 106, 104, 102, 104, 106, 108,
+  106, 103, 100, 98, 96,
+];
+const dtC = dtSeq.map((p, k) => candle(t0 + k * DAY, k ? dtSeq[k - 1] : p, p + 0.5, p - 0.5, p, k === 22 ? 3000 : 1000));
+const dt = runSignals(dtC, { symbol: "M.NS", interval: "1d", timeframe: "1Y", includeSuppressed: true }).signals.find(
+  (s) => s.type === "double_top",
+);
+assert(dt, "expected a double_top signal");
+assert.strictEqual(dt.meta.shape.length, 5, "double top: lead-in + two tops + trough + break");
+assert.strictEqual(dt.fromTime, dt.meta.shape[0].time, "double top fromTime = shape start");
+assert.strictEqual(dt.meta.shape[0].time, dtC[7].time, "lead-in is the swing low adjacent to the first top");
+assert.strictEqual(dt.meta.shape[1].time, dtC[13].time, "second point is the first top");
+assert.strictEqual(dt.meta.shape[4].value, dt.meta.neckline, "double top ends ON its neckline");
+assert.strictEqual(dt.meta.neckline, dtC[16].low, "neckline is the exact trough low between the tops");
+for (let k = 1; k < dt.meta.shape.length; k++) {
+  assert(dt.meta.shape[k].time > dt.meta.shape[k - 1].time, "double top shape strictly time-ordered");
+}
+
+console.log(`ok — double_top shape ${dt.meta.shape.length} points, neckline ${dt.meta.neckline}`);
+
+const midSeq = [
+  104, 101, 98, 95, 98, 101, 104, 108, 106, 103, 100, 101, 102, 103, 102, 100, 98, 101, 104, 107,
+  108.2, 106, 103, 99, 97,
+];
+const midC = midSeq.map((p, k) => candle(t0 + k * DAY, k ? midSeq[k - 1] : p, p + 0.5, p - 0.5, p));
+const mid = runSignals(midC, { symbol: "MID.NS", interval: "1d", timeframe: "1Y", includeSuppressed: true }).signals.find(
+  (s) => s.type === "double_top",
+);
+assert(mid, "twin tops separated by a LOWER pivot high are still a double top");
+assert.strictEqual(mid.meta.shape[1].time, midC[7].time, "first top is bar 7, not the minor high between");
+assert.strictEqual(mid.meta.shape[3].time, midC[20].time, "second top is bar 20 — non-consecutive pivot pairing");
+assert.strictEqual(mid.meta.neckline, midC[16].low, "neckline is the lowest trough between the two tops");
+
+const headSeq = midSeq.map((p, k) => (k === 13 ? 118 : p));
+const headC = headSeq.map((p, k) => candle(t0 + k * DAY, k ? headSeq[k - 1] : p, p + 0.5, p - 0.5, p));
+const notDt = runSignals(headC, { symbol: "HEAD.NS", interval: "1d", timeframe: "1Y", includeSuppressed: true }).signals.find(
+  (s) => s.type === "double_top",
+);
+assert(!notDt, "a HIGHER peak between the two tops is a head, not a double top — must not pair across it");
+
+console.log("ok — non-consecutive twin pairing; higher intervening peak rejected");
+
+const hsSeq = [
+  100, 96, 92, 88, 92, 96, 100, 104, 102, 100, 98, 100, 103, 106, 108, 106, 104, 102, 104, 105,
+  106, 107, 108, 109, 110, 111, 112, 110, 106, 102, 104, 106, 108.5, 106, 103, 100, 98, 96,
+];
+const hsC = hsSeq.map((p, k) => candle(t0 + k * DAY, k ? hsSeq[k - 1] : p, p + 0.5, p - 0.5, p));
+const rep3 = runSignals(hsC, { symbol: "HS.NS", interval: "1d", timeframe: "1Y", includeSuppressed: true });
+const hs = rep3.signals.find((s) => s.type === "head_shoulders");
+assert(hs, "expected a head_shoulders signal");
+assert.strictEqual(hs.meta.shape.length, 7, "H&S shape draws both shoulder flanks (lead-in + 5 anchors + breakout)");
+assert.strictEqual(hs.fromTime, hs.meta.shape[0].time, "H&S fromTime = shape start, so focus() frames the whole drawing");
+assert.strictEqual(hs.meta.shape[0].time, hsC[10].time, "lead-in is the swing low ADJACENT to the left shoulder, not the deeper one further back");
+assert.strictEqual(hs.meta.shape[1].time, hsC[14].time, "second point is the left shoulder peak");
+assert.strictEqual(hs.meta.shape[6].time, hs.time, "shape ends on the neckline-break bar — the right shoulder's outer flank");
+assert.strictEqual(hs.meta.shape[6].value, hs.meta.neckline, "shape ends ON the neckline the dashed line is drawn at, not below it");
+assert.strictEqual(hs.meta.neckline, 101.5, "neckline is the exact swing low, unrounded, so line and shape coincide");
+for (let k = 1; k < hs.meta.shape.length; k++) {
+  assert(hs.meta.shape[k].time > hs.meta.shape[k - 1].time, "H&S shape points strictly time-ordered");
+}
+
+const ihsC = hsSeq.map((p, k) => {
+  const v = 212 - p;
+  return candle(t0 + k * DAY, k ? 212 - hsSeq[k - 1] : v, v + 0.5, v - 0.5, v);
+});
+const ihs = runSignals(ihsC, { symbol: "IHS.NS", interval: "1d", timeframe: "1Y" }).signals.find(
+  (s) => s.type === "inverse_head_shoulders",
+);
+assert(ihs, "expected an inverse_head_shoulders signal on the mirrored series");
+assert.strictEqual(ihs.meta.shape.length, 7, "inverse H&S shape draws both shoulder flanks too");
+assert.strictEqual(ihs.fromTime, ihs.meta.shape[0].time, "inverse H&S fromTime = shape start");
+assert.strictEqual(ihs.meta.shape[6].time, ihs.time, "inverse H&S shape ends on the breakout bar");
+assert.strictEqual(ihs.meta.shape[6].value, ihs.meta.neckline, "inverse H&S shape ends on its neckline too");
+
+console.log(`ok — head_shoulders / inverse shapes ${hs.meta.shape.length} points`);
 
 const rising = [];
 for (let k = 0; k < 15; k++) {

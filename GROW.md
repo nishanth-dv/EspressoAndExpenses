@@ -31,18 +31,35 @@ and the per-pattern train→OOS expectancy correlation jumped from +0.03 to **+0
 ## Surfaces (frontend)
 
 - **Charts** (`src/pages/advisory/GrowChart.jsx`) — `lightweight-charts` candles for any
-  NSE symbol. Timeframes from **1m → 5Y** (intraday `1m/5m/15m/1h` + `1D/1W/1M/6M/1Y/5Y`),
-  a horizontal-scroll strip on mobile. A **Chart editor** modal toggles indicators from a
-  registry (`src/utils/grow/chartIndicators.js`): MA 20/50, MA 200, Bollinger, VWAP,
+  NSE symbol. The timeframe strip is **two groups** (`TIMEFRAMES[].group`, divider between
+  them): **intervals** `1m/5m/15m/1h` (bar size) and **ranges** `Today/5D/1M/6M/1Y/5Y`
+  (window shown) — they were one undifferentiated row, which read as if `1D` meant daily
+  bars. Horizontal-scroll strip on mobile. Opens at **Today** (`DEFAULT_TF`) on the last
+  symbol viewed (`localStorage["grow-chart-last"]`, symbol only — the timeframe is
+  deliberately not sticky); `?i=<scan interval>` from Signals overrides via `INTERVAL_TF`.
+  A **Chart editor** modal toggles indicators from a registry
+  (`src/utils/grow/chartIndicators.js`): MA 20/50, MA 200, Bollinger, VWAP,
   Supertrend, Ichimoku (price pane) and RSI, MACD, Stochastic, ADX, ATR, OBV, Volume
   (separate panes). Detected signals render as confidence cards with an animated pattern
   overlay and a self-grading scorecard. Data via `growData.js` (backend `/candles` first,
   Yahoo CORS-proxy fallback). The chart passes `includeSuppressed` — it shows **all**
   patterns for exploration.
+  - **Warm-up buffers** (`TIMEFRAMES[].viewBars`): `1M` fetches 1y and shows the last 21
+    bars, `6M` fetches 2y and shows the last 126. The engine burns 30 bars before its
+    first signal (20-bar volume/breakout lookback + `trendAt`'s SMA20-vs-SMA20-ten-bars-ago)
+    and MA 200 needs 200 — at a bare 1mo (21 bars) or 6mo (125) neither could compute.
+    Signals are filtered to the visible window so the extra history feeds indicators and
+    the per-symbol reliability calibration, not the card list.
+  - **Time is rendered in IST** (`Asia/Kolkata`) via a `tickMarkFormatter` +
+    `localization.timeFormatter`; lightweight-charts formats raw UNIX stamps in UTC, so the
+    NSE open read as 03:45. A calendar chip shows the loaded window (`5 Aug 2026,
+    09:15–15:25`), and clicking a candle retargets it to that bar.
 - **Signals** (`src/pages/advisory/GrowSignals.jsx`) — the nightly breadth scan: ranked
   **long calls** across the universe, an **interval selector** (1D/1H/15m/5m/1m), direction
   and actionable-only filters, a live out-of-sample **track record**, and tap-through to
-  Charts (`?symbol=…&t=…&ty=…` deep-link).
+  Charts (`?symbol=…&t=…&ty=…` deep-link). Two context layers on top: a **market-sentiment
+  banner** (India VIX regime — fear/neutral/calm, from the scan row) and an **"⚠ results in
+  Xd" chip** on any call whose company reports earnings inside the hold window.
 - **Overview** — the Money-Made ledger.
 
 ---
@@ -60,6 +77,22 @@ gating → (optional) trend filter → (optional) long-only → ranked signals.
 shooting star, morning/evening star), indicator (RSI extremes), structure (support/
 resistance, range breakout/breakdown), and geometric chart patterns (double top/bottom,
 head-&-shoulders, inverse H&S).
+
+**Geometric pairing & shapes** (`geometric.js`, mirrored in `engine.py`). Twin patterns pair
+pivots through `twinPairs(piv, isTop)` / `_twin_pairs`: 5–80 bars apart, peaks within 3%, and
+**no intervening pivot beyond the pair** (a higher peak between two tops is a *head*, not a
+twin). Pairs may be **non-consecutive** — previously only adjacent pivots were compared, so
+any twin with a minor pivot between its two peaks was invisible. On a match the scan resumes
+past the second pivot, so twins never overlap.
+
+Each geometric signal carries `meta.shape`, the anchor points the chart animates:
+lead-in → first extreme → trough/peak → second extreme → **neckline at the break bar**
+(H&S adds head + second trough). The lead-in is the **adjacent opposite pivot** (`prevPivotIdx`),
+not the lowest/highest bar in a wide window, and the tail stops **on** the neckline rather than
+at the confirmation bar's close, which overshoots it by definition. `meta.neckline` is exact
+(unrounded) because `GrowChart` draws its dashed price line from that same number — rounding
+put the line off the shape. `meta.level` remains the twin price the card title quotes.
+The Python engine emits no `shape` (it never draws); the pairing logic is what's kept in parity.
 
 **Confidence** (`confidence.js`) is an **estimated win probability**: the pattern's
 tested win rate (`baseReliability`) plus small strength/volume nudges, on a 0–100 scale.
@@ -104,8 +137,8 @@ confidence band (calibration), per direction**. Every change is accepted or reje
 the number, not on vibes.
 
 ```
-python backtest.py [--limit N] [--interval 1d] \
-                   [--walkforward] [--split 0.7] [--trendfilter] [--longonly]
+python backtest.py [--limit N] [--interval 1d] [--range 5y] \
+                   [--walkforward] [--split 0.7] [--trendfilter] [--longonly] [--vix]
 ```
 
 - **In-sample** vs **walk-forward** (`--walkforward`): pooled reliabilities are trained on
@@ -127,6 +160,26 @@ python backtest.py [--limit N] [--interval 1d] \
    (+1.2%), bearish carry none (−0.3% to −0.4%), trend-filtered or not.
 6. **Long-only** — the biggest single lever; beat the trend filter and made confidence and
    pattern-ranking generalize. Now the production default.
+7. **Non-consecutive twin pairing** (2026-07-27) — the doubles only ever compared *adjacent*
+   pivots, so any twin with a minor pivot between its two peaks was missed. Pairing across
+   intervening pivots (bounded: nothing between may exceed the pair) was walk-forward
+   validated before shipping, since `double_bottom` is an un-gated production pattern:
+
+   | `double_bottom`, OOS long-only, 148 names | trades | hit | expectancy |
+   |---|---|---|---|
+   | 1y — adjacent pivots only | 249 | 30.5% | **−0.2%** |
+   | 1y — non-consecutive pairing | 248 | 34.7% | **+0.4%** |
+   | 5y — adjacent pivots only | 1243 | 33.1% | **+0.1%** |
+   | 5y — non-consecutive pairing | 1203 | 35.3% | **+0.4%** |
+
+   The count barely moves because the new scan isn't a superset: taking a wider pair skips
+   past intermediates the old loop would have paired adjacently, so weak twins are *replaced*
+   by truer ones — the hit rate rises ~2–4pts on the same n. Over 5 years it lifts the pattern
+   from +0.1% to **+0.4%**, the universe-wide durable edge, and holds across regimes
+   (uptrend +0.5% / downtrend +0.3%). Overall long-only is untouched (5y: 32,380 trades,
+   34.6% hit, +0.4%, payoff 1.32 — identical to baseline), as expected from ~4% of trades.
+   Spearman moved +0.52 → +0.57 on 5y and +0.67 → +0.52 on 1y: a rank correlation over 8
+   patterns is noisy in both directions and neither move is evidence either way.
 
 The **durable edge**: long-side mean-reversion at levels — `support_bounce` (the workhorse,
 ~5k trades, +1.4% OOS), `double_bottom`, `rsi_oversold`, `inverse_head_shoulders`, plus
@@ -187,12 +240,17 @@ Signals tab   → Cloudflare Worker GET /grow/*     → Supabase
   replays the old commit — use Run workflow to pick up new code.
 - Secrets: `SUPABASE_URL`, `SUPABASE_SERVICE_KEY`.
 
-**Schema** (`pybrain/schema.sql`): `grow_signals` / `grow_scans` (interval-aware),
-`grow_candles`, and `grow_track(p_interval)` (out-of-sample aggregation per interval).
-Idempotent — safe to re-run. **Must be applied to Supabase after schema changes** or the
-scan errors on write.
+**Schema** (`pybrain/schema.sql`): `grow_signals` (+ `earnings_in`) / `grow_scans`
+(interval-aware, + `vix`/`sentiment`), `grow_candles`, and `grow_track(p_interval)`
+(out-of-sample aggregation per interval). Idempotent — safe to re-run. **Must be applied to
+Supabase after schema changes** or the scan errors on write. Every column added since
+2026-07-23 also ships as a dated one-off in `pybrain/migrations/` (e.g.
+`2026-07-23_scan_sentiment.sql`, `2026-07-24_earnings_flag.sql`) — run that instead of the
+whole file for a small add.
 
-**Backend** (`backend/src/index.ts`): `GET /grow/signals?interval=`,
+**Backend** (`backend/src/index.ts`): `GET /search?q=` (server-side Yahoo symbol lookup — the
+browser's public CORS proxies 403 or hang from a deployed origin, so search worked only on
+localhost), `GET /grow/signals?interval=`,
 `GET /grow/track?interval=` (→ `grow_track`), `GET /candles?symbol=&interval=&range=`.
 All interval-aware, defaulting to `1d`.
 
@@ -231,6 +289,30 @@ The +1.2% from the single bull year was regime-flattered; **+0.4% is the durable
 regime-robust number**, holding because the edge is mean-reversion at levels (works in
 any trend). Spearman train→OOS = +0.60 over 5 years.
 
+## Market sentiment — India VIX regime
+`backtest.py --vix` loads India VIX (`^INDIAVIX`) by day and buckets every out-of-sample
+trade by the VIX level at entry:
+
+| Sentiment at entry | Expectancy | Hit |
+|---|---|---|
+| calm (< 14) | +0.1% | — |
+| normal (14–20) | — | — |
+| **fear (> 20)** | **+3.0%** | **54%** |
+
+The long mean-reversion edge is **concentrated in fear** — calm markets pay ~nothing. So the
+nightly scan records the regime: `batch.market_sentiment()` fetches today's VIX, `write()`
+stores `vix` + `sentiment` on `grow_scans`, the Worker returns them with the scan, and Signals
+shows the banner. **Informational only** — the scan does not yet gate or reweight signals by
+regime; the user reads the banner and sizes accordingly.
+
+## Earnings avoidance
+A signal that fires days before results is a coin-flip on an event, not a pattern trade.
+`bhavcopy.fetch_earnings_calendar(days_ahead=30)` reads NSE's `corporate-board-meetings`
+feed, keeps meetings whose purpose mentions *result*/*financial*, and returns the earliest
+date per symbol. `collect_signals` tags each row with `earnings_in` (days to results) **only
+when 0–10 days out** — the daily hold window — for the `1d` and `btst` lanes. Signals renders
+it as a warning chip. **Not a suppression**: the call is still ranked and shown.
+
 ## Honest caveats
 - **The durable edge is ~+0.4%/trade**, not the bull-year +1.2%. Hit rate (~34%) sits
   below break-even, so some of it is held-to-horizon drift — but it survives 5 years incl.
@@ -242,6 +324,9 @@ any trend). Spearman train→OOS = +0.60 over 5 years.
   data — see the *Candle-store cutover plan* above.
 - **Delayed data.** Yahoo intraday (5m/15m/60m) is delayed — fine for the POC; a real-time
   feed is the eventual upgrade for day/scalping.
+- **The two engines have drifted on `meta`.** `geometric.js` emits `shape` and an exact
+  `neckline`; `engine.py` emits neither (it never draws) and still rounds `level`. Only the
+  pairing/detection logic is held in parity — that is what changes the numbers.
 
 ---
 
@@ -253,7 +338,9 @@ any trend). Spearman train→OOS = +0.60 over 5 years.
    horizon (bhavcopy already gives delivery %); walk-forward-validated from day one.
 4. **Cut over to `--source db`** once the candle store fills (or backfill via
    `bhavcopy.build_history`).
-5. Longer/bigger bets: bear-market validation, fundamentals (long-term lane), real-time
+5. **Act on the regime** — the VIX banner is informational; the tested step is sizing or
+   gating calls by sentiment (fear +3.0% vs calm +0.1%), validated walk-forward first.
+6. Longer/bigger bets: bear-market validation, fundamentals (long-term lane), real-time
    feed + broker execution (day/scalping).
 
 ---
@@ -275,9 +362,10 @@ src/pages/advisory/      GrowChart, GrowSignals, GrowHome, ConfidenceControl
 pybrain/
   engine.py              Python port (parity)
   batch.py               nightly scan + --ingest + --source db
-  bhavcopy.py            NSE bhavcopy parser/fetcher/universe/history
-  backtest.py            evaluation + walk-forward harness
+  bhavcopy.py            NSE bhavcopy parser/fetcher/universe/history + corp actions + earnings
+  backtest.py            evaluation + walk-forward harness (--vix regime buckets)
   schema.sql             Supabase tables + grow_track()
+  migrations/            dated idempotent one-off column adds
 backend/src/index.ts     /grow/signals, /grow/track, /candles
 .github/workflows/grow-scan.yml   daily + intraday schedule
 ```

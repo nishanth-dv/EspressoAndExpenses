@@ -31,6 +31,12 @@ jobs:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
         run: python batch.py --interval ${{ github.event.inputs.interval || '1d' }}
+      - name: Weekly breadth scan (1wk, long-only — the Investment lane)
+        working-directory: pybrain
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+        run: python batch.py --interval 1wk
       - name: BTST scan (next-day, delivery-filtered)
         working-directory: pybrain
         env:

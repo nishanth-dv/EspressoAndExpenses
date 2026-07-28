@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { useSelector, useDispatch } from "react-redux";
 import { getAccessToken } from "../../utils/googleDrive";
-import { CATEGORY_META } from "../../utils/grow/signals/contract";
+import { CATEGORY_META, LIVE_STYLES } from "../../utils/grow/signals/contract";
 import { persistSetPreference } from "../../redux/slices/transactionSlice";
 import { isWatched, toggleWatch, readWatchlist } from "../../utils/grow/watchlist";
 import { ConfidenceBadge, ConfidenceReveal } from "./ConfidenceControl";
@@ -12,14 +12,7 @@ import SymbolBias from "./SymbolBias";
 
 const API = import.meta.env.VITE_API_URL ?? "";
 
-const INTERVALS = [
-  { key: "1d", label: "1D" },
-  { key: "1h", label: "1H" },
-  { key: "15m", label: "15m" },
-  { key: "5m", label: "5m" },
-  { key: "1m", label: "1m" },
-  { key: "btst", label: "BTST" },
-];
+const IV_LABEL = { "1wk": "1W", "1d": "1D", "1h": "1H", "15m": "15m", "5m": "5m", "1m": "1m", btst: "BTST" };
 
 const fmtDate = (d) =>
   d ? new Date(d).toLocaleDateString("en-IN", { day: "numeric", month: "short" }) : "";
@@ -35,6 +28,7 @@ export default function GrowSignals() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [dir, setDir] = useState("all");
+  const [styleKey, setStyleKey] = useState("swing");
   const [iv, setIv] = useState("1d");
   const [actionableOnly, setActionableOnly] = useState(true);
   const [cat, setCat] = useState("all");
@@ -91,6 +85,8 @@ export default function GrowSignals() {
     for (const s of signals) m.set(s.category, (m.get(s.category) ?? 0) + 1);
     return [...m.entries()].sort((a, b) => b[1] - a[1]);
   }, [signals]);
+
+  const style = LIVE_STYLES.find((s) => s.key === styleKey) ?? LIVE_STYLES[0];
 
   const stale = scan?.scan_date && scan.scan_date < new Date().toISOString().slice(0, 10);
 
@@ -151,17 +147,41 @@ export default function GrowSignals() {
         </div>
       )}
 
-      <div className="grow-sigflt grow-sig-intervals">
-        {INTERVALS.map((opt) => (
+      <div className="grow-styles">
+        {LIVE_STYLES.map((st) => (
           <button
-            key={opt.key}
+            key={st.key}
             type="button"
-            className={`grow-sigflt-chip${iv === opt.key ? " is-active" : ""}`}
-            onClick={() => setIv(opt.key)}
+            className={`grow-style${styleKey === st.key ? " is-active" : ""}`}
+            aria-pressed={styleKey === st.key}
+            onClick={() => {
+              setStyleKey(st.key);
+              setIv(st.intervals[0]);
+            }}
           >
-            {opt.label}
+            <i className={`fa-solid ${st.icon}`} />
+            <span className="grow-style-label">{st.label}</span>
           </button>
         ))}
+      </div>
+
+      <div className="grow-style-sub">
+        <span className="grow-style-blurb">{style.blurb}</span>
+        {style.intervals.length > 1 && (
+          <span className="grow-style-ivs">
+            {style.intervals.map((k) => (
+              <button
+                key={k}
+                type="button"
+                className={`grow-style-iv${iv === k ? " is-active" : ""}`}
+                aria-pressed={iv === k}
+                onClick={() => setIv(k)}
+              >
+                {IV_LABEL[k] ?? k}
+              </button>
+            ))}
+          </span>
+        )}
       </div>
 
       {track.resolved > 0 ? (
@@ -279,7 +299,9 @@ export default function GrowSignals() {
       {!loading && !error && shown.length === 0 && (
         <div className="grow-sig-empty">
           <i className="fa-solid fa-inbox" />{" "}
-          {scan ? "No fresh setups match the filter today." : "No scan yet — the nightly batch hasn’t run."}
+          {scan
+            ? `No fresh ${style.label.toLowerCase()} setups match the filter today.`
+            : `No ${style.label.toLowerCase()} scan yet — the nightly batch hasn’t run for this lane.`}
         </div>
       )}
 

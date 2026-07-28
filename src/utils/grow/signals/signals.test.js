@@ -4,7 +4,7 @@ import { gradeSignal, scoreCard } from "./grade.js";
 import { atrSeries } from "./indicators.js";
 import { band as bandOf } from "./confidence.js";
 import { symbolBias } from "./bias.js";
-import { SUPPRESSED_TYPES } from "./contract.js";
+import { SUPPRESSED_TYPES, STYLES, LIVE_STYLES, styleFor, tradeType } from "./contract.js";
 
 function candle(time, o, h, l, c, v = 1000) {
   return { time, open: o, high: h, low: l, close: c, volume: v };
@@ -271,6 +271,27 @@ for (const s of rep.signals) {
 }
 
 console.log("ok — invariants: unique ids, empty-safe, bearish/loss grade, band sums");
+
+const scanned = ["1wk", "1d", "btst", "1h", "15m", "5m"];
+for (const iv of scanned) {
+  const st = styleFor(iv);
+  assert.ok(st, `${iv} maps to a trading style`);
+  assert.strictEqual(tradeType(iv), st.label, `${iv} trade type matches its style label`);
+}
+assert.ok(
+  LIVE_STYLES.every((s) => s.intervals.length),
+  "every live style is backed by at least one interval",
+);
+assert.strictEqual(
+  new Set(STYLES.flatMap((s) => s.intervals)).size,
+  STYLES.flatMap((s) => s.intervals).length,
+  "no interval belongs to two styles",
+);
+assert.ok(
+  LIVE_STYLES.every((s) => s.intervals.every((iv) => scanned.includes(iv))),
+  "no live lane points at an interval the batch never scans",
+);
+console.log(`ok — trading styles: ${LIVE_STYLES.map((s) => `${s.label}(${s.intervals.join("/")})`).join(" · ")}`);
 
 function biasFixture(dir) {
   const out = [];

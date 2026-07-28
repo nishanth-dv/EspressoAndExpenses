@@ -34,8 +34,58 @@ export function signalId(symbol, interval, type, time) {
   return `${symbol}:${interval}:${type}:${time}`;
 }
 
+export const STYLES = [
+  {
+    key: "investment",
+    label: "Investment",
+    icon: "fa-seedling",
+    intervals: ["1wk"],
+    blurb: "weeks to months · weekly bars",
+    live: true,
+  },
+  {
+    key: "swing",
+    label: "Swing",
+    icon: "fa-chart-line",
+    intervals: ["1d"],
+    blurb: "days to weeks · daily bars",
+    live: true,
+  },
+  {
+    key: "btst",
+    label: "BTST",
+    icon: "fa-bolt",
+    intervals: ["btst"],
+    blurb: "buy today, sell tomorrow",
+    live: true,
+  },
+  {
+    key: "intraday",
+    label: "Intraday",
+    icon: "fa-clock",
+    intervals: ["1h", "15m", "5m"],
+    blurb: "same session · exit before the close",
+    live: true,
+  },
+  {
+    key: "scalping",
+    label: "Scalping",
+    icon: "fa-gauge-high",
+    intervals: ["1m"],
+    blurb: "minutes · 1-minute bars",
+    live: false,
+  },
+];
+
+export const LIVE_STYLES = STYLES.filter((s) => s.live);
+
+const STYLE_BY_INTERVAL = new Map(STYLES.flatMap((s) => s.intervals.map((i) => [i, s])));
+
+export function styleFor(interval) {
+  return STYLE_BY_INTERVAL.get(interval) ?? null;
+}
+
 export function tradeType(interval) {
-  if (interval === "1d") return "Swing";
-  if (interval === "1wk" || interval === "1mo") return "Positional";
-  return "Day";
+  if (interval === "1mo") return "Investment";
+  return STYLE_BY_INTERVAL.get(interval)?.label ?? "Day";
 }

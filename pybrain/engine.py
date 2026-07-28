@@ -569,12 +569,17 @@ def signal_id(symbol, interval, type_, time):
     return f"{symbol}:{interval}:{type_}:{time}"
 
 
+TRADE_STYLE = {
+    "1wk": "Investment", "1mo": "Investment",
+    "1d": "Swing",
+    "btst": "BTST",
+    "1h": "Intraday", "15m": "Intraday", "5m": "Intraday",
+    "1m": "Scalping",
+}
+
+
 def trade_type(interval):
-    if interval == "1d":
-        return "Swing"
-    if interval in ("1wk", "1mo"):
-        return "Positional"
-    return "Day"
+    return TRADE_STYLE.get(interval, "Day")
 
 
 def plan_for(direction, entry, atr, horizon=None):

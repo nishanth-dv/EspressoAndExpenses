@@ -389,6 +389,60 @@ The +1.2% from the single bull year was regime-flattered; **+0.4% is the durable
 regime-robust number**, holding because the edge is mean-reversion at levels (works in
 any trend). Spearman train→OOS = +0.60 over 5 years.
 
+## Trading styles — the lanes (`STYLES` in `signals/contract.js`)
+A trader picks a *style* first, not a bar size. `STYLES` is the single source of truth: each
+lane declares the interval(s) that back it, and `tradeType(interval)` derives its label from
+the same table so the tab and the card tag can never disagree. Signals shows one tab per
+**live** lane, with a sub-picker only where a lane spans several intervals (Intraday).
+
+| Lane | Intervals | Horizon | Live | Validated |
+|---|---|---|---|---|
+| Investment | `1wk` | ~10 weeks | ✅ | +1.6%/trade OOS, Spearman +0.86 |
+| Swing | `1d` | ~6 days | ✅ | +0.3%/trade OOS, Spearman +0.60 |
+| BTST | `btst` | next day | ✅ | own detector + next-day grading |
+| Intraday | `1h` `15m` `5m` | intra-session | ✅ | scanned, not separately swept |
+| Scalping | `1m` | minutes | ❌ | **swept and rejected** — see below |
+
+`live: false` lanes are **not rendered**. This is deliberate: before this change the UI
+offered a `1m` tab that the batch never scanned, so it was permanently empty. A test now
+asserts **no live lane points at an interval the batch never scans**, which is exactly the
+defect that shipped unnoticed.
+
+### Investment lane (`1wk`) — validated 2026-07-28
+`backtest.py --interval 1wk --walkforward --range 5y`, 288 symbols, 4,210 gated OOS trades:
+
+| | Trades | Hit | Expectancy | Payoff |
+|---|---|---|---|---|
+| before gating | 6,290 | 30.0% | +0.1% | 1.27 |
+| **after gating** | **4,210** | **34.9%** | **+1.6%** | **1.36** |
+
+Confidence is monotonic (high 39.4% / moderate 38.4% / low 25.1%), train→OOS Spearman
+**+0.86 [GENERALIZES]**, train-expectancy terciles monotonic OOS (+2.9% / −0.5% / −3.3%),
+and the edge holds in downtrends (+1.6%). Bullish +2.7% vs bearish −1.2% — long-only again.
+
+**Do not read +1.6% as "5× better than Swing."** The weekly lane holds ~10 weeks per trade
+versus ~6 days daily, with much larger moves (avg win 13.8%, avg loss −10.9%). It is a bigger
+edge *per trade*, not necessarily per unit of time or capital deployed. Turnover-adjusted
+comparison across lanes is not something this harness measures yet.
+
+### Scalping lane (`1m`) — swept and rejected 2026-07-28
+`backtest.py --interval 1m --walkforward --range 7d`, 299 symbols, **57,948 gated OOS trades**.
+**Every pattern is negative** (−0.1% to −0.3%); bullish −0.2%, bearish −0.2%, and identical in
+up- and down-trends. The cause is the payoff ratio: **0.23–0.44** versus 1.32 on daily bars.
+At 1-minute scale the ATR target/stop shrink with volatility but the 15bps round-trip cost
+does not, so wins are a fraction of losses. At −0.2%/trade against 0.15% cost, **gross is
+about −0.05% — flat**; there is no edge for costs to eat. The `high` band has **n=0**: the
+confidence scale collapses entirely at this resolution.
+
+So `scalping` stays `live: false` and the lane is not rendered. Revisit only with a real
+intraday feed (Yahoo caps 1m at 7 days) *and* a cost model built for that horizon — but note
+a payoff of 0.30 is not a data-volume problem.
+
+**A trap this exposed in our own harness:** that run printed `confidence IS monotonic
+(calibrated)`, `Spearman +0.67 [GENERALIZES]` and `terciles MONOTONIC` — all three PASS flags
+firing on a lane where every single pattern loses money. Ranking losers in the right order is
+not an edge. **Never read those flags without the expectancy column beside them.**
+
 ## Market sentiment — India VIX regime
 `backtest.py --vix` loads India VIX (`^INDIAVIX`) by day and buckets every out-of-sample
 trade by the VIX level at entry:

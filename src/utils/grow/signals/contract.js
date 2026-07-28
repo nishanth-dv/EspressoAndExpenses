@@ -65,7 +65,7 @@ export const STYLES = [
     icon: "fa-clock",
     intervals: ["1h", "15m", "5m"],
     blurb: "same session · exit before the close",
-    live: true,
+    live: false,
   },
   {
     key: "scalping",

@@ -400,7 +400,7 @@ the same table so the tab and the card tag can never disagree. Signals shows one
 | Investment | `1wk` | ~10 weeks | ✅ | +1.6%/trade OOS, Spearman +0.86 |
 | Swing | `1d` | ~6 days | ✅ | +0.3%/trade OOS, Spearman +0.60 |
 | BTST | `btst` | next day | ✅ | own detector + next-day grading |
-| Intraday | `1h` `15m` `5m` | intra-session | ✅ | scanned, not separately swept |
+| Intraday | `1h` `15m` `5m` | intra-session | ❌ | **swept and rejected** — see below |
 | Scalping | `1m` | minutes | ❌ | **swept and rejected** — see below |
 
 `live: false` lanes are **not rendered**. This is deliberate: before this change the UI
@@ -425,6 +425,40 @@ versus ~6 days daily, with much larger moves (avg win 13.8%, avg loss −10.9%).
 edge *per trade*, not necessarily per unit of time or capital deployed. Turnover-adjusted
 comparison across lanes is not something this harness measures yet.
 
+### Intraday lane (`1h`/`15m`/`5m`) — swept and rejected 2026-07-28
+Walk-forward 70/30, long-only gated, full universe: `1h` −0.1%/trade (payoff 1.13, 123k
+trades), `15m` −0.1% (payoff 0.96, 37k), `5m` −0.2% (payoff 0.74, 103k). **No pattern is
+profitable in any of the three.**
+
+A tempting story fit the payoff ladder across lanes (1.36 weekly → 0.23 at 1m): `horizon: 10`
+is a daily-shaped default applied to every interval, so at 15m it grades "does a 2-ATR move
+complete in 2.5 hours". **A horizon × target grid refuted it.** On `15m` and `1h`, sweeping
+horizon 10 → 26 → 52 (up to 8.7 sessions) lifts hit rate a lot — 1h goes 34.9% → 44.7% — and
+moves expectancy **not at all** (−0.1% throughout, payoff flat at ~1.15). More time reaches
+more targets *and* absorbs proportionally bigger losses. **Hit rate and expectancy are
+decoupled; do not tune horizon expecting expectancy to follow.**
+
+Shrinking targets to fit inside a session is *strictly worse*, not better — 1h payoff
+1.15 → 0.96 (1/0.75) → 0.63 (0.5/0.4) — because a fixed 15bps takes a larger bite of a
+smaller target. At 0.5 ATR on 15m the avg win is 0.1% against an 0.3% avg loss: friction has
+eaten the entire target.
+
+The zero-cost column is what actually separates the lanes:
+
+| Lane | Gross (0bps) | Net (15bps) | Diagnosis |
+|---|---|---|---|
+| `1h` | **+0.1%**, payoff 1.38 | −0.1%, payoff 1.15 | thin real edge, fully consumed by friction |
+| `15m` | **0.0%**, payoff 1.42 | −0.1%, payoff 1.00 | edgeless — nothing for costs to eat |
+
+So `1h` break-even is ~10bps all-in, which must cover brokerage, STT, exchange charges, GST,
+stamp duty *and* slippage on a ~10-hour hold. +0.1% gross with perfect fills is not a
+business. All three intervals ship `live: false`.
+
+**Always run the zero-cost column.** It is one extra config and it is the only thing that
+distinguishes "no edge" from "edge destroyed by friction" — a distinction that decides whether
+a better feed or cheaper broker could ever rescue a lane. Earlier lane verdicts in this file
+were made without it.
+
 ### Scalping lane (`1m`) — swept and rejected 2026-07-28
 `backtest.py --interval 1m --walkforward --range 7d`, 299 symbols, **57,948 gated OOS trades**.
 **Every pattern is negative** (−0.1% to −0.3%); bullish −0.2%, bearish −0.2%, and identical in
@@ -437,6 +471,12 @@ confidence scale collapses entirely at this resolution.
 So `scalping` stays `live: false` and the lane is not rendered. Revisit only with a real
 intraday feed (Yahoo caps 1m at 7 days) *and* a cost model built for that horizon — but note
 a payoff of 0.30 is not a data-volume problem.
+
+**Caveat on the attribution above:** the "gross is about −0.05% — flat" line was inferred by
+subtracting the cost from net, not measured. `1m` was never re-run with `costBps: 0`, so
+whether it is edgeless (like `15m`) or friction-bound (like `1h`) is *not* established. The
+rejection stands either way — a 0.23–0.44 payoff fails at any realistic cost — but the stated
+mechanism is an inference, not a result.
 
 **A trap this exposed in our own harness:** that run printed `confidence IS monotonic
 (calibrated)`, `Spearman +0.67 [GENERALIZES]` and `terciles MONOTONIC` — all three PASS flags

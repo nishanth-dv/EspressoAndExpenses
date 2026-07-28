@@ -1,4 +1,4 @@
-from engine import run_signals, grade_signal, atr_series, SUPPRESSED_TYPES
+from engine import run_signals, grade_signal, atr_series, symbol_bias, SUPPRESSED_TYPES
 
 DAY = 86400
 T0 = 1700000000
@@ -104,3 +104,27 @@ for s in rep["signals"]:
     assert sum(r["points"] for r in s["confidenceBreakdown"]["rows"]) == s["confidence"]
 
 print("ok — invariants: unique ids, empty-safe, override, bearish/loss grade, band sums")
+
+
+def bias_fixture(d):
+    out = []
+    for k in range(60):
+        p = 100 + d * k * 0.5
+        up = d > 0
+        out.append({
+            "time": 1700000000 + k * 86400,
+            "open": p - 0.3 if up else p + 0.3,
+            "high": p + 0.6, "low": p - 0.6, "close": p,
+            "volume": 1500 if up else 900,
+        })
+    return out
+
+
+assert symbol_bias(bias_fixture(1)[:29]) is None, "bias needs 30 bars"
+up_bias = symbol_bias(bias_fixture(1))
+down_bias = symbol_bias(bias_fixture(-1))
+assert up_bias["label"] == "bullish" and down_bias["label"] == "bearish", "bias direction reads price + volume"
+assert all(v > 0 for v in up_bias["parts"].values()), "every bullish part positive"
+assert all(v < 0 for v in down_bias["parts"].values()), "every bearish part negative"
+assert up_bias["maPeriod"] == 50, "60 bars -> 50-bar MA baseline"
+print(f"ok — symbol bias {up_bias['label']} {up_bias['score']} / {down_bias['label']} {down_bias['score']}", up_bias["parts"])

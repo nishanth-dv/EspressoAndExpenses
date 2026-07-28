@@ -12043,6 +12043,100 @@ html[data-skin="glass"] .adv-card {
 .grow-sentiment--calm > i {
   color: var(--text-secondary);
 }
+.grow-bias {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  margin: 10px 0 12px;
+  padding: 10px 13px;
+  border-radius: 12px;
+  border: 1px solid var(--surface-border);
+  background: var(--surface-bg);
+  box-shadow: var(--levitate-shadow);
+  font-size: 0.82rem;
+}
+.grow-bias--compact {
+  margin: 0 0 8px;
+  padding: 0;
+  border: none;
+  background: none;
+  box-shadow: none;
+}
+.grow-bias-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-weight: 700;
+  background: color-mix(in srgb, var(--text-secondary) 12%, transparent);
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.grow-bias-chip em {
+  font-style: normal;
+  font-weight: 600;
+  opacity: 0.75;
+}
+.grow-bias--bullish .grow-bias-chip {
+  background: color-mix(in srgb, var(--amount-income) 14%, transparent);
+  color: var(--amount-income);
+}
+.grow-bias--bearish .grow-bias-chip {
+  background: color-mix(in srgb, var(--amount-expense) 14%, transparent);
+  color: var(--amount-expense);
+}
+.grow-bias-conflict {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-secondary);
+  font-size: 0.76rem;
+}
+.grow-bias-parts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 4px 16px;
+  flex: 1 1 260px;
+  min-width: 0;
+}
+.grow-bias-part {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.grow-bias-part-label {
+  flex: 0 0 96px;
+  color: var(--text-secondary);
+  font-size: 0.74rem;
+}
+.grow-bias-bar {
+  position: relative;
+  flex: 1 1 auto;
+  height: 5px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--text-secondary) 12%, transparent);
+}
+.grow-bias-bar::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: -2px;
+  bottom: -2px;
+  width: 1px;
+  background: color-mix(in srgb, var(--text-secondary) 30%, transparent);
+}
+.grow-bias-fill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 3px;
+  background: var(--amount-income);
+}
+.grow-bias-fill.is-neg {
+  background: var(--amount-expense);
+}
 .grow-chart-titlehead {
   display: flex;
   align-items: center;

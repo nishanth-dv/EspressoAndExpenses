@@ -15,6 +15,8 @@ import { ConfidenceBadge, ConfidenceReveal } from "./ConfidenceControl";
 import Modal from "../../preStyledElements/modal/Modal";
 import TradePlan from "./TradePlan";
 import SignalHistory from "./SignalHistory";
+import SymbolBias from "./SymbolBias";
+import { symbolBias } from "../../utils/grow/signals/bias";
 
 const DEFAULT = { symbol: "RELIANCE.NS", name: "Reliance Industries" };
 const LS_LAST = "grow-chart-last";
@@ -263,7 +265,7 @@ export default function GrowChart() {
                 color: l.color,
                 lineWidth: l.width ?? 2,
                 lineStyle: l.style ?? 0,
-                lastValueVisible: false,
+                lastValueVisible: l.axisLabel ?? false,
                 priceLineVisible: false,
                 crosshairMarkerVisible: false,
               },
@@ -475,6 +477,8 @@ export default function GrowChart() {
     return { last, chg, pct, up: chg >= 0 };
   }, [candles]);
 
+  const bias = useMemo(() => symbolBias(candles), [candles]);
+
   function pick(r) {
     setSymbol({ symbol: r.symbol, name: r.name });
     setQuery("");
@@ -585,6 +589,8 @@ export default function GrowChart() {
           </div>
         )}
       </div>
+
+      <SymbolBias bias={bias} />
 
       <div className="grow-chart-tfs">
         {TIMEFRAMES.map((t, i) => (

@@ -1,4 +1,5 @@
-import { rsiSeries, atrSeries } from "./signals/indicators.js";
+import { rsiSeries, atrSeries, pivots } from "./signals/indicators.js";
+import { levels } from "./signals/detectors.js";
 
 export { rsiSeries, atrSeries };
 
@@ -293,6 +294,20 @@ function shifted(candles, arr, shift) {
   return out;
 }
 
+export function srLevels(candles, tol = 0.01, perSide = 4) {
+  const piv = pivots(candles, 3, 3);
+  const last = candles[candles.length - 1]?.close ?? 0;
+  const pick = (arr, keep) =>
+    levels(arr, tol)
+      .filter(keep)
+      .sort((a, b) => b.count - a.count || Math.abs(a.price - last) - Math.abs(b.price - last))
+      .slice(0, perSide);
+  return {
+    support: pick(piv.lows, (g) => g.price <= last),
+    resistance: pick(piv.highs, (g) => g.price >= last),
+  };
+}
+
 export const INDICATORS = [
   {
     key: "ma",
@@ -325,6 +340,28 @@ export const INDICATORS = [
         { data: toLine(candles, bb.middle), color: "#94a3b8", width: 1 },
         { data: toLine(candles, bb.lower), color: "#94a3b8", width: 1, style: 2 },
       ];
+    },
+  },
+  {
+    key: "sr",
+    label: "S/R Levels",
+    pane: "price",
+    build: (candles) => {
+      if (candles.length < 10) return [];
+      const t0 = candles[0].time;
+      const t1 = candles[candles.length - 1].time;
+      const { support, resistance } = srLevels(candles);
+      const line = (g, color) => ({
+        data: [
+          { time: t0, value: g.price },
+          { time: t1, value: g.price },
+        ],
+        color,
+        width: g.count >= 3 ? 2 : 1,
+        style: 2,
+        axisLabel: true,
+      });
+      return [...support.map((g) => line(g, "#16a34a")), ...resistance.map((g) => line(g, "#ef4444"))];
     },
   },
   {

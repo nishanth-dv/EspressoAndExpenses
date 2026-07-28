@@ -9,6 +9,7 @@ import {
   adx,
   obv,
   vwap,
+  srLevels,
   INDICATORS,
 } from "./chartIndicators.js";
 
@@ -16,7 +17,7 @@ const DAY = 86400;
 const t0 = 1700000000;
 const candles = [];
 for (let i = 0; i < 80; i++) {
-  const p = 100 + 20 * Math.sin(i / 6) + i * 0.15;
+  const p = 100 + 20 * Math.sin(i / 6);
   candles.push({
     time: t0 + i * DAY,
     open: p,
@@ -61,6 +62,17 @@ const w = vwap(candles);
 const hi = Math.max(...candles.map((c) => c.high));
 const lo = Math.min(...candles.map((c) => c.low));
 assert.ok(w.every((v) => v == null || (v >= lo && v <= hi)));
+
+const sr = srLevels(candles);
+const lastClose = closes[closes.length - 1];
+assert.ok(sr.support.length + sr.resistance.length > 0, "sr finds levels");
+assert.ok(sr.support.every((g) => g.price <= lastClose && g.count >= 2), "supports below price, twice-touched");
+assert.ok(sr.resistance.every((g) => g.price >= lastClose && g.count >= 2), "resistances above price, twice-touched");
+assert.ok(sr.support.length <= 4 && sr.resistance.length <= 4, "sr capped per side");
+
+const ramp = candles.map((c, i) => ({ ...c, high: 100 + i, low: 98 + i, open: 99 + i, close: 99.5 + i }));
+const rampSr = srLevels(ramp);
+assert.strictEqual(rampSr.support.length + rampSr.resistance.length, 0, "no horizontal levels in a clean trend");
 
 for (const def of INDICATORS) {
   const built = def.build(candles);

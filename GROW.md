@@ -57,9 +57,10 @@ and the per-pattern train→OOS expectancy correlation jumped from +0.03 to **+0
 - **Signals** (`src/pages/advisory/GrowSignals.jsx`) — the nightly breadth scan: ranked
   **long calls** across the universe, an **interval selector** (1D/1H/15m/5m/1m), direction
   and actionable-only filters, a live out-of-sample **track record**, and tap-through to
-  Charts (`?symbol=…&t=…&ty=…` deep-link). Two context layers on top: a **market-sentiment
-  banner** (India VIX regime — fear/neutral/calm, from the scan row) and an **"⚠ results in
-  Xd" chip** on any call whose company reports earnings inside the hold window.
+  Charts (`?symbol=…&t=…&ty=…` deep-link). Three context layers on top: a **market-sentiment
+  banner** (India VIX regime — fear/neutral/calm, from the scan row), a **per-symbol bias chip**
+  on each card (trend/momentum/flow/range, flagged when it disagrees with the call), and an
+  **"⚠ results in Xd" chip** on any call whose company reports earnings inside the hold window.
 - **Overview** — the Money-Made ledger.
 
 ---
@@ -403,6 +404,59 @@ nightly scan records the regime: `batch.market_sentiment()` fetches today's VIX,
 stores `vix` + `sentiment` on `grow_scans`, the Worker returns them with the scan, and Signals
 shows the banner. **Informational only** — the scan does not yet gate or reweight signals by
 regime; the user reads the banner and sizes accordingly.
+
+## Per-symbol bias — the symbol-level counterpart to VIX
+VIX is one number for the whole market; it says nothing about the symbol in front of you.
+`symbolBias(candles)` (`signals/bias.js`, mirrored as `engine.symbol_bias`) reads a per-symbol
+lean from the OHLCV we already have — **four components**, each clamped to `[-1, 1]` and
+averaged:
+
+| Part | Reads | Full scale at |
+|---|---|---|
+| Trend | close vs its 200-bar SMA (50 or 20 if shorter history) | ±15% from the MA |
+| Momentum | 20-bar return | ±12% |
+| Money flow | volume on up bars minus down bars, over total | ±50% net imbalance |
+| Range position | where close sits in the 52-bar high–low range | at the extremes |
+
+`≥ +0.3` bullish, `≤ −0.3` bearish, else neutral. Needs 30 bars; returns `null` below that.
+
+Two surfaces: **Charts** computes it client-side from the loaded candles and shows the chip
+plus the four part bars under the quote; **Signals** reads it from the row — `collect_signals`
+stamps `bias` on every signal of that symbol (migration `2026-07-28_symbol_bias.sql`) and each
+card shows the compact chip, flagging **"setup fights the symbol"** when a bullish signal fires
+on a bearish symbol (or the reverse).
+
+This is **not news or social sentiment** — it is a price-and-volume read; the genuine
+per-symbol fear gauge is per-stock option IV, which our free data does not carry.
+
+### Agreement sweep — bias does **not** predict outcome (measured, 2026-07-28)
+Before letting the chip gate anything, we tested it: 296 symbols × 5y, walk-forward 70/30,
+bias recomputed **point-in-time** as `symbol_bias(candles[:i+1])` at each signal's own bar
+(using the shipped last-bar value would leak the future). Long-only population — 18,977 OOS
+graded signals, baseline **34.0% hit / +0.3% per trade**, which reconciles with the 5y figure
+above and so validates the harness.
+
+| Stance at entry | n | Hit | Exp |
+|---|---|---|---|
+| bias agrees with the call | 7,627 | 34.2% | +0.3% |
+| neutral | 6,665 | 33.8% | +0.2% |
+| bias conflicts | 4,685 | 33.8% | **+0.4%** |
+
+Signed-bias deciles (D1 = bias most *against* the signal) wander between 32.3% and 36.3% hit
+with **no monotonic trend**, and the single best decile is **D1** at +0.7%. Every filter —
+"not conflicting" (keeps 75%), "agrees only" (40%), "signed ≥ 0.4" (34%), "trend agrees"
+(54%) — lands within ±0.0% of baseline expectancy. Per-part edges: trend −0.0pp, momentum
+−0.2pp, flow −0.1pp, position +0.2pp. Per-type signs are inconsistent (`morning_star` +0.3%
+agree vs −0.2% conflict, but `hammer` −0.2% vs +0.7% and `support_bounce` +0.5% vs +0.7%).
+The same sweep on all signals including suppressed types (38,273 rows) is equally flat.
+
+Not a broken measurement: the deciles span −1.00 to +1.00 at even 10% fills, so the score has
+full dispersion and simply carries no information about the outcome.
+
+**So the bias stays displayed context and nothing more** — it does not enter `confidence`, does
+not gate, does not reweight. The "setup fights the symbol" flag is an honest *description* of
+the disagreement, not a warning that the trade is worse; on this evidence it isn't. If it ever
+becomes a filter it needs a fresh sweep, not this one.
 
 ## Earnings avoidance
 A signal that fires days before results is a coin-flip on an event, not a pattern trade.

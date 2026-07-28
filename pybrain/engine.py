@@ -512,6 +512,42 @@ def type_history(signals, candles, opts=None):
     return out
 
 
+def symbol_bias(candles):
+    n = len(candles or [])
+    if n < 30:
+        return None
+    clamp = lambda x: max(-1.0, min(1.0, x))
+    closes = [c["close"] for c in candles]
+    last = closes[-1]
+
+    period = 200 if n >= 200 else 50 if n >= 50 else 20
+    base = sma(closes, period, n - 1)
+    trend = clamp((last - base) / base / 0.15) if base else 0.0
+
+    back = closes[n - 21]
+    momentum = clamp((last - back) / back / 0.12) if back else 0.0
+
+    net = tot = 0.0
+    for c in candles[n - 20 :]:
+        v = c.get("volume") or 0
+        tot += v
+        net += v if c["close"] >= c["open"] else -v
+    flow = clamp(net / tot / 0.5) if tot else 0.0
+
+    window = candles[max(0, n - 52) :]
+    hi = max(c["high"] for c in window)
+    lo = min(c["low"] for c in window)
+    position = clamp(((last - lo) / (hi - lo)) * 2 - 1) if hi > lo else 0.0
+
+    score = (trend + momentum + flow + position) / 4
+    return {
+        "score": round(score, 2),
+        "label": "bullish" if score >= 0.3 else "bearish" if score <= -0.3 else "neutral",
+        "maPeriod": period,
+        "parts": {"trend": round(trend, 2), "momentum": round(momentum, 2), "flow": round(flow, 2), "position": round(position, 2)},
+    }
+
+
 def apply_cooldown(signals, idx_by_time, bars):
     if not bars:
         return signals

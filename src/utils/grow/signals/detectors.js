@@ -103,7 +103,7 @@ function rsiExtremes(candles, closes, rsi) {
   return out;
 }
 
-function levels(pivotArr, tol) {
+export function levels(pivotArr, tol) {
   const sorted = [...pivotArr].sort((a, b) => a.price - b.price);
   const groups = [];
   for (const p of sorted) {

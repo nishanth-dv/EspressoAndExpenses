@@ -3,6 +3,7 @@ import { runSignals } from "./index.js";
 import { gradeSignal, scoreCard } from "./grade.js";
 import { atrSeries } from "./indicators.js";
 import { band as bandOf } from "./confidence.js";
+import { symbolBias } from "./bias.js";
 import { SUPPRESSED_TYPES } from "./contract.js";
 
 function candle(time, o, h, l, c, v = 1000) {
@@ -270,3 +271,26 @@ for (const s of rep.signals) {
 }
 
 console.log("ok — invariants: unique ids, empty-safe, bearish/loss grade, band sums");
+
+function biasFixture(dir) {
+  const out = [];
+  for (let k = 0; k < 60; k++) {
+    const p = 100 + dir * k * 0.5;
+    const up = dir > 0;
+    out.push(candle(t0 + k * DAY, up ? p - 0.3 : p + 0.3, p + 0.6, p - 0.6, p, up ? 1500 : 900));
+  }
+  return out;
+}
+assert.strictEqual(symbolBias(biasFixture(1).slice(0, 29)), null, "bias needs 30 bars");
+const upBias = symbolBias(biasFixture(1));
+const downBias = symbolBias(biasFixture(-1));
+assert.strictEqual(upBias.label, "bullish", "rising, up-volume series reads bullish");
+assert.strictEqual(downBias.label, "bearish", "falling, down-volume series reads bearish");
+assert.ok(Object.values(upBias.parts).every((v) => v > 0), "every bullish part positive");
+assert.ok(Object.values(downBias.parts).every((v) => v < 0), "every bearish part negative");
+assert.ok(upBias.score <= 1 && downBias.score >= -1, "score stays in [-1, 1]");
+assert.strictEqual(upBias.maPeriod, 50, "60 bars -> 50-bar MA baseline");
+console.log(
+  `ok — symbol bias ${upBias.label} ${upBias.score} / ${downBias.label} ${downBias.score}`,
+  JSON.stringify(upBias.parts),
+);

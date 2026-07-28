@@ -7,7 +7,7 @@ import sys
 import time
 import urllib.request
 
-from engine import run_signals, avg_volume, detect_all, pivots, rsi_series, grade_signal, atr_series, btst_signals
+from engine import run_signals, avg_volume, detect_all, pivots, rsi_series, grade_signal, atr_series, btst_signals, symbol_bias
 
 NIFTY200_CSV = "https://niftyindices.com/IndexConstituent/ind_nifty200list.csv"
 BANDRANK = {"high": 2, "moderate": 1, "low": 0}
@@ -128,6 +128,7 @@ def collect_signals(cache, today, reliabilities, interval="1d", long_only=True, 
     for sym, candles in cache:
         rep = run_signals(candles, {"symbol": sym, "interval": interval, "timeframe": interval, "reliabilities": reliabilities, "longOnly": long_only, "mode": mode})
         liquidity = round(avg_volume(candles, len(candles) - 1, 20) * candles[-1]["close"])
+        bias = symbol_bias(candles)
         display = sym.replace(".NS", "")
         e_day = earnings.get(sym)
         earnings_in = None
@@ -145,7 +146,7 @@ def collect_signals(cache, today, reliabilities, interval="1d", long_only=True, 
                 "confidence": s["confidence"], "band": s["confidenceBreakdown"]["band"], "sort_value": s["sortValue"],
                 "liquidity": liquidity, "factors": s["factors"], "meta": s.get("meta", {}),
                 "breakdown": s["confidenceBreakdown"], "plan": s.get("plan"), "trade_type": s.get("tradeType"),
-                "earnings_in": earnings_in, "history": s.get("history"),
+                "earnings_in": earnings_in, "history": s.get("history"), "bias": bias,
             })
     return collected
 

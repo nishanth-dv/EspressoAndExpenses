@@ -36,7 +36,7 @@ export const EDGE_VS_RANDOM = {
     inverse_head_shoulders: -0.28,
   },
   "1wk": {
-    support_bounce: 2.55,
+    support_bounce: 1.5,
     bullish_engulfing: -0.91,
     hammer: -1.09,
     morning_star: -1.94,

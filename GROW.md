@@ -650,12 +650,16 @@ falling back to the old win rate only where no benchmark exists.
 | −0.12pp (`breakout`, 1d) | 4 | low |
 | +0.26pp (`rsi_oversold`, 1d) | 60 | moderate |
 | +0.35pp (`support_bounce`, 1d) | 67 | moderate |
-| +2.55pp (`support_bounce`, 1wk) | 97 | high |
+| +1.50pp (`support_bounce`, 1wk) | 92 | high |
 
-⚠️ The `1wk` row uses the pooled +2.55pp, which rolling windows show is **overstated** (mean
-+1.52pp ± 1.03pp on 30–95 trades/window). `EDGE_VS_RANDOM["1wk"]` should be revised down once
-a better weekly estimate exists; a 97/100 "high" on that evidence is more certainty than the
-data carries.
+`EDGE_VS_RANDOM["1wk"].support_bounce` was **revised 2.55 → 1.5 on 2026-07-30** to the
+rolling-window mean, dropping the score from 97 to 92.
+
+⚠️ **The score still ignores how well an edge is measured.** `edge / (edge + EDGE_FLOOR)`
+saturates fast, so weekly `support_bounce` scores **92** on 5 thin windows (n=30–95, sd
+1.03pp) while daily `support_bounce` — the best-validated result in this file, 9/9 windows at
+~1,200 trades, sd 0.23pp — scores **67**. The worse-evidenced number ranks higher. A
+sample-size or dispersion discount would fix it; not implemented.
 
 The score finally says what a user assumes it says: *how much this pattern beat buying the
 same stock on an arbitrary day*. Bands were re-cut to the new scale (**high ≥ 75, moderate
@@ -696,7 +700,7 @@ the same table so the tab and the card tag can never disagree. Signals shows one
 
 | Lane | Intervals | Horizon | Live | Validated |
 |---|---|---|---|---|
-| Investment | `1wk` | ~10 weeks | ⚠️ | gated to `support_bounce`: 5/5 windows but thin (**+1.5pp ± 1.0**, n=30–95); ungated the lane is **−0.14pp** |
+| Investment | `1wk` | ~10 weeks | ⚠️ | gated to `support_bounce`: 5/5 windows but thin (**+1.5pp ± 1.0**, n=30–95, table value 1.5); ungated the lane is **−0.14pp** |
 | Swing | `1d` | ~6 days | ✅ | gated: `support_bounce` **+0.48pp vs random, 9/9 windows** |
 | BTST | `btst` | next day | ✅ | own detector + next-day grading |
 | Intraday | `1h` `15m` `5m` | intra-session | ❌ | **swept and rejected** — see below |

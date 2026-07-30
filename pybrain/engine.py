@@ -404,7 +404,7 @@ EDGE_VS_RANDOM = {
         "bullish_engulfing": 0.01, "morning_star": -0.02, "breakout": -0.12, "inverse_head_shoulders": -0.28,
     },
     "1wk": {
-        "support_bounce": 2.55, "bullish_engulfing": -0.91, "hammer": -1.09,
+        "support_bounce": 1.5, "bullish_engulfing": -0.91, "hammer": -1.09,
         "morning_star": -1.94, "breakout": -2.22,
     },
 }

@@ -125,8 +125,28 @@ same stock**, plus small strength/volume nudges, on a 0–100 scale. The base te
 anything (`breakout` has a decent one and a *negative* edge), so the score now measures the
 part the pattern actually added rather than how often it happened to be right.
 Where no benchmark exists for an interval (`btst`, intraday) it falls back to the old win
-rate. Bands: **high ≥ 75, moderate ≥ 55** — ⚠️ **provisional**, chosen to fit the current
-edge range, *not* derived from outcomes (the 1y-vs-5y threshold fragility applies).
+rate — and **an unbenchmarked signal is capped at `moderate`**, because you cannot claim high
+confidence without a benchmark, however well-formed the pattern.
+
+**Bands are derived, not chosen** (2026-07-30). Two earlier sets of cuts (`45/40`, then
+`75/55`) were invented to fit whatever the score range happened to be, and this file twice
+recorded that as fragile without fixing it. The cuts now come from the **gate floor**:
+
+| Band | Definition | Cut |
+|---|---|---|
+| high | shrunk edge ≥ `2 × EDGE_FLOOR` (0.4pp) | ≥ **67** |
+| moderate | shrunk edge ≥ `EDGE_FLOOR` (0.2pp) | ≥ **50** |
+| low | below the floor | < 50 |
+
+`BAND_CUTS` is computed as `round(edgeBase(threshold) × 100)`, so changing `EDGE_FLOOR` moves
+the bands with it and they cannot drift out of step again. A test asserts the derivation
+rather than the literals.
+
+Two properties fall out. **The moderate cut *is* the gate floor expressed as a score**, so
+anything surviving the gate is at least `moderate` by construction — `low` can only appear on
+Charts, where `includeSuppressed` bypasses the gate. And **`high` is reachable**: `1d`
+`rsi_oversold` scores **71**. Under the previous 75 cut the best possible score was 71 and the
+band was dead UI; a test now asserts the best measured detector can reach it.
 Recency was **removed** from the score (it isn't predictive and corrupted backtests). The
 breakdown sums exactly to the score — the number can't be faked.
 
@@ -714,13 +734,13 @@ this penalty now prices.
 Window means are also now **trade-weighted**, not unweighted. Unweighted overstated
 `rsi_oversold` at 1.210 vs 1.017, because a 30-trade window counted as much as a 190-trade one.
 
-⚠️ **Two consequences worth watching.**
-1. **Nothing reaches the `high` band any more** — the best score is 71 against a 75 cut, so
-   "high" is currently unreachable. Defensible reading: no detector has evidence that strong
-   yet. But an unreachable band is dead UI, and the 75/55 cuts remain unvalidated anyway.
-2. **Weekly `support_bounce` clears the 0.2pp floor by only 0.021pp.** Any downward revision
-   empties the Investment lane entirely. A test asserts this margin so the fragility is visible
-   rather than discovered in production.
+⚠️ **One consequence worth watching.** **Weekly `support_bounce` clears the 0.2pp floor by
+only 0.021pp.** Any downward revision empties the Investment lane entirely. A test asserts
+this margin so the fragility is visible rather than discovered in production.
+
+(The other consequence — that nothing could reach `high` under the old 75 cut — was fixed by
+deriving the bands from the gate floor; see *Confidence* above. Current bands: high ≥ 67,
+moderate ≥ 50, and `1d` `rsi_oversold` reaches high at 71.)
 
 The score finally says what a user assumes it says: *how much this pattern beat buying the
 same stock on an arbitrary day*. Bands were re-cut to the new scale (**high ≥ 75, moderate

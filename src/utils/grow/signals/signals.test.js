@@ -2,9 +2,9 @@ import assert from "node:assert";
 import { runSignals } from "./index.js";
 import { gradeSignal, scoreCard } from "./grade.js";
 import { atrSeries } from "./indicators.js";
-import { band as bandOf, edgeBase } from "./confidence.js";
+import { band as bandOf, edgeBase, breakdownSignal, BAND_CUTS, BAND_EDGE } from "./confidence.js";
 import { symbolBias } from "./bias.js";
-import { SUPPRESSED_TYPES, STYLES, LIVE_STYLES, styleFor, tradeType, beatsRandom, edgeFor, rawEdgeFor, shrinkEdge, lowerBound, EDGE_PRIOR_N, EDGE_FLOOR } from "./contract.js";
+import { SUPPRESSED_TYPES, STYLES, LIVE_STYLES, styleFor, tradeType, beatsRandom, edgeFor, rawEdgeFor, shrinkEdge, lowerBound, EDGE_PRIOR_N, EDGE_FLOOR, EDGE_VS_RANDOM } from "./contract.js";
 
 function candle(time, o, h, l, c, v = 1000) {
   return { time, open: o, high: h, low: l, close: c, volume: v };
@@ -89,10 +89,26 @@ assert.strictEqual(okDb.time, twin[17].time, "confirms on the first close above 
 
 console.log("ok — twin level tolerance scales with pattern height, not price");
 
-assert.strictEqual(bandOf(75), "high", "75+ = clearly beat a random entry");
-assert.strictEqual(bandOf(74), "moderate", "74 sits below the high cut");
-assert.strictEqual(bandOf(55), "moderate", "55 is the moderate floor");
-assert.strictEqual(bandOf(54), "low", "below 55 is little or no measured edge");
+assert.strictEqual(BAND_CUTS.moderate, Math.round(edgeBase(EDGE_FLOOR) * 100), "the moderate cut IS the gate floor, expressed as a score");
+assert.strictEqual(BAND_CUTS.high, Math.round(edgeBase(BAND_EDGE.high) * 100), "the high cut is 2x the gate floor");
+assert(BAND_CUTS.high > BAND_CUTS.moderate, "cuts are ordered");
+assert.strictEqual(bandOf(BAND_CUTS.high), "high", "at the high cut = high");
+assert.strictEqual(bandOf(BAND_CUTS.high - 1), "moderate", "one below the high cut = moderate");
+assert.strictEqual(bandOf(BAND_CUTS.moderate - 1), "low", "below the moderate cut = low");
+assert.strictEqual(bandOf(99, false), "moderate", "an unbenchmarked pattern can never be high, whatever it scores");
+
+const topEdge = Math.max(...["1d", "1wk"].flatMap((iv) => Object.keys(EDGE_VS_RANDOM[iv]).map((t) => edgeFor(t, iv) ?? 0)));
+const best = breakdownSignal({ signalStrength: 1, volumeConfirm: 1, edgeVsRandom: topEdge });
+assert.strictEqual(best.band, "high", "the best measured detector must be able to reach high — the band is not dead UI");
+
+for (const iv of ["1d", "1wk"]) {
+  for (const t of Object.keys(EDGE_VS_RANDOM[iv])) {
+    if (!beatsRandom(t, iv)) continue;
+    const bd = breakdownSignal({ signalStrength: 0, volumeConfirm: 0, edgeVsRandom: edgeFor(t, iv) });
+    assert(bd.band !== "low", `${iv} ${t} survives the gate so it can never read "low"`);
+  }
+}
+console.log(`ok — bands derived from the gate floor: high >= ${BAND_CUTS.high}, moderate >= ${BAND_CUTS.moderate}`);
 
 assert.strictEqual(edgeBase(null), null, "unmeasured edge falls back to the win rate");
 assert.strictEqual(edgeBase(-0.12), 0, "negative edge scores zero, never negative");

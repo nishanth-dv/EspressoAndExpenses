@@ -465,10 +465,13 @@ def edge_base(edge):
     return edge / (edge + EDGE_FLOOR)
 
 
-def band(s):
-    if s >= 75:
-        return "high"
-    if s >= 55:
+BAND_EDGE = {"high": 2 * EDGE_FLOOR, "moderate": EDGE_FLOOR}
+
+
+def band(s, benchmarked=True):
+    if s >= round(edge_base(BAND_EDGE["high"]) * 100):
+        return "high" if benchmarked else "moderate"
+    if s >= round(edge_base(BAND_EDGE["moderate"]) * 100):
         return "moderate"
     return "low"
 
@@ -488,7 +491,7 @@ def breakdown_signal(f):
     total = round(p * 100)
     summed = sum(r["points"] for r in rows)
     rows[-1]["points"] += total - summed
-    return {"total": total, "band": band(total), "rows": rows, "meaning": MEANING}
+    return {"total": total, "band": band(total, eb is not None), "rows": rows, "meaning": MEANING}
 
 
 def with_signal_confidence(sig):

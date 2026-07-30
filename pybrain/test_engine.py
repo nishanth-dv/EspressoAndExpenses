@@ -91,7 +91,7 @@ rep_hi = run_signals(candles, {"symbol": "TEST.NS", "interval": "1d", "timeframe
 be_hi = next(s for s in rep_hi["signals"] if s["type"] == "bullish_engulfing")
 assert be_hi["confidence"] == be["confidence"], "measured-edge scoring ignores the win-rate override (edge replaced it as the base)"
 
-from engine import beats_random, edge_base, band as band_of
+from engine import beats_random, edge_base, band as band_of, EDGE_VS_RANDOM as EDGE_VS_RANDOM_T
 assert beats_random("support_bounce", "1d") and beats_random("rsi_oversold", "1d"), "1d keeps the two validated detectors"
 assert not beats_random("breakout", "1d"), "breakout picks worse days than chance on 1d"
 assert not beats_random("double_bottom", "1d"), "an edge below the floor does not qualify"
@@ -120,7 +120,19 @@ assert shrink_edge(-1.0, 500) < 0, "a negative edge stays negative under shrinka
 _d, _w = raw_edge_for("support_bounce", "1d"), raw_edge_for("support_bounce", "1wk")
 assert _w["edge"] > _d["edge"] and _w["n"] < _d["n"], "weekly: bigger raw edge, far fewer trades"
 assert edge_for("support_bounce", "1d") > edge_for("support_bounce", "1wk"),     "after shrinkage the better-evidenced daily edge outranks the thin weekly one"
-assert band_of(75) == "high" and band_of(74) == "moderate" and band_of(54) == "low", "bands sit on the edge scale"
+from engine import BAND_EDGE, breakdown_signal
+_hi, _mod = round(edge_base(BAND_EDGE["high"]) * 100), round(edge_base(BAND_EDGE["moderate"]) * 100)
+assert _mod == round(edge_base(EDGE_FLOOR) * 100), "the moderate cut IS the gate floor as a score"
+assert _hi > _mod, "cuts are ordered"
+assert band_of(_hi) == "high" and band_of(_hi - 1) == "moderate" and band_of(_mod - 1) == "low", "bands sit on the derived cuts"
+assert band_of(99, False) == "moderate", "an unbenchmarked pattern can never be high"
+_top = max(edge_for(t, iv) or 0 for iv in ("1d", "1wk") for t in EDGE_VS_RANDOM_T[iv])
+assert breakdown_signal({"signalStrength": 1, "volumeConfirm": 1, "edgeVsRandom": _top})["band"] == "high",     "the best measured detector must be able to reach high — not dead UI"
+for _iv in ("1d", "1wk"):
+    for _t in EDGE_VS_RANDOM_T[_iv]:
+        if not beats_random(_t, _iv):
+            continue
+        assert breakdown_signal({"signalStrength": 0, "volumeConfirm": 0, "edgeVsRandom": edge_for(_t, _iv)})["band"] != "low",             f"{_iv} {_t} survives the gate so it can never read low"
 gated_1d = run_signals(candles, {"symbol": "TEST.NS", "interval": "1d", "timeframe": "6M"})
 assert all(beats_random(s["type"], "1d") for s in gated_1d["signals"]), "a default 1d run emits only detectors that beat random"
 

@@ -14,9 +14,16 @@ export function edgeBase(edge) {
   return edge / (edge + EDGE_FLOOR);
 }
 
-export function band(s) {
-  if (s >= 75) return "high";
-  if (s >= 55) return "moderate";
+export const BAND_EDGE = { high: 2 * EDGE_FLOOR, moderate: EDGE_FLOOR };
+
+export const BAND_CUTS = {
+  high: Math.round(edgeBase(BAND_EDGE.high) * 100),
+  moderate: Math.round(edgeBase(BAND_EDGE.moderate) * 100),
+};
+
+export function band(s, benchmarked = true) {
+  if (s >= BAND_CUTS.high) return benchmarked ? "high" : "moderate";
+  if (s >= BAND_CUTS.moderate) return "moderate";
   return "low";
 }
 
@@ -51,17 +58,17 @@ export function breakdownSignal(factors = {}) {
   const total = rnd(p * 100);
   const summed = rows.reduce((s, x) => s + x.points, 0);
   rows[rows.length - 1].points += total - summed;
-  return { total, band: band(total), rows, meaning: MEANING };
+  return { total, band: band(total, eb != null), rows, meaning: MEANING };
 }
 
 export function reasonForSignal(factors = {}, total = 0) {
-  const b = band(total);
   const { baseReliability = 0.4, signalStrength = 0.5, volumeConfirm = 0, edgeVsRandom = null } = factors;
+  const b = band(total, edgeVsRandom != null);
   const lead =
     b === "high"
-      ? "Clearly beat a random entry on the same stock in out-of-sample testing — the strongest evidence this engine has."
+      ? `Beat a random entry on the same stock by at least ${BAND_EDGE.high}pp per trade after penalties for sample size and period-to-period variability — the strongest evidence this engine has.`
       : b === "moderate"
-        ? "Beat a random entry, but by a thin margin — a prompt, not a conviction trade."
+        ? `Beat a random entry, but by under ${BAND_EDGE.high}pp per trade once thin samples and inconsistent periods are discounted — a prompt, not a conviction trade.`
         : "Little or no measured edge over buying this stock on any other day.";
   const why =
     edgeVsRandom == null

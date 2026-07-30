@@ -26,12 +26,18 @@ Long-only nearly doubles out-of-sample expectancy over the baseline **and** made
 whole stack coherent: confidence became monotonic OOS (moderate +1.4% > low +1.2%)
 and the per-pattern train→OOS expectancy correlation jumped from +0.03 to **+0.57**.
 
-> ⚠️ **Read every expectancy figure in this file against the benchmark below.** Until
-> 2026-07-29 nothing here was compared to a random entry, so all of these numbers are
-> **absolute returns that include market drift**. Measured on 1d/5y, roughly **half** of
-> the headline expectancy is drift and the pattern edge over a random entry on the same
-> symbol is **~+0.09pp/trade**. The lanes are still positive — just far thinner than the
-> tables imply. See *Benchmarking — edge over random entry*.
+> ⚠️ **The table above is superseded — read it as absolute return, not edge.** Until
+> 2026-07-29 nothing in this file was compared against a random entry on the same stock, so
+> every figure here includes market drift. Measured on 1d/5y: **ungated, the pooled edge over
+> random is only ~+0.09pp/trade** (roughly half the headline is drift), and on `1wk` it is
+> **negative**.
+>
+> **What actually ships now is gated to the detectors that beat random**, and that
+> configuration is genuinely positive: `support_bounce` at **+0.48pp mean edge, positive in
+> 9/9 consecutive ~6-month windows** including flat and falling markets. The six gated-out
+> detectors are positive in only 2/9 with a negative mean.
+>
+> See *Benchmarking — edge over random entry* and *Rolling-window validation*.
 
 ---
 
@@ -62,7 +68,8 @@ and the per-pattern train→OOS expectancy correlation jumped from +0.03 to **+0
     NSE open read as 03:45. A calendar chip shows the loaded window (`5 Aug 2026,
     09:15–15:25`), and clicking a candle retargets it to that bar.
 - **Signals** (`src/pages/advisory/GrowSignals.jsx`) — the nightly breadth scan: ranked
-  **long calls** across the universe, an **interval selector** (1D/1H/15m/5m/1m), direction
+  **long calls** across the universe, **trading-style tabs** (Investment / Swing / BTST — see
+  *Trading styles*; Intraday and Scalping are `live: false`, swept and rejected), direction
   and actionable-only filters, a live out-of-sample **track record**, and tap-through to
   Charts (`?symbol=…&t=…&ty=…` deep-link). Three context layers on top: a **market-sentiment
   banner** (India VIX regime — fear/neutral/calm, from the scan row), a **per-symbol bias chip**
@@ -105,12 +112,17 @@ at the confirmation bar's close, which overshoots it by definition. `meta.neckli
 put the line off the shape. `meta.level` remains the twin price the card title quotes.
 The Python engine emits no `shape` (it never draws); the pairing logic is what's kept in parity.
 
-**Confidence** (`confidence.js`) is an **estimated win probability**: the pattern's
-tested win rate (`baseReliability`) plus small strength/volume nudges, on a 0–100 scale.
-Bands: **high ≥ 45, moderate ≥ 40, low < 40** — validated against 5y out-of-sample
-outcomes (accuracy note 10), not just the break-even reasoning they were designed on. Recency was
-**removed** from the score (it isn't predictive and corrupted backtests). The breakdown
-sums exactly to the score — the number can't be faked.
+**Confidence** (`confidence.js`) is the pattern's **measured edge over a random entry on the
+same stock**, plus small strength/volume nudges, on a 0–100 scale. The base term is
+`edge / (edge + EDGE_FLOOR)` — monotone, saturating, zero for a negative edge. It was
+`baseReliability`, a **win rate**, until 2026-07-30; win rate turned out not to predict
+anything (`breakout` has a decent one and a *negative* edge), so the score now measures the
+part the pattern actually added rather than how often it happened to be right.
+Where no benchmark exists for an interval (`btst`, intraday) it falls back to the old win
+rate. Bands: **high ≥ 75, moderate ≥ 55** — ⚠️ **provisional**, chosen to fit the current
+edge range, *not* derived from outcomes (the 1y-vs-5y threshold fragility applies).
+Recency was **removed** from the score (it isn't predictive and corrupted backtests). The
+breakdown sums exactly to the score — the number can't be faked.
 
 **`ctx` flags** (all default off in the engine; production sets them explicitly):
 - `includeSuppressed` — keep gated patterns (Charts uses this).
@@ -264,6 +276,14 @@ python backtest.py [--limit N] [--interval 1d] [--range 5y] \
     `baseReliability` is recalibrated per run, so the same numeric cut selects a different
     slice of the distribution each time. A percentile-based band would be scale-stable (but
     would always label a top X% "high", however bad the whole scan is). Unresolved.
+
+    > **Superseded 2026-07-30.** The `45/40` cuts above are gone: `baseReliability` is no
+    > longer the base term at all — confidence is now built on **edge over random**, and the
+    > bands were re-cut to **75/55** for that scale. The sweep recorded here is still worth
+    > reading, but note what it was measuring: buckets of a score that was ~95% pattern
+    > identity, ranked by *absolute* expectancy with no benchmark. It could not have detected
+    > that `breakout`'s +0.20% was worse than random. **The fragility warning stands and now
+    > applies to 75/55, which are equally unvalidated.**
 
     A floor is **not** worth shipping on this evidence: on 5y, ≥40 buys nothing (+0.3% → +0.3%
     while discarding 60% of signals), and the thresholds that do help (≥44, ≥46) keep 5–11% of
@@ -499,6 +519,57 @@ holdout (n=2,444), and independently +2.55pp in the 1wk lane. Three separate tes
 sign, minimal decay. `rsi_oversold` holds its sign but decays (+0.70 → +0.26pp, n=314) —
 suggestive, not established. Everything else is noise or negative.
 
+### Rolling-window validation — `support_bounce` holds in every period (2026-07-30)
+The holdout was a single 12-month slice. This splits ~4.2 usable years (5y fetch minus the
+200-bar warmup) into nine consecutive ~125-bar (~6 month) windows and measures the edge
+**inside each window** — signal entries against random entries drawn from that same window,
+so drift is matched locally and each period is a self-contained comparison.
+
+| Window | Period | sig n | signal | random | **edge** |
+|---|---|---|---|---|---|
+| 0 | 2022-05..2022-11 | 1,280 | +1.03% | +0.68% | +0.34pp |
+| 1 | 2022-11..2023-05 | 1,264 | +0.59% | +0.27% | +0.32pp |
+| 2 | 2023-05..2023-11 | 1,143 | +1.21% | +0.83% | +0.37pp |
+| 3 | 2023-11..2024-06 | 1,243 | +0.99% | +0.59% | +0.40pp |
+| 4 | 2024-06..2024-12 | 1,211 | +1.22% | +0.29% | +0.93pp |
+| 5 | 2024-12..2025-06 | 1,277 | +0.14% | **−0.37%** | +0.51pp |
+| 6 | 2025-06..2025-12 | 1,259 | +0.20% | **−0.04%** | +0.24pp |
+| 7 | 2025-12..2026-06 | 1,181 | +0.24% | **−0.10%** | +0.34pp |
+| 8 | 2026-06..2026-07 | 285 | +1.46% | +0.60% | +0.86pp |
+
+**9/9 windows positive · mean +0.480pp · sd 0.232pp · min +0.24pp · max +0.93pp**
+
+**Read the `random` column, not the `signal` column.** In windows 5–7 random entries returned
+−0.37%, −0.04% and −0.10% — a flat-to-falling market — and `support_bounce` still cleared it
+by +0.51, +0.24 and +0.34pp. Its *absolute* return fell from ~1.0% to ~0.2% over those
+windows. **Without the benchmark that would have read as the strategy decaying; it was the
+market.** This is the clearest demonstration in this file of why absolute expectancy is not
+edge.
+
+The contrast is what justifies the gate:
+
+| | Windows positive | Mean edge |
+|---|---|---|
+| `support_bounce` | **9/9** | +0.480pp |
+| `rsi_oversold` | **9/9** | +1.209pp |
+| `all_others` (the six gated-out) | **2/9** | **−0.175pp** |
+
+The detectors the gate keeps are positive in every window; the six it drops are negative in
+seven of nine with a negative mean. **The gate separates something real.**
+
+Limits, so this is not over-read:
+- **`rsi_oversold`'s mean (+1.21pp) contradicts its holdout figure (+0.26pp) by ~5×.** With
+  n=30–190 per window and sd 0.659pp that is small-sample scatter. Trust its **sign** (9/9),
+  not its magnitude — **do not quote +1.21pp**.
+- **The windows are not independent samples.** Nine periods, overlapping 10-bar holds inside
+  each, 148 cross-correlated symbols. The `mean/sd = 2.07` the script prints is a stability
+  indicator, **not a p-value**.
+- **Window 8 is a partial month** (n=285 vs ~1,200) — its +0.86pp carries little weight.
+
+This is the one claim in this document that stands without a hedge: `support_bounce` beat a
+random entry on the same stock in nine consecutive periods, including flat and falling ones,
+at ~1,200 trades per window.
+
 ### What shipped from this (2026-07-30)
 Three changes, all driven by the benchmark rather than absolute expectancy.
 
@@ -569,8 +640,8 @@ the same table so the tab and the card tag can never disagree. Signals shows one
 
 | Lane | Intervals | Horizon | Live | Validated |
 |---|---|---|---|---|
-| Investment | `1wk` | ~10 weeks | ⚠️ | +1.6% absolute but **−0.14pp vs random** — drift |
-| Swing | `1d` | ~6 days | ✅ | +0.3% absolute, **+0.09pp vs random** |
+| Investment | `1wk` | ~10 weeks | ✅ | gated to `support_bounce` **+2.55pp**; ungated the lane is **−0.14pp** |
+| Swing | `1d` | ~6 days | ✅ | gated: `support_bounce` **+0.48pp vs random, 9/9 windows** |
 | BTST | `btst` | next day | ✅ | own detector + next-day grading |
 | Intraday | `1h` `15m` `5m` | intra-session | ❌ | **swept and rejected** — see below |
 | Scalping | `1m` | minutes | ❌ | **swept and rejected** — see below |

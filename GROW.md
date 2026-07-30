@@ -61,9 +61,14 @@ and the per-pattern train→OOS expectancy correlation jumped from +0.03 to **+0
     targets `1M` (daily bars, `viewBars: 21`), which still fetches 1y so indicators warm up but
     shows only the last month. `1d` → `6M` for the same reason (daily bars, `viewBars: 126`,
     fetching 2y): a ~10-day swing needs enough history to show the level `support_bounce` is
-    testing, but not a full year of it. ⚠️ This mapping has **no test** —
-    `growData.js` imports `googleDrive`/`priceService` and will not load under node, so it is
-    verified by inspection only.
+    testing, but not a full year of it. **`TIMEFRAMES`/`INTERVAL_TF` live in
+    `utils/grow/timeframes.js`** — extracted from `growData.js` purely so they are testable:
+    `growData` imports `googleDrive`/`priceService` and cannot load under node, which is why
+    this mapping went unguarded long enough for the `btst` bug to ship. `growData` re-exports
+    them, so no call site changed. `timeframes.test.js` asserts every scan interval resolves to
+    a real tab **at the matching bar size**, that `btst` opens on ≤ 40 bars, and that the
+    intraday flag agrees with the bar size. Both failure modes were confirmed to fail the test
+    before it was committed.
   A **Chart editor** modal toggles indicators from a registry
   (`src/utils/grow/chartIndicators.js`): MA 20/50, MA 200, Bollinger, VWAP,
   Supertrend, Ichimoku (price pane) and RSI, MACD, Stochastic, ADX, ATR, OBV, Volume
@@ -429,6 +434,10 @@ All interval-aware, defaulting to `1d`.
 ---
 
 ## Tests (no network, deterministic)
+- `src/utils/grow/timeframes.test.js` — chart timeframe registry and the Signals→Charts
+  deep-link map: unique keys, every `INTERVAL_TF` target exists and uses the matching bar
+  size, `btst` opens on a short window, `viewBars` never exceeds what the fetched range can
+  supply.
 - `pybrain/`: `python test_engine.py` · `python test_backtest.py` · `python test_bhavcopy.py`
   · `python validate.py` (live parity vs JS).
 - JS: `node src/utils/grow/signals/signals.test.js` · `node src/utils/grow/chartIndicators.test.js`.

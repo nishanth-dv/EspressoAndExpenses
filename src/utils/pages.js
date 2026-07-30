@@ -34,6 +34,10 @@ export const APP_PAGES = [
     icon: "fa-seedling",
     mandatory: false,
     blurb: "Portfolio, SIPs, returns and allocation.",
+    tabs: [
+      { key: "overview", label: "Overview", icon: "fa-chart-simple" },
+      { key: "portfolio", label: "Portfolio", icon: "fa-layer-group" },
+    ],
   },
   {
     key: "subscriptions",
@@ -52,6 +56,12 @@ export const APP_PAGES = [
     icon: "fa-scale-balanced",
     mandatory: false,
     blurb: "Cards, EMIs, dues and obligations.",
+    tabs: [
+      { key: "overview", label: "Overview", icon: "fa-gauge-high" },
+      { key: "cards", label: "Cards", icon: "fa-credit-card" },
+      { key: "commitments", label: "Commitments", icon: "fa-building-columns" },
+      { key: "lendings", label: "Lendings", icon: "fa-handshake" },
+    ],
   },
   {
     key: "advisory",
@@ -61,6 +71,38 @@ export const APP_PAGES = [
     mandatory: false,
     hideFromNav: true,
     blurb: "Investment insights and recommendations.",
+    tabs: [
+      {
+        key: "understand",
+        label: "Understand",
+        icon: "fa-compass",
+        route: "/Advisory/understand",
+      },
+      {
+        key: "review",
+        label: "Review",
+        icon: "fa-magnifying-glass-chart",
+        route: "/Advisory/review",
+      },
+      {
+        key: "actions",
+        label: "Actions",
+        icon: "fa-list-check",
+        route: "/Advisory/actions",
+      },
+      {
+        key: "ask",
+        label: "Ask",
+        icon: "fa-comments",
+        route: "/Advisory/ask",
+      },
+      {
+        key: "grow",
+        label: "Grow",
+        icon: "fa-arrow-trend-up",
+        route: "/Advisory/grow",
+      },
+    ],
   },
 ];
 

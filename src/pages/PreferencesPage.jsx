@@ -33,6 +33,7 @@ import InvestmentTypesPanel from "../components/InvestmentTypesPanel";
 import SubscriptionTypesPanel from "../components/SubscriptionTypesPanel";
 import NotificationsPanel from "../components/NotificationsPanel";
 import PagesPanel from "../components/PagesPanel";
+import ShortcutsManager from "../components/ShortcutsManager";
 import BackupPanel from "../components/BackupPanel";
 import { dbEnabled, currentEmail } from "../utils/storage/allowlist";
 import { getPage } from "../utils/pages";
@@ -83,6 +84,11 @@ const SECTION_META = {
     cat: "general",
     title: "Appearance",
     kw: "theme dark light glass classic skin colour color appearance display field style chips dropdown one tap pick quick clicks pills",
+  },
+  shortcuts: {
+    cat: "general",
+    title: "Shortcuts",
+    kw: "shortcut shortcuts quick access jump launcher actions button entry point tab page navigate fewer clicks favourites favorites pin",
   },
   voice: { cat: "general", title: "Voice add", kw: "voice microphone speech add dictate" },
   autoCapture: {
@@ -921,6 +927,10 @@ const PreferencesPage = () => {
   const actionStyle = useSelector(
     (state) =>
       state.transactions.transactionData?.preferences?.actionStyle ?? "docked",
+  );
+  const shortcutCount = useSelector(
+    (state) =>
+      (state.transactions.transactionData?.preferences?.shortcuts ?? []).length,
   );
   const notificationsEnabled = useSelector(
     (state) =>
@@ -1784,6 +1794,21 @@ const PreferencesPage = () => {
             <span className="field-style-desc">One button, all actions</span>
           </button>
         </div>
+      </PrefSection>
+
+      <PrefSection
+        visible={sectionVisible("shortcuts")}
+        id="shortcuts"
+        title="Shortcuts"
+        summary={
+          shortcutCount === 0
+            ? "None"
+            : `${shortcutCount} in the Actions button`
+        }
+        expanded={isOpen("shortcuts")}
+        onToggle={toggleSection}
+      >
+        <ShortcutsManager />
       </PrefSection>
 
       <PrefSection

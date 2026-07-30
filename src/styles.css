@@ -707,41 +707,8 @@ textarea {
   border-top: 1px solid var(--surface-border);
 }
 
-.sc-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 12px;
-  border: 1px solid var(--surface-border);
-  border-radius: 999px;
-  background: var(--surface-bg);
-  color: var(--text-secondary);
-  font-family: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  box-shadow: var(--levitate-shadow);
-  transition: background 0.14s ease, color 0.14s ease, border-color 0.14s ease;
-}
-
-.sc-chip i {
+.sc-chips .pref-zone-tab i {
   font-size: 11px;
-}
-
-.sc-chip:hover {
-  color: var(--text-primary);
-  border-color: var(--surface-border-open);
-}
-
-.sc-chip--active {
-  background: var(--bar-bg);
-  border-color: var(--bar-bg);
-  color: var(--bar-text);
-}
-
-.sc-chip--tab {
-  font-size: 12px;
-  padding: 6px 11px;
 }
 
 .sc-add-foot {

@@ -3183,6 +3183,13 @@ const InvestmentPage = () => {
     if (highlightId || ledgerParam) setPageTab("portfolio");
   }, [highlightId, ledgerParam]);
 
+  useEffect(() => {
+    const param = (searchParams.get("tab") ?? "").toLowerCase();
+    if (param !== "overview" && param !== "portfolio") return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setPageTab(param);
+  }, [searchParams]);
+
   const sortedInvestments = useMemo(() => {
     // Group unit-type investments by type+ticker (or type+name if no ticker)
     const grouped = new Map();

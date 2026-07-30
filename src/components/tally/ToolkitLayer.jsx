@@ -4,6 +4,8 @@ import { useSelector } from "react-redux";
 import { motion, AnimatePresence } from "framer-motion";
 import { useTally } from "../../context/TallyContext";
 import { useToolkitTools } from "../../hooks/useToolkitTools";
+import { useShortcuts } from "../../hooks/useShortcuts";
+import ShortcutsPanel, { ShortcutsTrigger } from "../ShortcutsPanel";
 import NotesDrawer from "../notes/NotesDrawer";
 import CalendarModal from "../calendar/CalendarModal";
 import "../../styles/notes.css";
@@ -20,22 +22,34 @@ export default function ToolkitLayer() {
   const { recording, reviewOpen } = useTally();
   const { pathname } = useLocation();
   const tools = useToolkitTools();
+  const shortcuts = useShortcuts();
   const actionStyle = useSelector(
     (s) => s.transactions.transactionData?.preferences?.actionStyle ?? "docked",
   );
   const floating = actionStyle === "floating";
   const [menuOpen, setMenuOpen] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
   const fabRef = useRef(null);
   const menuRef = useRef(null);
 
   const routeOk = !/^\/(Preferences|Admin)/i.test(pathname);
   const visible =
-    !floating && routeOk && tools.length > 0 && !recording && !reviewOpen;
-  const multi = tools.length > 1;
+    !floating &&
+    routeOk &&
+    tools.length + shortcuts.length > 0 &&
+    !recording &&
+    !reviewOpen;
+  const multi = tools.length + shortcuts.length > 1;
 
   useEffect(() => {
     if (!visible) setMenuOpen(false);
   }, [visible]);
+
+  useEffect(() => {
+    if (menuOpen) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setShowShortcuts(false);
+  }, [menuOpen]);
 
   useEffect(() => {
     if (!menuOpen) return undefined;
@@ -60,7 +74,7 @@ export default function ToolkitLayer() {
       setMenuOpen((o) => !o);
       return;
     }
-    tools[0]?.run();
+    (tools[0] ?? shortcuts[0])?.run();
   };
 
   return (
@@ -76,6 +90,17 @@ export default function ToolkitLayer() {
             transition={POP}
             role="menu"
           >
+            {showShortcuts ? (
+              <ShortcutsPanel
+                shortcuts={shortcuts}
+                onBack={() => setShowShortcuts(false)}
+                onRun={(run) => {
+                  setMenuOpen(false);
+                  run?.();
+                }}
+              />
+            ) : (
+              <>
             {tools.map((t) => (
               <button
                 key={t.key}
@@ -96,6 +121,17 @@ export default function ToolkitLayer() {
                 </span>
               </button>
             ))}
+
+            {shortcuts.length > 0 && tools.length > 0 && (
+              <div className="al-divider" />
+            )}
+
+            <ShortcutsTrigger
+              count={shortcuts.length}
+              onOpen={() => setShowShortcuts(true)}
+            />
+              </>
+            )}
           </motion.div>
         )}
       </AnimatePresence>

@@ -137,6 +137,59 @@
   color: #d4a35a;
 }
 
+.al-shortcut-icon {
+  color: var(--text-secondary);
+}
+
+.al-item--shortcut .toolkit-menu-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.al-shortcut-jump {
+  margin-left: auto;
+  padding-left: 8px;
+  font-size: 10px;
+  color: var(--text-label);
+}
+
+.al-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 4px 6px;
+  margin-bottom: 2px;
+  border-bottom: 1px solid var(--surface-border-open);
+}
+
+.al-back-btn {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 1px solid var(--surface-border);
+  border-radius: 8px;
+  background: var(--surface-bg);
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.14s ease, color 0.14s ease;
+}
+
+.al-back-btn:hover {
+  background: var(--surface-active);
+  color: var(--text-primary);
+}
+
+.al-panel-title {
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text-primary);
+}
+
 /* ── Notes modal ──────────────────────────────────────── */
 /* Rendered inside the shared Modal — it supplies the backdrop, centred panel,
    title bar and close button; these just lay out the notes content within it. */

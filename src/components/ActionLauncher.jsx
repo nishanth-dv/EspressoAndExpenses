@@ -3,6 +3,8 @@ import { useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { useTally } from "../context/TallyContext";
 import { useToolkitTools } from "../hooks/useToolkitTools";
+import { useShortcuts } from "../hooks/useShortcuts";
+import ShortcutsPanel, { ShortcutsTrigger } from "./ShortcutsPanel";
 
 const POP = { duration: 0.2, ease: [0.25, 0.46, 0.45, 0.94] };
 
@@ -36,18 +38,27 @@ export default function ActionLauncher({ addActions = [], driveReady = true }) {
   const { recording, reviewOpen } = useTally();
   const { pathname } = useLocation();
   const tools = useToolkitTools();
+  const shortcuts = useShortcuts();
   const [open, setOpen] = useState(false);
+  const [showShortcuts, setShowShortcuts] = useState(false);
   const fabRef = useRef(null);
   const menuRef = useRef(null);
 
   const routeOk = !/^\/(Preferences|Admin)/i.test(pathname);
-  const hasContent = addActions.length > 0 || tools.length > 0;
+  const hasContent =
+    addActions.length > 0 || tools.length > 0 || shortcuts.length > 0;
   const visible = routeOk && hasContent && !recording && !reviewOpen;
   const hasAdd = addActions.length > 0;
 
   useEffect(() => {
     if (!visible) setOpen(false);
   }, [visible]);
+
+  useEffect(() => {
+    if (open) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setShowShortcuts(false);
+  }, [open]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -88,6 +99,15 @@ export default function ActionLauncher({ addActions = [], driveReady = true }) {
             exit="exit"
             role="menu"
           >
+            {showShortcuts ? (
+              <ShortcutsPanel
+                shortcuts={shortcuts}
+                variants={ITEM_VARIANTS}
+                onBack={() => setShowShortcuts(false)}
+                onRun={runItem}
+              />
+            ) : (
+              <>
             {addActions.map((a) => {
               const locked = a.needsDrive && !driveReady;
               return (
@@ -148,6 +168,18 @@ export default function ActionLauncher({ addActions = [], driveReady = true }) {
                 </span>
               </motion.button>
             ))}
+
+            {shortcuts.length > 0 && (addActions.length > 0 || tools.length > 0) && (
+              <motion.div variants={ITEM_VARIANTS} className="al-divider" />
+            )}
+
+            <ShortcutsTrigger
+              count={shortcuts.length}
+              variants={ITEM_VARIANTS}
+              onOpen={() => setShowShortcuts(true)}
+            />
+              </>
+            )}
           </motion.div>
         )}
       </AnimatePresence>

@@ -2470,9 +2470,21 @@ const SolvencyPage = () => {
       setActiveTab("Cards");
       setHighlightCardId(id);
     }
-    const t = setTimeout(() => setSearchParams({}, { replace: true }), 3500);
+    const t = setTimeout(() => {
+      const tab = searchParams.get("tab");
+      setSearchParams(tab ? { tab } : {}, { replace: true });
+    }, 3500);
     return () => clearTimeout(t);
   }, [searchParams, setSearchParams]);
+
+  useEffect(() => {
+    const param = (searchParams.get("tab") ?? "").toLowerCase();
+    if (!param) return;
+    const match = TABS.find((t) => t.toLowerCase() === param);
+    if (!match) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setActiveTab(match);
+  }, [searchParams]);
 
   const handleEmiBadgeClick = (commitmentId) => {
     setHighlightCommitmentId(commitmentId);

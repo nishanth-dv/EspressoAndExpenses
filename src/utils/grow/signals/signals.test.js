@@ -353,6 +353,37 @@ for (const s of rep.signals) {
 
 console.log("ok — invariants: unique ids, empty-safe, bearish/loss grade, band sums");
 
+const RCTX = { symbol: "TEST.NS", interval: "5m", timeframe: "1D", includeSuppressed: true };
+const relOf = (ctx) => runSignals(candles, { ...RCTX, ...ctx }).signals.find((s) => s.type === "bullish_engulfing");
+const relAuto = relOf({});
+const relHi = relOf({ reliabilities: { bullish_engulfing: 0.95 } });
+const relLo = relOf({ reliabilities: { bullish_engulfing: 0.3 } });
+const relMap = relOf({ reliabilities: new Map([["bullish_engulfing", 0.95]]) });
+const relEmpty = relOf({ reliabilities: {} });
+
+assert(relAuto && relHi && relLo && relMap && relEmpty, "the fixture signal survives every reliability form");
+assert(
+  relHi.confidence > relLo.confidence,
+  "a supplied reliability must move confidence — JS ignored ctx.reliabilities entirely until 2026-07-30",
+);
+assert.strictEqual(relMap.confidence, relHi.confidence, "a Map and a plain object are accepted identically");
+assert.strictEqual(relHi.factors.baseReliability, 0.95, "the supplied value reaches factors verbatim");
+assert.strictEqual(
+  relEmpty.factors.baseReliability,
+  0.62,
+  "an EMPTY table means 'no overrides, use the detector prior' — matching Python's `is not None`, not truthiness",
+);
+assert(relEmpty.confidence !== relHi.confidence, "empty is not the same as supplied");
+assert.strictEqual(
+  relOf({ reliabilities: { bullish_engulfing: 0.95 }, interval: "1d" }).confidence,
+  relOf({ interval: "1d" }).confidence,
+  "on a benchmarked interval the override is correctly ignored — measured edge replaced the win rate as the base",
+);
+console.log(
+  `ok — ctx.reliabilities honoured: auto ${relAuto.confidence}, 0.30 -> ${relLo.confidence}, ` +
+    `0.95 -> ${relHi.confidence}, {} -> ${relEmpty.confidence} (detector prior)`,
+);
+
 const scanned = ["1wk", "1d", "btst", "1h", "15m", "5m"];
 for (const iv of scanned) {
   const st = styleFor(iv);

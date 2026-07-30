@@ -19,6 +19,10 @@ function planFor(direction, entry, atr) {
   };
 }
 
+function asReliabilityMap(v) {
+  return v instanceof Map ? v : new Map(Object.entries(v));
+}
+
 function applyCooldown(list, idxByTime, bars) {
   if (!bars) return list;
   const last = new Map();
@@ -59,7 +63,8 @@ export function runSignals(candles, ctx = {}) {
   const piv = pivots(candles, 3, 3);
   const atr = atrSeries(candles, GRADE_DEFAULTS.atrPeriod);
   const raw = detectAll(candles, closes, { rsi, piv });
-  const reliability = calibrateReliabilities(raw, candles, ctx.grade);
+  const reliability =
+    ctx.reliabilities != null ? asReliabilityMap(ctx.reliabilities) : calibrateReliabilities(raw, candles, ctx.grade);
 
   const idxByTime = new Map();
   candles.forEach((c, i) => idxByTime.set(c.time, i));

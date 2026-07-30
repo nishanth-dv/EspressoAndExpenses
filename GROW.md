@@ -772,7 +772,16 @@ benchmarked type — it now only affects `btst` and intraday. `batch.py` therefo
 `pooled_reliabilities()` pass entirely** when the scan interval has an `EDGE_VS_RANDOM` table,
 printing `reliabilities: skipped — <interval> is benchmarked` instead of a 16-entry dict nobody
 consumes. Verified dead before removing: the same symbol scored **66 with and without** the
-pass. (Note `run_signals` in JS never read `ctx.reliabilities` at all — only Python did.) And **signal volume on 1d and
+pass.
+
+**`ctx.reliabilities` parity (closed 2026-07-30).** Python honoured the flag; **JS ignored it
+entirely** and always ran its own per-symbol `calibrateReliabilities`. So the two engines
+disagreed on the base term for any unbenchmarked interval whenever a caller supplied a pooled
+table. JS now accepts it, taking a plain object (the JSON contract's form) or a `Map`, and uses
+`!= null` to match Python's `is not None` — so **an empty table means "no overrides, use the
+detector prior", not "recalibrate"**, which is exactly what `batch.py` relies on. Both engines
+now return `auto 69 · 0.30 → 37 · 0.95 → 100 · {} → 69` on the shared fixture, asserted in both
+suites. And **signal volume on 1d and
 1wk drops sharply**, since six of eight detectors are gated off. That is the intended
 trade (2.6× the edge) but it makes the category filter chips near-pointless on those lanes.
 

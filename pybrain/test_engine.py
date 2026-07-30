@@ -91,6 +91,25 @@ rep_hi = run_signals(candles, {"symbol": "TEST.NS", "interval": "1d", "timeframe
 be_hi = next(s for s in rep_hi["signals"] if s["type"] == "bullish_engulfing")
 assert be_hi["confidence"] == be["confidence"], "measured-edge scoring ignores the win-rate override (edge replaced it as the base)"
 
+_RCTX = {"symbol": "TEST.NS", "interval": "5m", "timeframe": "1D", "includeSuppressed": True}
+
+
+def _rel(**kw):
+    rep_ = run_signals(candles, {**_RCTX, **kw})
+    return next(s for s in rep_["signals"] if s["type"] == "bullish_engulfing")
+
+
+_auto = _rel()
+_hi = _rel(reliabilities={"bullish_engulfing": 0.95})
+_lo = _rel(reliabilities={"bullish_engulfing": 0.3})
+_empty = _rel(reliabilities={})
+assert _hi["confidence"] > _lo["confidence"], "a supplied reliability must move confidence on an unbenchmarked interval"
+assert _hi["factors"]["baseReliability"] == 0.95, "the supplied value reaches factors verbatim"
+assert _empty["factors"]["baseReliability"] == 0.62, "an empty table means 'no overrides, use the detector prior'"
+assert _empty["confidence"] != _hi["confidence"], "empty is not the same as supplied"
+print(f"ok — ctx reliabilities: auto {_auto['confidence']}, 0.30 -> {_lo['confidence']}, "
+      f"0.95 -> {_hi['confidence']}, {{}} -> {_empty['confidence']} (detector prior)")
+
 from engine import beats_random, edge_base, band as band_of, EDGE_VS_RANDOM as EDGE_VS_RANDOM_T
 assert beats_random("support_bounce", "1d") and beats_random("rsi_oversold", "1d"), "1d keeps the two validated detectors"
 assert not beats_random("breakout", "1d"), "breakout picks worse days than chance on 1d"

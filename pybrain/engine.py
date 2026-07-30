@@ -12,8 +12,9 @@ SUPPRESSED_TYPES = {
 WEIGHTS = {"strength": 3, "volume": 4}
 GRADE_DEFAULTS = {"horizon": 10, "target": 0.04, "stop": 0.03, "atrPeriod": 14, "atrTarget": 2, "atrStop": 1.5, "costBps": 15}
 MEANING = (
-    "Confidence is our estimated chance this setup reaches its target before its stop — "
-    "from the pattern's tested win rate, plus its strength and volume. An estimate, not a guarantee."
+    "Confidence is built from how far this pattern beat a random entry on the same stock in "
+    "out-of-sample testing — not from how often it wins. A high win rate on a stock that was "
+    "rising anyway is worth nothing, so the score measures only the part the pattern itself added."
 )
 
 
@@ -395,10 +396,47 @@ def detect_all(candles, closes, rsi, piv):
     )
 
 
+EDGE_FLOOR = 0.2
+
+EDGE_VS_RANDOM = {
+    "1d": {
+        "support_bounce": 0.35, "rsi_oversold": 0.26, "hammer": 0.12, "double_bottom": 0.04,
+        "bullish_engulfing": 0.01, "morning_star": -0.02, "breakout": -0.12, "inverse_head_shoulders": -0.28,
+    },
+    "1wk": {
+        "support_bounce": 2.55, "bullish_engulfing": -0.91, "hammer": -1.09,
+        "morning_star": -1.94, "breakout": -2.22,
+    },
+}
+
+
+def edge_for(t, interval):
+    table = EDGE_VS_RANDOM.get(interval)
+    if table is None:
+        return None
+    return table.get(t)
+
+
+def beats_random(t, interval):
+    table = EDGE_VS_RANDOM.get(interval)
+    if table is None:
+        return True
+    e = table.get(t)
+    return e is not None and e >= EDGE_FLOOR
+
+
+def edge_base(edge):
+    if edge is None:
+        return None
+    if edge <= 0:
+        return 0.0
+    return edge / (edge + EDGE_FLOOR)
+
+
 def band(s):
-    if s >= 45:
+    if s >= 75:
         return "high"
-    if s >= 40:
+    if s >= 55:
         return "moderate"
     return "low"
 
@@ -407,12 +445,14 @@ def breakdown_signal(f):
     base_rel = f.get("baseReliability", 0.4)
     strength = f.get("signalStrength", 0.5)
     volume = f.get("volumeConfirm", 0)
+    eb = edge_base(f.get("edgeVsRandom"))
+    base = base_rel if eb is None else eb
     rows = [
-        {"label": "Base win rate", "points": round(base_rel * 100)},
+        {"label": "Base win rate" if eb is None else "Edge over random", "points": round(base * 100)},
         {"label": "Strength", "points": round(strength * WEIGHTS["strength"])},
         {"label": "Volume confirmation", "points": round(volume * WEIGHTS["volume"])},
     ]
-    p = max(0.0, min(1.0, base_rel + strength * WEIGHTS["strength"] / 100 + volume * WEIGHTS["volume"] / 100))
+    p = max(0.0, min(1.0, base + strength * WEIGHTS["strength"] / 100 + volume * WEIGHTS["volume"] / 100))
     total = round(p * 100)
     summed = sum(r["points"] for r in rows)
     rows[-1]["points"] += total - summed
@@ -621,7 +661,7 @@ def run_signals(candles, ctx=None):
         confluence = len(cluster) - 1
         idx = idx_by_time.get(r["time"], last)
         recency = last - idx
-        factors = {**r["factors"], "baseReliability": reliability.get(r["type"], r["factors"]["baseReliability"]), "confluence": confluence, "recencyBars": recency}
+        factors = {**r["factors"], "baseReliability": reliability.get(r["type"], r["factors"]["baseReliability"]), "edgeVsRandom": edge_for(r["type"], interval), "confluence": confluence, "recencyBars": recency}
         scored = with_signal_confidence({**r, "id": signal_id(symbol, interval, r["type"], r["time"]), "factors": factors})
         scored["plan"] = plan_for(scored["direction"], scored["price"], atr[idx], 1 if is_btst else None)
         scored["tradeType"] = "BTST" if is_btst else trade_type(interval)
@@ -632,7 +672,7 @@ def run_signals(candles, ctx=None):
         uniq.setdefault(s["id"], s)
     signals = list(uniq.values())
     if not ctx.get("includeSuppressed"):
-        signals = [s for s in signals if s["type"] not in SUPPRESSED_TYPES]
+        signals = [s for s in signals if s["type"] not in SUPPRESSED_TYPES and beats_random(s["type"], interval)]
     if ctx.get("trendFilter"):
         tp = ctx.get("trendPeriod", 50)
         kept = []

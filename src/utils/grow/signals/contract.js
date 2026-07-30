@@ -22,6 +22,40 @@ export const SUPPRESSED_TYPES = new Set([
   "bearish_engulfing",
 ]);
 
+export const EDGE_FLOOR = 0.2;
+
+export const EDGE_VS_RANDOM = {
+  "1d": {
+    support_bounce: 0.35,
+    rsi_oversold: 0.26,
+    hammer: 0.12,
+    double_bottom: 0.04,
+    bullish_engulfing: 0.01,
+    morning_star: -0.02,
+    breakout: -0.12,
+    inverse_head_shoulders: -0.28,
+  },
+  "1wk": {
+    support_bounce: 2.55,
+    bullish_engulfing: -0.91,
+    hammer: -1.09,
+    morning_star: -1.94,
+    breakout: -2.22,
+  },
+};
+
+export function edgeFor(type, interval) {
+  const table = EDGE_VS_RANDOM[interval];
+  if (!table) return null;
+  return table[type] ?? null;
+}
+
+export function beatsRandom(type, interval) {
+  const table = EDGE_VS_RANDOM[interval];
+  if (!table) return true;
+  return (table[type] ?? -Infinity) >= EDGE_FLOOR;
+}
+
 export const CATEGORY_META = {
   candlestick: { label: "Candlestick", icon: "fa-chart-column" },
   indicator: { label: "Indicator", icon: "fa-wave-square" },

@@ -1,25 +1,41 @@
+import { EDGE_FLOOR } from "./contract.js";
+
 const MEANING =
-  "Confidence is our estimated chance this setup reaches its target before its stop — from the pattern's tested win rate, plus its strength and volume. An estimate, not a guarantee.";
+  "Confidence is built from how far this pattern beat a random entry on the same stock in out-of-sample testing — not from how often it wins. A high win rate on a stock that was rising anyway is worth nothing, so the score measures only the part the pattern itself added.";
 
 export const WEIGHTS = { strength: 3, volume: 4 };
 
 const rnd = Math.round;
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 
+export function edgeBase(edge) {
+  if (edge == null) return null;
+  if (edge <= 0) return 0;
+  return edge / (edge + EDGE_FLOOR);
+}
+
 export function band(s) {
-  if (s >= 45) return "high";
-  if (s >= 40) return "moderate";
+  if (s >= 75) return "high";
+  if (s >= 55) return "moderate";
   return "low";
 }
 
 export function breakdownSignal(factors = {}) {
-  const { baseReliability = 0.4, signalStrength = 0.5, volumeConfirm = 0 } = factors;
+  const { baseReliability = 0.4, signalStrength = 0.5, volumeConfirm = 0, edgeVsRandom = null } = factors;
+  const eb = edgeBase(edgeVsRandom);
+  const base = eb == null ? baseReliability : eb;
   const rows = [
-    {
-      label: "Base win rate",
-      points: rnd(baseReliability * 100),
-      hint: `this pattern reached target before stop ~${Math.round(baseReliability * 100)}% of the time in testing`,
-    },
+    eb == null
+      ? {
+          label: "Base win rate",
+          points: rnd(base * 100),
+          hint: `not yet benchmarked at this interval — falls back to a ~${Math.round(base * 100)}% tested win rate`,
+        }
+      : {
+          label: "Edge over random",
+          points: rnd(base * 100),
+          hint: `beat a random entry on the same stock by ${edgeVsRandom.toFixed(2)} percentage points per trade in testing`,
+        },
     {
       label: "Strength",
       points: rnd(signalStrength * WEIGHTS.strength),
@@ -31,11 +47,7 @@ export function breakdownSignal(factors = {}) {
       hint: volumeConfirm >= 0.6 ? "backed by above-average volume" : "volume is unremarkable",
     },
   ];
-  const p = clamp(
-    baseReliability + (signalStrength * WEIGHTS.strength) / 100 + (volumeConfirm * WEIGHTS.volume) / 100,
-    0,
-    1,
-  );
+  const p = clamp(base + (signalStrength * WEIGHTS.strength) / 100 + (volumeConfirm * WEIGHTS.volume) / 100, 0, 1);
   const total = rnd(p * 100);
   const summed = rows.reduce((s, x) => s + x.points, 0);
   rows[rows.length - 1].points += total - summed;
@@ -44,14 +56,17 @@ export function breakdownSignal(factors = {}) {
 
 export function reasonForSignal(factors = {}, total = 0) {
   const b = band(total);
+  const { baseReliability = 0.4, signalStrength = 0.5, volumeConfirm = 0, edgeVsRandom = null } = factors;
   const lead =
     b === "high"
-      ? "Top bucket over 5 years of out-of-sample testing (38.8% hit, +0.7%/trade) — a thin edge, not a likely win."
+      ? "Clearly beat a random entry on the same stock in out-of-sample testing — the strongest evidence this engine has."
       : b === "moderate"
-        ? "Middling bucket (~34% hit, +0.3%/trade in testing); weigh it with your own read."
-        : "Weakest bucket — treat it as a prompt, not a trade.";
-  const { baseReliability = 0.4, signalStrength = 0.5, volumeConfirm = 0 } = factors;
-  const why = [`this pattern reached target first about ${Math.round(baseReliability * 100)}% of the time in testing`];
+        ? "Beat a random entry, but by a thin margin — a prompt, not a conviction trade."
+        : "Little or no measured edge over buying this stock on any other day.";
+  const why =
+    edgeVsRandom == null
+      ? [`this pattern reached target first about ${Math.round(baseReliability * 100)}% of the time in testing`]
+      : [`it added ${edgeVsRandom.toFixed(2)} percentage points per trade over a random entry on the same stock`];
   why.push(
     signalStrength >= 0.7 ? "it is strongly formed" : signalStrength <= 0.3 ? "it is faintly formed" : "it is moderately formed",
   );

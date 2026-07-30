@@ -26,6 +26,13 @@ Long-only nearly doubles out-of-sample expectancy over the baseline **and** made
 whole stack coherent: confidence became monotonic OOS (moderate +1.4% > low +1.2%)
 and the per-pattern train→OOS expectancy correlation jumped from +0.03 to **+0.57**.
 
+> ⚠️ **Read every expectancy figure in this file against the benchmark below.** Until
+> 2026-07-29 nothing here was compared to a random entry, so all of these numbers are
+> **absolute returns that include market drift**. Measured on 1d/5y, roughly **half** of
+> the headline expectancy is drift and the pattern edge over a random entry on the same
+> symbol is **~+0.09pp/trade**. The lanes are still positive — just far thinner than the
+> tables imply. See *Benchmarking — edge over random entry*.
+
 ---
 
 ## Surfaces (frontend)
@@ -389,6 +396,171 @@ The +1.2% from the single bull year was regime-flattered; **+0.4% is the durable
 regime-robust number**, holding because the edge is mean-reversion at levels (works in
 any trend). Spearman train→OOS = +0.60 over 5 years.
 
+## Benchmarking — edge over random entry (2026-07-29)
+Every expectancy number in this file predates any benchmark. "The signals return +0.3%
+per trade" was never compared against **what an arbitrary entry on the same stock would
+have returned over the same holding period**. On a market that trended up for five years,
+that omission flatters everything.
+
+The control: for each graded signal, also grade a **random entry day** on the *same
+symbol*, in the *same test window*, with the *same exit config*. 1d/5y, 148 symbols:
+
+| | n | Expectancy |
+|---|---|---|
+| Signal entries | 9,839 | +0.187% |
+| **Random entries** | **29,227** | **+0.099%** |
+| **Edge over random** | | **+0.088pp/trade** |
+
+**About half of the Swing lane's return is drift.** The edge is real — it replicated at
++0.084pp on an independent random draw — but it is ~0.09pp, not ~0.19pp, and certainly
+not the +1.2% in the TL;DR table (which is a different, older config on a bull window).
+
+### It also invalidated the exit sweep
+An exit grid (28 configs, target × stop × horizon) appeared to find **+0.49pp** by widening
+targets and loosening stops. Extending the grid exposed it: the best cell was
+**no target, no stop, hold 60 bars → +5.00%/trade** — i.e. buy-and-hold. Expectancy rose
+monotonically as risk management was *removed*, while the worst trade went **−13.1% →
+−50.6%**. The grid was rewarding market exposure, not better exits. **Any exit change must
+be measured against a random entry held for the same duration**, or it is just a beta dial.
+
+### And it killed both feature candidates
+A univariate screen over 8 features found two with shape — `atr_pct` (top deciles +1.09%)
+and `dist_200dma` (U-shaped, +0.78%/+0.79% at the extremes). Both **evaporated** once
+random entries were bucketed by the same feature:
+
+| Feature | Decile | Signal | Random | Edge |
+|---|---|---|---|---|
+| `atr_pct` | D9 | +1.09% | +1.02% | +0.07pp |
+| `atr_pct` | D10 | +0.95% | +0.72% | +0.22pp |
+| `dist_200dma` | D1 | +0.78% | +0.55% | +0.24pp |
+| `dist_200dma` | D10 | +0.79% | +0.68% | +0.11pp |
+
+High-ATR names and names far from their 200-DMA are simply **higher beta**. Across all 20
+buckets the edge column scatters between −0.24pp and +0.35pp with no structure — the edge
+is **uniform at ~0.09pp**, not concentrated anywhere we can find. `confidence` itself was
+included as a control and behaved as expected (flat, D1 +0.43% vs D10 +0.46%), confirming
+the screen was not manufacturing structure.
+
+### Per-pattern edge over random — where the edge actually lives
+Pooling all patterns hid the only real structure found so far. Matching each signal with 5
+random entries **on the same symbol**, tagged with that signal's type:
+
+| Pattern | n | Signal | Random | Edge |
+|---|---|---|---|---|
+| **support_bounce** | 3,733 | +0.45% | +0.08% | **+0.37pp** |
+| **rsi_oversold** | 445 | +0.25% | −0.10% | **+0.34pp** |
+| double_bottom | 549 | +0.28% | +0.28% | 0.00pp |
+| hammer | 891 | −0.02% | +0.16% | −0.18pp |
+| bullish_engulfing | 1,398 | −0.07% | +0.11% | −0.18pp |
+| breakout | 1,347 | +0.20% | +0.40% | −0.20pp |
+| morning_star | 1,224 | −0.14% | +0.13% | −0.26pp |
+| inverse_head_shoulders | 292 | −0.09% | +0.31% | −0.40pp |
+
+**Five of eight patterns are worse than a random entry on the same stock.** `breakout` is
+the clearest case: +0.20% absolute looks acceptable, but random entries on those same
+symbols returned +0.40% — it fires on names that were rising anyway and picks *worse* days
+than chance. Keeping only the non-negative types: 4,727 trades, edge **+0.322pp**, ~4× the
+pooled figure.
+
+**Do not act on this table yet.** Two reasons:
+1. Selecting the winners after seeing the results is post-hoc selection on the same 5 years
+   every sweep has used. It is a hypothesis for the holdout, not a validated gate.
+2. **The random baseline itself is noisy.** The overall edge measured +0.084pp, +0.088pp and
+   +0.041pp across three runs differing only in random sampling — a 2× spread. Per-pattern
+   edges at n≈300–1,400 are therefore close to noise. Only `support_bounce` (n=3,733) sits
+   comfortably outside it. Quote these with the sampling error, not as point estimates.
+
+### Holdout validation — the gate survives, on data nothing else touched
+The per-pattern table above is post-hoc selection, so it was tested properly: reliabilities
+trained *without* the final ~250 bars (~12 months), patterns selected on the earlier window
+only, random baselines drawn **within each window separately** so drift is matched, then the
+gate scored once on the untouched window.
+
+| Pattern | select n | select edge | holdout n | holdout edge | sign holds |
+|---|---|---|---|---|---|
+| rsi_oversold | 705 | +0.70pp | 314 | +0.26pp | yes |
+| **support_bounce** | **7,643** | **+0.40pp** | **2,444** | **+0.35pp** | **yes** |
+| breakout | 2,985 | +0.08pp | 906 | −0.12pp | no |
+| double_bottom | 1,195 | +0.07pp | 380 | +0.04pp | yes |
+| inverse_head_shoulders | 558 | +0.01pp | 196 | −0.28pp | no |
+| hammer | 1,960 | −0.00pp | 584 | +0.12pp | no |
+| bullish_engulfing | 2,748 | −0.09pp | 911 | +0.01pp | no |
+| morning_star | 2,571 | −0.10pp | 856 | −0.02pp | yes |
+
+Only 4 of 8 signs agree — but **every flip was a pattern sitting within ±0.1pp of zero on
+the select window**, which is what noise does. The ranking is informative at the extremes
+and meaningless in the middle, so **a gate must use a threshold, not `edge > 0`**: the naive
+version admitted `breakout` and `inverse_head_shoulders` and reached only +0.185pp against
++0.128pp ungated. A ~0.2pp threshold picks `support_bounce` + `rsi_oversold` — weighted
+holdout edge **~+0.34pp, 2.6× ungated**.
+
+**`support_bounce` is the one validated result in this file**: +0.40pp select → +0.35pp
+holdout (n=2,444), and independently +2.55pp in the 1wk lane. Three separate tests, same
+sign, minimal decay. `rsi_oversold` holds its sign but decays (+0.70 → +0.26pp, n=314) —
+suggestive, not established. Everything else is noise or negative.
+
+### What shipped from this (2026-07-30)
+Three changes, all driven by the benchmark rather than absolute expectancy.
+
+**1. A second gate: edge over random.** `SUPPRESSED_TYPES` gates on *negative absolute
+expectancy* — a test `breakout` passes at +0.20% while random on the same names returns
++0.40%. `EDGE_VS_RANDOM` (`signals/contract.js`, mirrored in `engine.py`) now holds the
+measured per-interval edge, and `beatsRandom()` requires **≥ `EDGE_FLOOR` (0.2pp)**:
+
+| Interval | Detectors that survive |
+|---|---|
+| `1d` | `support_bounce`, `rsi_oversold` |
+| `1wk` | `support_bounce` |
+| `btst`, intraday | ungated — no benchmark table exists yet |
+
+At a benchmarked interval, a type that is **absent** from the table is gated out: too few
+samples to measure is *no evidence*, not a pass. That is why `1wk` keeps one detector.
+`includeSuppressed: true` bypasses the gate, so **Charts still draws everything** — only the
+nightly scan and the Signals lanes are filtered.
+
+**2. `confidence` is now built on edge, not win rate.** The base term was
+`baseReliability` — a win rate, which is exactly the quantity that turned out not to matter.
+It is now `edge / (edge + EDGE_FLOOR)`: monotone, saturating, zero for a negative edge, and
+falling back to the old win rate only where no benchmark exists.
+
+| Measured edge | Confidence | Band |
+|---|---|---|
+| −0.12pp (`breakout`, 1d) | 4 | low |
+| +0.26pp (`rsi_oversold`, 1d) | 60 | moderate |
+| +0.35pp (`support_bounce`, 1d) | 67 | moderate |
+| +2.55pp (`support_bounce`, 1wk) | 97 | high |
+
+The score finally says what a user assumes it says: *how much this pattern beat buying the
+same stock on an arbitrary day*. Bands were re-cut to the new scale (**high ≥ 75, moderate
+≥ 55**).
+
+⚠️ **Those cut points are provisional and unvalidated** — the same fragility recorded in the
+1y-vs-5y threshold sweep applies. They were chosen to fit the current edge range, not
+derived from outcomes.
+
+⚠️ **Consequence to watch:** `calibrateReliabilities()` no longer feeds confidence for any
+benchmarked type — it now only affects `btst` and intraday. And **signal volume on 1d and
+1wk drops sharply**, since six of eight detectors are gated off. That is the intended
+trade (2.6× the edge) but it makes the category filter chips near-pointless on those lanes.
+
+### Why this rules out an ML model for now
+The obvious upgrade to the near-degenerate confidence score is a learned per-instance
+model. Three measured reasons not to build one yet:
+
+1. **The label is ~50% drift.** A model trained on these returns learns "hold high-beta
+   names in a rising market" and will validate beautifully while learning nothing about
+   setups. `atr_pct` is exactly the feature it would have seized on.
+2. **No feature-conditional structure exists to learn.** The edge is flat across every
+   bucket of every feature tested. Capacity is not the binding constraint.
+3. **The edge being scored is +0.09pp.** At ~19k OOS trades with a thin, uniform effect,
+   overfitting risk dominates any capacity benefit.
+
+Revisit only after the labels are benchmark-adjusted and at least one feature shows edge
+**over random** — not edge in absolute return. Note the per-pattern table above found in one
+grouping what eight engineered features could not: the discriminating variable is *which
+detector fired*, which the existing per-type reliability machinery already models. A learned
+model would have to beat that, not the pooled average.
+
 ## Trading styles — the lanes (`STYLES` in `signals/contract.js`)
 A trader picks a *style* first, not a bar size. `STYLES` is the single source of truth: each
 lane declares the interval(s) that back it, and `tradeType(interval)` derives its label from
@@ -397,8 +569,8 @@ the same table so the tab and the card tag can never disagree. Signals shows one
 
 | Lane | Intervals | Horizon | Live | Validated |
 |---|---|---|---|---|
-| Investment | `1wk` | ~10 weeks | ✅ | +1.6%/trade OOS, Spearman +0.86 |
-| Swing | `1d` | ~6 days | ✅ | +0.3%/trade OOS, Spearman +0.60 |
+| Investment | `1wk` | ~10 weeks | ⚠️ | +1.6% absolute but **−0.14pp vs random** — drift |
+| Swing | `1d` | ~6 days | ✅ | +0.3% absolute, **+0.09pp vs random** |
 | BTST | `btst` | next day | ✅ | own detector + next-day grading |
 | Intraday | `1h` `15m` `5m` | intra-session | ❌ | **swept and rejected** — see below |
 | Scalping | `1m` | minutes | ❌ | **swept and rejected** — see below |
@@ -408,7 +580,16 @@ offered a `1m` tab that the batch never scanned, so it was permanently empty. A 
 asserts **no live lane points at an interval the batch never scans**, which is exactly the
 defect that shipped unnoticed.
 
-### Investment lane (`1wk`) — validated 2026-07-28
+> ⚠️ **The verdict below was overturned on 2026-07-29.** Benchmarked against a random entry
+> on the same symbol, the 1wk lane returns **signal +2.252% vs random +2.395% — edge
+> −0.144pp**. Holding those stocks for ~10 weeks *at all* beat the signals; the +1.6% is
+> market drift, and this lane holds longest so it was the most exposed. Every check below
+> (Spearman +0.86, monotone terciles, downtrend survival) passed on a lane that trails a
+> coin flip — they measure ranking and consistency, never whether the entry beat chance.
+> The one exception is `support_bounce`: **+4.18% vs +1.64% random, edge +2.55pp** (n=382).
+> Four of the lane's five detectors subtract value. See *Benchmarking — edge over random*.
+
+### Investment lane (`1wk`) — validated 2026-07-28, **overturned 2026-07-29**
 `backtest.py --interval 1wk --walkforward --range 5y`, 288 symbols, 4,210 gated OOS trades:
 
 | | Trades | Hit | Expectancy | Payoff |
@@ -564,6 +745,11 @@ it as a warning chip. **Not a suppression**: the call is still ranked and shown.
 - **The durable edge is ~+0.4%/trade**, not the bull-year +1.2%. Hit rate (~34%) sits
   below break-even, so some of it is held-to-horizon drift — but it survives 5 years incl.
   downtrends, so it is not purely a bull-market artifact.
+- **"Some of it is drift" is now measured, and it is about half.** Against a random entry
+  on the same symbol over the same holding period, the pattern edge is **+0.09pp/trade**
+  (signal +0.187% vs random +0.099%). Absolute expectancy figures in this file are *not*
+  edge — see *Benchmarking — edge over random entry*. Every future claim of improvement
+  must clear the random-entry benchmark, not just zero.
 - **Long-only stays the default** — validated across regimes above. The trend filter is
   retained as the mechanism to re-admit shorts if a sustained downtrend regime warrants it.
 - **Scan still uses Yahoo candles** (delayed POC feed) until the `grow_candles` store fills,

@@ -1,4 +1,4 @@
-import { ENGINE, DIRECTION, signalId, SUPPRESSED_TYPES, tradeType } from "./contract.js";
+import { ENGINE, DIRECTION, signalId, SUPPRESSED_TYPES, tradeType, edgeFor, beatsRandom } from "./contract.js";
 import { rsiSeries, pivots, sma, atrSeries } from "./indicators.js";
 import { detectAll } from "./detectors.js";
 import { withSignalConfidence } from "./confidence.js";
@@ -81,6 +81,7 @@ export function runSignals(candles, ctx = {}) {
       factors: {
         ...r.factors,
         baseReliability: reliability.get(r.type) ?? r.factors.baseReliability,
+        edgeVsRandom: edgeFor(r.type, interval),
         confluence,
         recencyBars,
       },
@@ -97,7 +98,9 @@ export function runSignals(candles, ctx = {}) {
   const byId = new Map();
   for (const s of signals) if (!byId.has(s.id)) byId.set(s.id, s);
   let unique = [...byId.values()];
-  if (!ctx.includeSuppressed) unique = unique.filter((s) => !SUPPRESSED_TYPES.has(s.type));
+  if (!ctx.includeSuppressed) {
+    unique = unique.filter((s) => !SUPPRESSED_TYPES.has(s.type) && beatsRandom(s.type, interval));
+  }
   if (ctx.trendFilter) {
     const tp = ctx.trendPeriod ?? 50;
     unique = unique.filter((s) => {

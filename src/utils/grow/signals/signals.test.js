@@ -2,9 +2,9 @@ import assert from "node:assert";
 import { runSignals } from "./index.js";
 import { gradeSignal, scoreCard } from "./grade.js";
 import { atrSeries } from "./indicators.js";
-import { band as bandOf } from "./confidence.js";
+import { band as bandOf, edgeBase } from "./confidence.js";
 import { symbolBias } from "./bias.js";
-import { SUPPRESSED_TYPES, STYLES, LIVE_STYLES, styleFor, tradeType } from "./contract.js";
+import { SUPPRESSED_TYPES, STYLES, LIVE_STYLES, styleFor, tradeType, beatsRandom } from "./contract.js";
 
 function candle(time, o, h, l, c, v = 1000) {
   return { time, open: o, high: h, low: l, close: c, volume: v };
@@ -53,7 +53,7 @@ const seq = [110, 108, 106, 104, 102, 100, 102, 104, 106, 108, 110, 108, 106, 10
 const w = seq.map((p, k) =>
   candle(t0 + k * DAY, k ? seq[k - 1] : p, p + 0.5, p - 0.5, p, k === 19 ? 3000 : 1000),
 );
-const rep2 = runSignals(w, { symbol: "W.NS", interval: "1d", timeframe: "1Y" });
+const rep2 = runSignals(w, { symbol: "W.NS", interval: "1d", timeframe: "1Y", includeSuppressed: true });
 const db = rep2.signals.find((s) => s.type === "double_bottom");
 assert(db, "expected a double_bottom signal");
 assert.strictEqual(db.fromTime, db.meta.shape[0].time, "double bottom fromTime = shape start (leading point)");
@@ -89,10 +89,30 @@ assert.strictEqual(okDb.time, twin[17].time, "confirms on the first close above 
 
 console.log("ok — twin level tolerance scales with pattern height, not price");
 
-assert.strictEqual(bandOf(45), "high", "top of the scale is the best bucket over 5y OOS (38.8% hit)");
-assert.strictEqual(bandOf(44), "moderate", "44 sits below the high cut");
-assert.strictEqual(bandOf(40), "moderate", "40 is the moderate floor");
-assert.strictEqual(bandOf(39), "low", "below 40 is the weakest bucket");
+assert.strictEqual(bandOf(75), "high", "75+ = clearly beat a random entry");
+assert.strictEqual(bandOf(74), "moderate", "74 sits below the high cut");
+assert.strictEqual(bandOf(55), "moderate", "55 is the moderate floor");
+assert.strictEqual(bandOf(54), "low", "below 55 is little or no measured edge");
+
+assert.strictEqual(edgeBase(null), null, "unmeasured edge falls back to the win rate");
+assert.strictEqual(edgeBase(-0.12), 0, "negative edge scores zero, never negative");
+assert(edgeBase(0.2) === 0.5, "an edge exactly at the floor sits mid-scale");
+assert(edgeBase(2.55) > edgeBase(0.35), "a bigger measured edge always scores higher");
+assert(edgeBase(9999) < 1, "the edge base saturates below 1, never pins");
+
+assert(beatsRandom("support_bounce", "1d") && beatsRandom("rsi_oversold", "1d"), "1d keeps the two validated detectors");
+assert(!beatsRandom("breakout", "1d"), "breakout picks worse days than chance on 1d — gated");
+assert(!beatsRandom("double_bottom", "1d"), "an edge below the floor does not qualify");
+assert(beatsRandom("support_bounce", "1wk") && !beatsRandom("bullish_engulfing", "1wk"), "1wk keeps only support_bounce");
+assert(!beatsRandom("rsi_oversold", "1wk"), "unmeasured at a benchmarked interval = no evidence = gated");
+assert(beatsRandom("anything", "btst"), "an interval with no benchmark table is not gated at all");
+
+const bench = runSignals(candles, { symbol: "TEST.NS", interval: "1d", timeframe: "6M" });
+assert(
+  bench.signals.every((s) => beatsRandom(s.type, "1d")),
+  "a default 1d run emits only detectors that beat a random entry",
+);
+console.log(`ok — edge gate: 1d keeps ${[...new Set(bench.signals.map((s) => s.type))].join(", ") || "nothing"}`);
 
 const zig = [];
 for (let k = 0; k < 160; k++) {
@@ -190,7 +210,7 @@ const ihsC = hsSeq.map((p, k) => {
   const v = 212 - p;
   return candle(t0 + k * DAY, k ? 212 - hsSeq[k - 1] : v, v + 0.5, v - 0.5, v);
 });
-const ihs = runSignals(ihsC, { symbol: "IHS.NS", interval: "1d", timeframe: "1Y" }).signals.find(
+const ihs = runSignals(ihsC, { symbol: "IHS.NS", interval: "1d", timeframe: "1Y", includeSuppressed: true }).signals.find(
   (s) => s.type === "inverse_head_shoulders",
 );
 assert(ihs, "expected an inverse_head_shoulders signal on the mirrored series");

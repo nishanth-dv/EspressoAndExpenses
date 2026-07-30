@@ -89,7 +89,20 @@ assert run_signals([], {"symbol": "X"})["signals"] == [], "empty candles -> no s
 
 rep_hi = run_signals(candles, {"symbol": "TEST.NS", "interval": "1d", "timeframe": "6M", "reliabilities": {"bullish_engulfing": 0.95}, "includeSuppressed": True})
 be_hi = next(s for s in rep_hi["signals"] if s["type"] == "bullish_engulfing")
-assert be_hi["confidence"] > be["confidence"], "reliability override should raise confidence"
+assert be_hi["confidence"] == be["confidence"], "measured-edge scoring ignores the win-rate override (edge replaced it as the base)"
+
+from engine import beats_random, edge_base, band as band_of
+assert beats_random("support_bounce", "1d") and beats_random("rsi_oversold", "1d"), "1d keeps the two validated detectors"
+assert not beats_random("breakout", "1d"), "breakout picks worse days than chance on 1d"
+assert not beats_random("double_bottom", "1d"), "an edge below the floor does not qualify"
+assert beats_random("support_bounce", "1wk") and not beats_random("bullish_engulfing", "1wk"), "1wk keeps only support_bounce"
+assert not beats_random("rsi_oversold", "1wk"), "unmeasured at a benchmarked interval = gated"
+assert beats_random("anything", "btst"), "an interval with no benchmark table is not gated"
+assert edge_base(None) is None and edge_base(-0.12) == 0.0, "no edge / negative edge score nothing"
+assert edge_base(0.2) == 0.5 and edge_base(2.55) > edge_base(0.35) and edge_base(9999) < 1, "edge base is monotone and saturating"
+assert band_of(75) == "high" and band_of(74) == "moderate" and band_of(54) == "low", "bands sit on the edge scale"
+gated_1d = run_signals(candles, {"symbol": "TEST.NS", "interval": "1d", "timeframe": "6M"})
+assert all(beats_random(s["type"], "1d") for s in gated_1d["signals"]), "a default 1d run emits only detectors that beat random"
 
 falling = []
 for k in range(15):

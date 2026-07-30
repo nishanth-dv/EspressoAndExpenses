@@ -7,7 +7,7 @@ import sys
 import time
 import urllib.request
 
-from engine import run_signals, avg_volume, detect_all, pivots, rsi_series, grade_signal, atr_series, btst_signals, symbol_bias
+from engine import run_signals, avg_volume, detect_all, pivots, rsi_series, grade_signal, atr_series, btst_signals, symbol_bias, EDGE_VS_RANDOM
 
 NIFTY200_CSV = "https://niftyindices.com/IndexConstituent/ind_nifty200list.csv"
 BANDRANK = {"high": 2, "moderate": 1, "low": 0}
@@ -357,8 +357,12 @@ def main():
         return
     if mode == "btst" and source != "db":
         enrich_delivery(cache)
-    pooled = pooled_reliabilities(cache, grade_opts=grade_opts, mode=mode)
-    print("pooled reliabilities:", {t: round(r, 2) for t, r in sorted(pooled.items(), key=lambda x: -x[1])})
+    if EDGE_VS_RANDOM.get(scan_interval) is not None:
+        pooled = {}
+        print(f"reliabilities: skipped — {scan_interval} is benchmarked, confidence uses measured edge over random")
+    else:
+        pooled = pooled_reliabilities(cache, grade_opts=grade_opts, mode=mode)
+        print("pooled reliabilities:", {t: round(r, 2) for t, r in sorted(pooled.items(), key=lambda x: -x[1])})
     earnings = {}
     if scan_interval in ("1d", "btst"):
         from bhavcopy import fetch_earnings_calendar

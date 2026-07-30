@@ -768,7 +768,11 @@ same stock on an arbitrary day*. Bands were re-cut to the new scale (**high ≥ 
 derived from outcomes.
 
 ⚠️ **Consequence to watch:** `calibrateReliabilities()` no longer feeds confidence for any
-benchmarked type — it now only affects `btst` and intraday. And **signal volume on 1d and
+benchmarked type — it now only affects `btst` and intraday. `batch.py` therefore **skips the
+`pooled_reliabilities()` pass entirely** when the scan interval has an `EDGE_VS_RANDOM` table,
+printing `reliabilities: skipped — <interval> is benchmarked` instead of a 16-entry dict nobody
+consumes. Verified dead before removing: the same symbol scored **66 with and without** the
+pass. (Note `run_signals` in JS never read `ctx.reliabilities` at all — only Python did.) And **signal volume on 1d and
 1wk drops sharply**, since six of eight detectors are gated off. That is the intended
 trade (2.6× the edge) but it makes the category filter chips near-pointless on those lanes.
 

@@ -13203,3 +13203,36 @@ html[data-skin="glass"] .grow-sec {
     color-mix(in srgb, var(--amount-income) 55%, transparent)
   );
 }
+.grow-sig-intro {
+  margin: 0 0 12px;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  line-height: 1.55;
+  max-width: 68ch;
+}
+.grow-sigflt-cats-lbl {
+  flex: 1 1 100%;
+  display: block;
+  margin-bottom: 2px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+.grow-sigflt-cats-lbl em {
+  display: block;
+  margin-top: 2px;
+  font-style: normal;
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+  font-size: 0.72rem;
+  opacity: 0.85;
+}
+.grow-sec .grow-sigflt {
+  margin-bottom: 0;
+}
+.grow-sec .grow-sigflt--cats {
+  margin-top: 12px;
+}

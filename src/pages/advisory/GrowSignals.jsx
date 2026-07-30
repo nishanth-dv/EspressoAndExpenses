@@ -9,6 +9,8 @@ import { ConfidenceBadge, ConfidenceReveal } from "./ConfidenceControl";
 import TradePlan from "./TradePlan";
 import SignalHistory from "./SignalHistory";
 import SymbolBias from "./SymbolBias";
+import GrowSection from "./GrowSection";
+import TrackStats from "./TrackStats";
 
 const API = import.meta.env.VITE_API_URL ?? "";
 
@@ -121,6 +123,10 @@ export default function GrowSignals() {
         )}
         {stale && <span className="grow-sig-stale">stale</span>}
       </div>
+      <p className="grow-sig-intro">
+        Last night the scanner read every liquid NSE name and kept only the setups whose pattern has beaten a random
+        entry on the same stock in testing. Pick a trading style below — each holds for a different length of time.
+      </p>
 
       {scan?.sentiment && (
         <div className={`grow-sentiment grow-sentiment--${scan.sentiment}`}>
@@ -185,29 +191,17 @@ export default function GrowSignals() {
       </div>
 
       {track.resolved > 0 ? (
-        <div className="grow-score">
-          <div className="grow-score-head">
-            <i className="fa-solid fa-clipboard-check" /> Track record
-            <span className="grow-score-sub">out-of-sample · graded on prices after each scan</span>
+        <GrowSection
+          className="grow-score"
+          icon="fa-clipboard-check"
+          title="How the live calls have actually done"
+          subtitle={`${track.resolved} past ${style.label.toLowerCase()} calls, scored on prices that happened after the scan — not a backtest. These are absolute returns: they include whatever the market did, so treat them as a floor on honesty, not as proof of edge.`}
+        >
+          <TrackStats hitRate={track.hitRate} avgReturn={track.avgReturn} resolved={track.resolved} />
+          <div className="grow-score-sec">
+            Does a higher confidence score actually win more often?
+            <em>Live results, so the bars should fall from high to low if the score means anything.</em>
           </div>
-          <div className="grow-score-hero">
-            <div className="grow-score-stat">
-              <span className="grow-score-val">{Math.round(track.hitRate * 100)}%</span>
-              <span className="grow-score-lbl">hit rate</span>
-            </div>
-            <div className="grow-score-stat">
-              <span className={`grow-score-val ${track.avgReturn >= 0 ? "is-up" : "is-down"}`}>
-                {track.avgReturn >= 0 ? "+" : ""}
-                {(track.avgReturn * 100).toFixed(1)}%
-              </span>
-              <span className="grow-score-lbl">avg return</span>
-            </div>
-            <div className="grow-score-stat">
-              <span className="grow-score-val">{track.resolved}</span>
-              <span className="grow-score-lbl">graded</span>
-            </div>
-          </div>
-          <div className="grow-score-sec">Does confidence predict wins? (live)</div>
           <div className="grow-cal">
             {["high", "moderate", "low"].map((b) => {
               const row = track.byBand[b];
@@ -226,7 +220,7 @@ export default function GrowSignals() {
               );
             })}
           </div>
-        </div>
+        </GrowSection>
       ) : (
         !loading &&
         scan && (
@@ -237,6 +231,11 @@ export default function GrowSignals() {
         )
       )}
 
+      <GrowSection
+        icon="fa-filter"
+        title="Narrow it down"
+        subtitle="Direction, your watchlist, and the kind of pattern. “Actionable only” hides the weakest band — with the current gate almost nothing lands there, so it rarely changes the list."
+      >
       <div className="grow-sigflt">
         {["all", "bullish", "bearish"].map((d) => (
           <button
@@ -271,6 +270,10 @@ export default function GrowSignals() {
 
       {cats.length > 1 && (
         <div className="grow-sigflt grow-sigflt--cats">
+          <span className="grow-sigflt-cats-lbl">
+            Pattern family
+            <em>what the detector reads: single candles, an indicator crossing, a price level, or a multi-bar shape</em>
+          </span>
           {cats.map(([k, n]) => (
             <button
               key={k}
@@ -285,6 +288,7 @@ export default function GrowSignals() {
           ))}
         </div>
       )}
+      </GrowSection>
 
       {loading && (
         <div className="grow-sig-empty">
@@ -306,6 +310,12 @@ export default function GrowSignals() {
       )}
 
       {!loading && !error && shown.length > 0 && (
+        <GrowSection
+          icon="fa-wand-magic-sparkles"
+          title={`${style.label} calls`}
+          subtitle="Only detectors that beat buying the same stock on a random day are shown. Tap any card to open it on the chart."
+          aside={<span className="grow-sig-count">{shown.length}</span>}
+        >
         <ul className="grow-sig-list">
           {shown.map((s) => (
             <li key={s.id} className={`grow-sig-card grow-sig-card--${s.direction}`}>
@@ -361,6 +371,7 @@ export default function GrowSignals() {
             </li>
           ))}
         </ul>
+        </GrowSection>
       )}
 
       {!loading && !error && scan && (

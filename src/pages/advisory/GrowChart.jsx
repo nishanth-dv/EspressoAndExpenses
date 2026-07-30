@@ -17,6 +17,7 @@ import TradePlan from "./TradePlan";
 import SignalHistory from "./SignalHistory";
 import SymbolBias from "./SymbolBias";
 import GrowSection from "./GrowSection";
+import TrackStats from "./TrackStats";
 import { symbolBias } from "../../utils/grow/signals/bias";
 
 const DEFAULT = { symbol: "RELIANCE.NS", name: "Reliance Industries" };
@@ -688,28 +689,11 @@ export default function GrowChart() {
           title="How these patterns did on this symbol"
           subtitle="Every pattern above, replayed against the candles that came after it. One stock’s history — a backtest, not advice."
         >
-          <div className="grow-score-hero">
-            <div className="grow-score-stat">
-              <span className="grow-score-val">{Math.round(card.overall.hitRate * 100)}%</span>
-              <span className="grow-score-lbl">hit rate</span>
-              <span className="grow-score-cap">reached the target before the stop</span>
-            </div>
-            <div className="grow-score-stat">
-              <span className={`grow-score-val ${card.overall.avgReturn >= 0 ? "is-up" : "is-down"}`}>
-                {card.overall.avgReturn >= 0 ? "+" : ""}
-                {(card.overall.avgReturn * 100).toFixed(1)}%
-              </span>
-              <span className="grow-score-lbl">average result</span>
-              <span className="grow-score-cap">per signal, after trading costs</span>
-            </div>
-            <div className="grow-score-stat">
-              <span className="grow-score-val">{card.overall.resolved}</span>
-              <span className="grow-score-lbl">signals scored</span>
-              <span className="grow-score-cap">
-                {card.overall.resolved < 20 ? "too few to lean on" : "enough for a rough read"}
-              </span>
-            </div>
-          </div>
+          <TrackStats
+            hitRate={card.overall.hitRate}
+            avgReturn={card.overall.avgReturn}
+            resolved={card.overall.resolved}
+          />
 
           <div className="grow-score-sec">
             Does a higher confidence score actually win more often?

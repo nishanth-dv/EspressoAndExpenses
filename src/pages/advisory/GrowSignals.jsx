@@ -257,35 +257,51 @@ export default function GrowSignals() {
       <GrowSection
         icon="fa-filter"
         title="Narrow it down"
-        subtitle="Direction, your watchlist, and the kind of pattern. Everything listed already cleared the scanner’s edge test, so there is no quality filter to apply here."
+        subtitle="These stack: a direction, plus any of the on/off filters. Everything listed already cleared the scanner’s edge test, so there is no quality filter to apply here."
       >
-      <div className="grow-sigflt">
-        {["all", "bullish", "bearish"].map((d) => (
-          <button
-            key={d}
-            type="button"
-            className={`grow-sigflt-chip${dir === d ? " is-active" : ""}`}
-            onClick={() => setDir(d)}
-          >
-            {d === "all" ? "All" : d === "bullish" ? "Bullish" : "Bearish"}
-          </button>
-        ))}
-        <button
-          type="button"
-          className={`grow-sigflt-chip${watchOnly ? " is-active" : ""}`}
-          onClick={() => setWatchOnly((v) => !v)}
-          aria-pressed={watchOnly}
-        >
-          <i className="fa-solid fa-star" /> Watchlist
-        </button>
+      <div className="grow-fltrow">
+        <div className="grow-cgroup">
+          <span className="grow-cgroup-label">Direction</span>
+          <span className="grow-cgroup-hint">pick one</span>
+          <div className="grow-cgroup-row" role="radiogroup" aria-label="Direction">
+            {["all", "bullish", "bearish"].map((d) => (
+              <button
+                key={d}
+                type="button"
+                role="radio"
+                aria-checked={dir === d}
+                className={`grow-sigflt-chip${dir === d ? " is-active" : ""}`}
+                onClick={() => setDir(d)}
+              >
+                {d === "all" ? "All" : d === "bullish" ? "Bullish" : "Bearish"}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="grow-cgroup">
+          <span className="grow-cgroup-label">Narrow to</span>
+          <span className="grow-cgroup-hint">on/off, independent of direction</span>
+          <div className="grow-cgroup-row">
+            <button
+              type="button"
+              className={`grow-sigflt-toggle${watchOnly ? " is-active" : ""}`}
+              onClick={() => setWatchOnly((v) => !v)}
+              aria-pressed={watchOnly}
+            >
+              <i className={`fa-${watchOnly ? "solid" : "regular"} fa-star`} /> Watchlist only
+            </button>
+          </div>
+        </div>
       </div>
 
       {cats.length > 1 && (
-        <div className="grow-sigflt grow-sigflt--cats">
-          <span className="grow-sigflt-cats-lbl">
-            Pattern family
-            <em>what the detector reads: single candles, an indicator crossing, a price level, or a multi-bar shape</em>
+        <div className="grow-cgroup grow-cgroup--cats">
+          <span className="grow-cgroup-label">Pattern family</span>
+          <span className="grow-cgroup-hint">
+            what the detector reads: single candles, an indicator crossing, a price level, or a multi-bar shape
           </span>
+          <div className="grow-cgroup-row">
           {cats.map(([k, n]) => (
             <button
               key={k}
@@ -298,6 +314,7 @@ export default function GrowSignals() {
               <em>{n}</em>
             </button>
           ))}
+          </div>
         </div>
       )}
       </GrowSection>

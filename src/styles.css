@@ -13144,25 +13144,25 @@ html[data-skin="glass"] .grow-sec {
   gap: 10px 18px;
   margin-bottom: 10px;
 }
-.grow-tfg {
+.grow-cgroup {
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
 }
-.grow-tfg-label {
+.grow-cgroup-label {
   font-size: 0.68rem;
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--text-secondary);
 }
-.grow-tfg-hint {
+.grow-cgroup-hint {
   font-size: 0.68rem;
   color: var(--text-secondary);
   opacity: 0.75;
 }
-.grow-tfg-row {
+.grow-cgroup-row {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
@@ -13285,26 +13285,6 @@ html[data-skin="glass"] .grow-sec {
   line-height: 1.55;
   max-width: 68ch;
 }
-.grow-sigflt-cats-lbl {
-  flex: 1 1 100%;
-  display: block;
-  margin-bottom: 2px;
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-secondary);
-}
-.grow-sigflt-cats-lbl em {
-  display: block;
-  margin-top: 2px;
-  font-style: normal;
-  font-weight: 400;
-  letter-spacing: normal;
-  text-transform: none;
-  font-size: 0.72rem;
-  opacity: 0.85;
-}
 .grow-sec .grow-sigflt {
   margin-bottom: 0;
 }
@@ -13351,4 +13331,39 @@ html[data-skin="glass"] .grow-sec {
   flex: 1 1 100%;
   font-size: 0.72rem;
   color: var(--text-secondary);
+}
+.grow-fltrow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px 26px;
+}
+.grow-cgroup--cats {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--surface-border);
+}
+.grow-sigflt-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 13px;
+  border: 1px solid var(--surface-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+.grow-sigflt-toggle:hover {
+  background: var(--surface-active);
+}
+.grow-sigflt-toggle.is-active {
+  border-color: color-mix(in srgb, #eab308 55%, transparent);
+  background: color-mix(in srgb, #eab308 13%, transparent);
+  color: var(--text-primary);
+}
+.grow-sigflt-toggle.is-active > i {
+  color: #eab308;
 }

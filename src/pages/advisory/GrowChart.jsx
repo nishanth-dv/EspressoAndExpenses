@@ -627,10 +627,10 @@ export default function GrowChart() {
       >
         <div className="grow-chart-tfs">
           {TF_GROUPS.map((g) => (
-            <div key={g.key} className="grow-tfg">
-              <span className="grow-tfg-label">{g.label}</span>
-              <span className="grow-tfg-hint">{g.hint}</span>
-              <div className="grow-tfg-row">
+            <div key={g.key} className="grow-cgroup">
+              <span className="grow-cgroup-label">{g.label}</span>
+              <span className="grow-cgroup-hint">{g.hint}</span>
+              <div className="grow-cgroup-row">
                 {TIMEFRAMES.filter((t) => t.group === g.key).map((t) => (
                   <button
                     key={t.key}

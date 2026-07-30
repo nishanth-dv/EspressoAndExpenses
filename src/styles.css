@@ -13527,3 +13527,34 @@ html[data-skin="glass"] .grow-sec {
 .grow-pos.is-down .grow-pos-val em {
   color: var(--amount-expense);
 }
+.grow-watch-row--held {
+  border-left: 3px solid color-mix(in srgb, var(--amount-income) 55%, transparent);
+}
+.grow-watch-row--watch {
+  border-left: 3px solid color-mix(in srgb, #eab308 45%, transparent);
+}
+.grow-watch-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-style: normal;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  vertical-align: middle;
+}
+.grow-watch-tag--held {
+  background: color-mix(in srgb, var(--amount-income) 15%, transparent);
+  color: var(--amount-income);
+}
+.grow-watch-tag--watch {
+  background: color-mix(in srgb, #eab308 16%, transparent);
+  color: #a16207;
+}
+html[data-theme="dark"] .grow-watch-tag--watch {
+  color: #eab308;
+}

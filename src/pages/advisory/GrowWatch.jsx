@@ -178,10 +178,16 @@ export default function GrowWatch() {
     const r = rows[symbol] ?? {};
     const sig = bySymbol.get(symbol);
     return (
-      <div key={symbol} className="grow-watch-row">
+      <div key={symbol} className={`grow-watch-row${holding ? " grow-watch-row--held" : " grow-watch-row--watch"}`}>
         <button type="button" className="grow-watch-main" onClick={() => open(symbol, sig)}>
           <div className="grow-watch-top">
-            <span className="grow-watch-sym">{symbol.replace(".NS", "")}</span>
+            <span className="grow-watch-sym">
+              {symbol.replace(".NS", "")}
+              <em className={`grow-watch-tag grow-watch-tag--${holding ? "held" : "watch"}`}>
+                <i className={`fa-${holding ? "solid fa-briefcase" : "regular fa-star"}`} />
+                {holding ? "Held" : "Watching"}
+              </em>
+            </span>
             {r.quote ? (
               <span className={`grow-watch-quote ${r.quote.up ? "is-up" : "is-down"}`}>
                 {INR.format(r.quote.last)}

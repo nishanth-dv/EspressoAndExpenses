@@ -88,6 +88,10 @@ const BalanceCarousel = ({ variant = "compact", syncTransactionFilter = false })
     return out;
   }, [accounts, allTransactions, multiBankEnabled, insightsBalance]);
 
+  const filterAccountId = useSelector(
+    (state) => state.filter.transactions.accountId ?? "",
+  );
+
   const [index, setIndex] = useState(0);
   const [direction, setDirection] = useState(0);
   const [busyRecompute, setBusyRecompute] = useState(false);
@@ -96,6 +100,16 @@ const BalanceCarousel = ({ variant = "compact", syncTransactionFilter = false })
 
   const safeIndex = Math.min(index, slides.length - 1);
   const slide = slides[safeIndex];
+
+  useEffect(() => {
+    if (!syncTransactionFilter) return;
+    const next = filterAccountId
+      ? slides.findIndex((s) => s.account?.id === filterAccountId)
+      : 0;
+    if (next < 0) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setIndex(next);
+  }, [filterAccountId, slides, syncTransactionFilter]);
 
   useEffect(() => {
     if (slides.length <= 1) return undefined;

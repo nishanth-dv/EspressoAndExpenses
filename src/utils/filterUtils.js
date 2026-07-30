@@ -47,6 +47,13 @@ export function applyFilter(transactions, filter) {
   });
 }
 
+export function pickFilteredAccountId(state) {
+  const id = state.filter?.transactions?.accountId || "";
+  if (!id) return "";
+  const accounts = state.transactions?.transactionData?.accounts ?? [];
+  return accounts.some((a) => a.id === id) ? id : "";
+}
+
 export function filterInvestmentsByDate(investments, filter) {
   if (filter.mode === "all") return investments;
   const { from, to } = getDateRange(filter);

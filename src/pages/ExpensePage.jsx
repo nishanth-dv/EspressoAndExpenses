@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo, useState } from "react";
-import { useSelector } from "react-redux";
+import { useSelector, useDispatch } from "react-redux";
 import { useSearchParams } from "react-router-dom";
 import Insights from "../components/Insights";
 import TransactionList from "../components/TransactionList";
@@ -8,6 +8,7 @@ import StatementImportButton from "../components/StatementImportButton";
 import { applyFilter, getFilterLabel } from "../utils/filterUtils";
 import { CATEGORIES, INCOME_CATEGORIES } from "../utils/constants";
 import { useLedger, useLedgerLoading } from "../hooks/useLedger";
+import { setFilter } from "../redux/slices/filterSlice";
 import Skeleton from "../components/Skeleton";
 
 
@@ -28,6 +29,7 @@ const Expense = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const highlightId = searchParams.get("highlight");
   const filter = useSelector((state) => state.filter.transactions);
+  const dispatch = useDispatch();
 
   useEffect(() => {
     if (!highlightId || showSkeleton) return;
@@ -54,7 +56,8 @@ const Expense = () => {
     setTypeFilter("all");
     setCategoryFilter([]);
     setSearch("");
-  }, [highlightId]);
+    dispatch(setFilter({ scope: "transactions", accountId: "", cardId: "" }));
+  }, [highlightId, dispatch]);
 
   const dateFiltered = useMemo(
     () => applyFilter(allTransactions, filter),

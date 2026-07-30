@@ -14,6 +14,7 @@ import SmartFillBar from "../components/SmartFillBar";
 import { predictEntry, normalizeName } from "../utils/smartFill";
 import { NoteBulletHint } from "../components/NoteText";
 import { computeCardOutstanding } from "../utils/solvencyUtils";
+import { pickFilteredAccountId } from "../utils/filterUtils";
 
 const EMPTY = {
   name: "",
@@ -42,7 +43,12 @@ function isCashbackCategory(category) {
 }
 
 const IncomeForm = ({ onSubmit, onCancel, existing }) => {
-  const [form, setForm] = useState(existing ? fromExisting(existing) : EMPTY);
+  const filteredAccountId = useSelector(pickFilteredAccountId);
+  const [form, setForm] = useState(() =>
+    existing
+      ? fromExisting(existing)
+      : { ...EMPTY, accountId: filteredAccountId },
+  );
   const dispatch = useDispatch();
   const categories = useSelector(
     (state) =>

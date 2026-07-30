@@ -14,6 +14,7 @@ import SmartFillBar from "../components/SmartFillBar";
 import { predictEntry, normalizeName } from "../utils/smartFill";
 import { NoteBulletHint } from "../components/NoteText";
 import { getCardDue, isCardFundedEmi } from "../utils/solvencyUtils";
+import { pickFilteredAccountId } from "../utils/filterUtils";
 
 const EMPTY = {
   name: "",
@@ -62,12 +63,13 @@ const ExpenseForm = ({
   onSubscriptionSelect,
   autoVoice = false,
 }) => {
+  const filteredAccountId = useSelector(pickFilteredAccountId);
   const [form, setForm] = useState(() =>
     existing
       ? fromExisting(existing)
       : investmentTarget
         ? fromInvestmentTarget(investmentTarget)
-        : EMPTY,
+        : { ...EMPTY, accountId: filteredAccountId },
   );
   const dispatch = useDispatch();
 

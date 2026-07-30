@@ -40,10 +40,6 @@ export default function TradePlan({ plan, tradeType, interval, direction }) {
           {INR.format(plan.stop)} <em>{pctOf(plan.stop, plan.entry)}</em>
         </span>
       </span>
-      <span className="grow-plan-cell">
-        <span className="grow-plan-k">R:R</span>
-        <span className="grow-plan-v">{plan.rr}</span>
-      </span>
       {tradeType && (
         <span className="grow-plan-tag">
           {tradeType} · {horizonLabel(interval, plan.horizonBars)}

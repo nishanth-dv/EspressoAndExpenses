@@ -15,6 +15,7 @@ import { ConfidenceBadge, ConfidenceReveal } from "./ConfidenceControl";
 import Modal from "../../preStyledElements/modal/Modal";
 import TradePlan from "./TradePlan";
 import SignalHistory from "./SignalHistory";
+import SignalEvidence from "./SignalEvidence";
 import SymbolBias from "./SymbolBias";
 import GrowSection from "./GrowSection";
 import TrackStats from "./TrackStats";
@@ -796,6 +797,7 @@ export default function GrowChart() {
                   interval={TIMEFRAMES.find((t) => t.key === tf)?.interval ?? "1d"}
                   direction={s.direction}
                 />
+                <SignalEvidence type={s.type} interval={TIMEFRAMES.find((t) => t.key === tf)?.interval ?? "1d"} />
                 <SignalHistory history={s.history} name={s.name} />
                 <ConfidenceReveal open={openId === s.id} card={s} />
               </li>

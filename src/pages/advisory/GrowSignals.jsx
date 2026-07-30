@@ -8,6 +8,7 @@ import { isWatched, toggleWatch, readWatchlist } from "../../utils/grow/watchlis
 import { ConfidenceBadge, ConfidenceReveal } from "./ConfidenceControl";
 import TradePlan from "./TradePlan";
 import SignalHistory from "./SignalHistory";
+import SignalEvidence from "./SignalEvidence";
 import GrowSection from "./GrowSection";
 import TrackStats from "./TrackStats";
 
@@ -355,14 +356,11 @@ export default function GrowSignals() {
                   </span>
                   <span className="grow-sig-text">
                     <span className="grow-sig-title">
-                      <span className={`grow-cat grow-cat--${s.category}`}>
-                        <i className={`fa-solid ${CATEGORY_META[s.category]?.icon ?? ""}`} />{" "}
-                        {CATEGORY_META[s.category]?.label ?? s.category}
-                      </span>
-                      <strong>{s.symbol_name}</strong> · {s.name}
+                      <strong>{s.symbol_name}</strong>
+                      <span className="grow-sig-pattern">{s.name}</span>
                     </span>
                     <span className="grow-sig-meta">
-                      {s.title} · ₹{Number(s.price).toFixed(2)}
+                      {s.title} · ₹{Number(s.price).toFixed(2)} <em>at signal</em>
                       {s.earnings_in != null && (
                         <span className="grow-sig-earnings">
                           {" · "}
@@ -390,6 +388,7 @@ export default function GrowSignals() {
                 />
               </div>
               <TradePlan plan={s.plan} tradeType={s.trade_type} interval={s.interval || iv} direction={s.direction} />
+              <SignalEvidence type={s.type} interval={s.interval || iv} />
               <SignalHistory history={s.history} name={s.name} />
               {s.breakdown && <ConfidenceReveal open={openId === s.id} card={{ confidenceBreakdown: s.breakdown }} />}
             </li>

@@ -402,8 +402,8 @@ EDGE_Z = 1
 
 EDGE_VS_RANDOM = {
     "1d": {
-        "support_bounce": {"edge": 0.442, "n": 10143, "sd": 0.232, "windows": 9},
-        "rsi_oversold": {"edge": 1.017, "n": 1028, "sd": 0.659, "windows": 9},
+        "support_bounce": {"edge": 0.442, "n": 10143, "sd": 0.232, "windows": 9, "pos": 9},
+        "rsi_oversold": {"edge": 1.017, "n": 1028, "sd": 0.659, "windows": 9, "pos": 9},
         "hammer": {"edge": 0.12, "n": 2544},
         "double_bottom": {"edge": 0.04, "n": 1575},
         "bullish_engulfing": {"edge": 0.01, "n": 3659},
@@ -412,7 +412,7 @@ EDGE_VS_RANDOM = {
         "inverse_head_shoulders": {"edge": -0.28, "n": 754},
     },
     "1wk": {
-        "support_bounce": {"edge": 1.512, "n": 266, "sd": 1.03, "windows": 5},
+        "support_bounce": {"edge": 1.512, "n": 266, "sd": 1.03, "windows": 5, "pos": 5},
         "bullish_engulfing": {"edge": -0.91, "n": 344},
         "hammer": {"edge": -1.09, "n": 126},
         "morning_star": {"edge": -1.94, "n": 212},

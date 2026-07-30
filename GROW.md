@@ -1,10 +1,16 @@
 # Grow — trading signals, breadth scanner & accuracy program
 
 The "Grow your money" domain of the Advisory page. A rule-based technical-analysis
-engine that detects chart patterns, scores them by an estimated win-probability,
-grades every signal against real forward history, and scans the whole liquid NSE
-market for fresh **buy calls**. Everything below has been walk-forward validated —
-the system is built to refuse to fool itself.
+engine that detects chart patterns, scores them by their **measured edge over a random entry
+on the same stock**, grades every signal against real forward history, and scans the whole
+liquid NSE market for fresh **buy calls**.
+
+Everything below is walk-forward validated — but note the hard lesson of 2026-07-29:
+**walk-forward validation is necessary and not sufficient.** Train/test splits, Spearman
+train→OOS correlation, monotone terciles and regime tags all measure *ranking and
+consistency*. None of them asks whether the entry beat picking a day at random, and every one
+of them passed on a lane that trailed a coin flip. The benchmark is what makes this file
+trustworthy; the splits alone never did.
 
 ---
 
@@ -515,8 +521,10 @@ version admitted `breakout` and `inverse_head_shoulders` and reached only +0.185
 holdout edge **~+0.34pp, 2.6× ungated**.
 
 **`support_bounce` is the one validated result in this file**: +0.40pp select → +0.35pp
-holdout (n=2,444), and independently +2.55pp in the 1wk lane. Three separate tests, same
-sign, minimal decay. `rsi_oversold` holds its sign but decays (+0.70 → +0.26pp, n=314) —
+holdout (n=2,444), and positive in **9/9 rolling daily windows** (mean +0.48pp, sd 0.23pp).
+On `1wk` it is positive in 5/5 calendar windows but on only 30–95 trades each — the pooled
++2.55pp there overstates a window-level mean of +1.52pp ± 1.03pp, so on weekly trust the sign,
+not the magnitude. `rsi_oversold` holds its sign but decays (+0.70 → +0.26pp, n=314) —
 suggestive, not established. Everything else is noise or negative.
 
 ### Rolling-window validation — `support_bounce` holds in every period (2026-07-30)
@@ -566,9 +574,52 @@ Limits, so this is not over-read:
   indicator, **not a p-value**.
 - **Window 8 is a partial month** (n=285 vs ~1,200) — its +0.86pp carries little weight.
 
-This is the one claim in this document that stands without a hedge: `support_bounce` beat a
-random entry on the same stock in nine consecutive periods, including flat and falling ones,
-at ~1,200 trades per window.
+This is the one claim in this document that stands without a hedge: **on daily bars**,
+`support_bounce` beat a random entry on the same stock in nine consecutive periods, including
+flat and falling ones, at ~1,200 trades per window.
+
+#### The same test on `1wk` is much weaker — the +2.55pp figure does not hold up
+Run over `--range max` (19 years of weekly bars), windows keyed to **calendar half-years** so
+that symbols with wildly different listing histories are compared over the same real periods:
+
+| Window | sig n | signal | random | edge |
+|---|---|---|---|---|
+| 2022-H1 | 33 | +7.88% | +5.03% | +2.84pp |
+| 2024-H1 | 30 | +3.76% | +1.99% | +1.77pp |
+| 2025-H1 | 51 | +5.69% | +5.55% | **+0.14pp** |
+| 2025-H2 | 57 | +0.48% | −0.05% | +0.52pp |
+| 2026-H1 | 95 | +2.52% | +0.22% | +2.30pp |
+
+**5/5 positive · mean +1.516pp · sd 1.030pp · min +0.14pp**
+
+Only five windows cleared n≥30, all post-2022 — weekly bars generate few signals per period,
+and earlier windows fail the threshold because fewer of today's top-300 had 60 weeks of
+history then. Compare the daily test: nine windows, ~1,200 trades each, sd **0.23pp**. Here
+sd is **1.03pp** and one window sits at +0.14pp, indistinguishable from zero.
+
+**So `support_bounce` is well validated on daily and only *directionally* supported on
+weekly.** The `+2.55pp` single pooled measurement (n=382) overstates it; the window-level mean
+is +1.52pp ± 1.03pp. **Trust the sign, not the magnitude.**
+
+`rsi_oversold` on `1wk`: **no window reached n≥30 at all** — it is unmeasurable on weekly
+data. That independently justifies the "absent from the table ⇒ gated out" rule: it was not
+excluded arbitrarily, there is not enough of it to measure.
+
+The gate itself is strongly supported on weekly: `all_others` is **6/38 windows positive,
+mean −2.78pp** across 19 years.
+
+#### The clearest illustration in this file of why absolute expectancy is worthless
+Two windows from that `all_others` table:
+
+| Window | sig n | signal | random | edge |
+|---|---|---|---|---|
+| 2009-H1 | 48 | **+65.89%** | **+59.17%** | +6.72pp |
+| 2008-H2 | 31 | **+23.95%** | **+40.91%** | **−16.96pp** |
+
+In the post-crash rally the signals returned +65.89% per trade — and so did picking days at
+random, +59.17%. In 2008-H2 the signals gained +23.95% while random gained +40.91%: a 17pp
+**deficit** hidden inside a spectacular-looking absolute number. Any report quoting weekly
+absolute expectancy in those periods was describing the market and calling it a strategy.
 
 ### What shipped from this (2026-07-30)
 Three changes, all driven by the benchmark rather than absolute expectancy.
@@ -600,6 +651,11 @@ falling back to the old win rate only where no benchmark exists.
 | +0.26pp (`rsi_oversold`, 1d) | 60 | moderate |
 | +0.35pp (`support_bounce`, 1d) | 67 | moderate |
 | +2.55pp (`support_bounce`, 1wk) | 97 | high |
+
+⚠️ The `1wk` row uses the pooled +2.55pp, which rolling windows show is **overstated** (mean
++1.52pp ± 1.03pp on 30–95 trades/window). `EDGE_VS_RANDOM["1wk"]` should be revised down once
+a better weekly estimate exists; a 97/100 "high" on that evidence is more certainty than the
+data carries.
 
 The score finally says what a user assumes it says: *how much this pattern beat buying the
 same stock on an arbitrary day*. Bands were re-cut to the new scale (**high ≥ 75, moderate
@@ -640,7 +696,7 @@ the same table so the tab and the card tag can never disagree. Signals shows one
 
 | Lane | Intervals | Horizon | Live | Validated |
 |---|---|---|---|---|
-| Investment | `1wk` | ~10 weeks | ✅ | gated to `support_bounce` **+2.55pp**; ungated the lane is **−0.14pp** |
+| Investment | `1wk` | ~10 weeks | ⚠️ | gated to `support_bounce`: 5/5 windows but thin (**+1.5pp ± 1.0**, n=30–95); ungated the lane is **−0.14pp** |
 | Swing | `1d` | ~6 days | ✅ | gated: `support_bounce` **+0.48pp vs random, 9/9 windows** |
 | BTST | `btst` | next day | ✅ | own detector + next-day grading |
 | Intraday | `1h` `15m` `5m` | intra-session | ❌ | **swept and rejected** — see below |
@@ -657,7 +713,8 @@ defect that shipped unnoticed.
 > market drift, and this lane holds longest so it was the most exposed. Every check below
 > (Spearman +0.86, monotone terciles, downtrend survival) passed on a lane that trails a
 > coin flip — they measure ranking and consistency, never whether the entry beat chance.
-> The one exception is `support_bounce`: **+4.18% vs +1.64% random, edge +2.55pp** (n=382).
+> The one exception is `support_bounce`: **+4.18% vs +1.64% random, edge +2.55pp** (n=382) —
+> though rolling windows put the weekly edge nearer **+1.5pp ± 1.0** on thin samples.
 > Four of the lane's five detectors subtract value. See *Benchmarking — edge over random*.
 
 ### Investment lane (`1wk`) — validated 2026-07-28, **overturned 2026-07-29**

@@ -10,15 +10,15 @@ export default function SymbolBias({ bias, compact = false, conflict = false }) 
     <div className={`grow-bias grow-bias--${bias.label}${compact ? " grow-bias--compact" : ""}`}>
       <span className="grow-bias-chip">
         <i className={`fa-solid ${ICON[bias.label]}`} />
-        {WORD[bias.label]}
+        {compact ? `Stock ${WORD[bias.label].toLowerCase()}` : WORD[bias.label]}
         <em>{pct}%</em>
       </span>
       {conflict && (
         <span
           className="grow-bias-conflict"
-          title="Just context — in 5 years of testing, setups that disagreed with the symbol's lean did no worse."
+          title="The setup and the stock's recent drift point opposite ways. That is normal for setups that buy weakness — in 5 years of testing, signals that disagreed with the stock's lean did no worse."
         >
-          <i className="fa-solid fa-code-compare" /> symbol leans the other way
+          <i className="fa-solid fa-code-compare" /> opposite to this setup
         </span>
       )}
       {!compact && (

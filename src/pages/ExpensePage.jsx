@@ -30,14 +30,14 @@ const Expense = () => {
   const filter = useSelector((state) => state.filter.transactions);
 
   useEffect(() => {
-    if (!highlightId) return;
+    if (!highlightId || showSkeleton) return;
     document.body.classList.add("tx-highlighting");
-    const t = setTimeout(() => setSearchParams({}, { replace: true }), 2500);
+    const t = setTimeout(() => setSearchParams({}, { replace: true }), 3500);
     return () => {
       clearTimeout(t);
       document.body.classList.remove("tx-highlighting");
     };
-  }, [highlightId, setSearchParams]);
+  }, [highlightId, showSkeleton, setSearchParams]);
   const statementImportEnabled = useSelector(
     (state) =>
       state.transactions.transactionData?.preferences?.statementImportEnabled ??
@@ -47,6 +47,14 @@ const Expense = () => {
   const [typeFilter, setTypeFilter]         = useState("all");
   const [categoryFilter, setCategoryFilter] = useState([]);
   const [search, setSearch]                 = useState("");
+
+  useEffect(() => {
+    if (!highlightId) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setTypeFilter("all");
+    setCategoryFilter([]);
+    setSearch("");
+  }, [highlightId]);
 
   const dateFiltered = useMemo(
     () => applyFilter(allTransactions, filter),

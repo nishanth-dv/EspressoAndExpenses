@@ -1892,8 +1892,13 @@ html[data-skin="glass"] .sol-due-item {
    overscroll-behavior is `auto` (chained) so once the inner scroll hits its
    top/bottom, the wheel/touch falls through and continues scrolling the
    page — explicitly avoiding `contain` here, which traps the scroll. */
+/* Same gutter trick as .inv-holdings-scroll: bleed out to the card's padding
+   edge and pad the content back, so the overlay scrollbar rides in empty space
+   instead of over the transaction rows. */
 .sol-linked-tx-scroll {
   max-height: 320px;
+  margin-right: -16px;
+  padding-right: 16px;
 }
 
 /* Clickable EMI badge — pill that doubles as a button to jump into the
@@ -1948,6 +1953,24 @@ html[data-skin="glass"] .sol-due-item {
   align-items: baseline;
   gap: 7px;
   white-space: nowrap;
+}
+
+/* Cycle total on the separator — scaled down to the in-card separator size and
+   pinned right, so a long cycle label can never push it out of the card. */
+.sol-linked-tx-month .sol-linked-tx-cycle-total {
+  margin-left: auto;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--amount-expense);
+  background: color-mix(in srgb, var(--amount-expense) 12%, transparent);
+}
+
+.sol-linked-tx-month .sol-linked-tx-cycle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* Covered date range under the statement-month name — quieter than the month. */

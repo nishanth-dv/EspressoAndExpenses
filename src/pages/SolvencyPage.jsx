@@ -852,10 +852,10 @@ function UpcomingDues({
   allTransactions,
   dueWindows,
 }) {
-  // The overview's upcoming list is a fixed 7-day glance and shows only
+  // The overview's upcoming list is a fixed 30-day glance and shows only
   // dues/obligations — subscriptions (renewals) are intentionally left out; they
   // live on the Subscriptions page.
-  const upcomingDays = 7;
+  const upcomingDays = 30;
   const soonDays = dueWindows?.soonDays ?? 7;
   const deepNav = useDeepLinkNav();
   const dues = useMemo(
@@ -1122,7 +1122,7 @@ function OverviewTab({
       </Reveal>
       <Reveal className="sol-section">
         <div className="sol-section-header">
-          <p className="sol-section-title">Upcoming (7 days)</p>
+          <p className="sol-section-title">Upcoming (30 days)</p>
         </div>
         <UpcomingDues
           cards={cards}
@@ -1231,7 +1231,7 @@ function CardItem({
     ? daysUntilCardDue(card, transactions, commitments)
     : null;
 
-  const linkedTx = useMemo(() => {
+  const {linkedTx, cycleTotals} = useMemo(() => {
     // The ledger lists only THIS card's own activity: outgoing charges (cardId
     // tagged) and repayments paid TO this card (repaymentFor tagged). A pooled
     // sibling's charges are summarised in the pool banner instead of listed
@@ -1283,10 +1283,21 @@ function CardItem({
         });
       }
     }
-    return [...real, ...synthetic]
-      .sort((a, b) => b.occurredAt.localeCompare(a.occurredAt))
-      .slice(0, 10);
-  }, [transactions, commitments, card.id]);
+    const all = [...real, ...synthetic].sort((a, b) =>
+      b.occurredAt.localeCompare(a.occurredAt)
+    );
+    // Billed total per statement cycle — charges + EMIs, repayments excluded
+    // (they settle a bill, they aren't part of it). Summed over the FULL list
+    // so the 10-row display cap can't understate a cycle.
+    const stmtDay = parseInt(card.statementDay) || 0;
+    const totals = {};
+    for (const t of all) {
+      if (t._isRepayment) continue;
+      const k = cycleKeyOf(t.occurredAt, stmtDay);
+      totals[k] = (totals[k] || 0) + (parseFloat(t.amount) || 0);
+    }
+    return {linkedTx: all.slice(0, 10), cycleTotals: totals};
+  }, [transactions, commitments, card.id, card.statementDay]);
 
   return (
     <div
@@ -1484,6 +1495,14 @@ function CardItem({
                                 </span>
                               )}
                             </span>
+                            {cycleTotals[cycleKey] > 0 && (
+                              <span
+                                className="tx-date-separator-net sol-linked-tx-cycle-total"
+                                title="Total charged in this billing cycle"
+                              >
+                                Billed {INR.format(cycleTotals[cycleKey])}
+                              </span>
+                            )}
                           </div>
                         )}
                         <div

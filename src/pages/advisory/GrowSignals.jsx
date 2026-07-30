@@ -32,7 +32,6 @@ export default function GrowSignals() {
   const [dir, setDir] = useState("all");
   const [styleKey, setStyleKey] = useState("swing");
   const [iv, setIv] = useState("1d");
-  const [actionableOnly, setActionableOnly] = useState(true);
   const [cat, setCat] = useState("all");
   const [openId, setOpenId] = useState(null);
 
@@ -77,10 +76,9 @@ export default function GrowSignals() {
       (s) =>
         (dir === "all" || s.direction === dir) &&
         (cat === "all" || s.category === cat) &&
-        (!actionableOnly || s.band !== "low") &&
         (!watchOnly || watch.has(s.symbol)),
     );
-  }, [signals, dir, cat, actionableOnly, watchOnly, prefs]);
+  }, [signals, dir, cat, watchOnly, prefs]);
 
   const cats = useMemo(() => {
     const m = new Map();
@@ -260,7 +258,7 @@ export default function GrowSignals() {
       <GrowSection
         icon="fa-filter"
         title="Narrow it down"
-        subtitle="Direction, your watchlist, and the kind of pattern. “Actionable only” hides the weakest band — with the current gate almost nothing lands there, so it rarely changes the list."
+        subtitle="Direction, your watchlist, and the kind of pattern. Everything listed already cleared the scanner’s edge test, so there is no quality filter to apply here."
       >
       <div className="grow-sigflt">
         {["all", "bullish", "bearish"].map((d) => (
@@ -280,17 +278,6 @@ export default function GrowSignals() {
           aria-pressed={watchOnly}
         >
           <i className="fa-solid fa-star" /> Watchlist
-        </button>
-        <button
-          type="button"
-          className="grow-sigflt-switch"
-          onClick={() => setActionableOnly((v) => !v)}
-          aria-pressed={actionableOnly}
-        >
-          Actionable only
-          <span className={`pref-switch${actionableOnly ? " pref-switch--on" : ""}`}>
-            <span className="pref-switch-thumb" />
-          </span>
         </button>
       </div>
 

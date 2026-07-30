@@ -650,16 +650,44 @@ falling back to the old win rate only where no benchmark exists.
 | −0.12pp (`breakout`, 1d) | 4 | low |
 | +0.26pp (`rsi_oversold`, 1d) | 60 | moderate |
 | +0.35pp (`support_bounce`, 1d) | 67 | moderate |
-| +1.50pp (`support_bounce`, 1wk) | 92 | high |
+| +1.52pp raw / **+0.32pp shrunk** (`support_bounce`, 1wk) | 65 | moderate |
 
-`EDGE_VS_RANDOM["1wk"].support_bounce` was **revised 2.55 → 1.5 on 2026-07-30** to the
-rolling-window mean, dropping the score from 97 to 92.
+#### Sample-size shrinkage (2026-07-30)
+The score originally used the raw measured edge, so weekly `support_bounce` scored **92** on
+five thin windows (n=266 total) while daily `support_bounce` — the best-evidenced result in
+this file, 9/9 windows, n=10,143 — scored **67**. **The worse-evidenced number outranked the
+better one.**
 
-⚠️ **The score still ignores how well an edge is measured.** `edge / (edge + EDGE_FLOOR)`
-saturates fast, so weekly `support_bounce` scores **92** on 5 thin windows (n=30–95, sd
-1.03pp) while daily `support_bounce` — the best-validated result in this file, 9/9 windows at
-~1,200 trades, sd 0.23pp — scores **67**. The worse-evidenced number ranks higher. A
-sample-size or dispersion discount would fix it; not implemented.
+`EDGE_VS_RANDOM` now stores `{edge, n}` and every edge is shrunk toward zero by its own trade
+count, the same empirical-Bayes idiom `calibrateReliabilities()` already uses:
+
+```
+shrinkEdge(edge, n) = edge × n / (n + EDGE_PRIOR_N)      EDGE_PRIOR_N = 1000
+```
+
+| Interval | Pattern | raw | n | shrunk | conf | gated |
+|---|---|---|---|---|---|---|
+| `1d` | `rsi_oversold` | +1.209 | 1,028 | **+0.613** | 79 | keep |
+| `1d` | **`support_bounce`** | +0.48 | **10,143** | **+0.437** | **72** | keep |
+| `1wk` | `support_bounce` | +1.516 | 266 | **+0.319** | 65 | keep |
+| `1d` | `hammer` | +0.12 | 2,544 | +0.086 | 34 | drop |
+| `1d` | `breakout` | −0.12 | 3,891 | −0.095 | 4 | drop |
+| `1wk` | `breakout` | −2.22 | 258 | −0.455 | 4 | drop |
+
+**Daily `support_bounce` (72) now outranks weekly (65)** despite a raw edge 3× smaller,
+because it is measured on 38× more trades. The gate is unchanged — both survive the 0.2pp
+floor, and shrinkage can only move a negative edge *toward* zero, never across the floor.
+
+`EDGE_PRIOR_N = 1000` is **a chosen prior, not a derived one**: n=1,000 trades earns 50%
+weight. It was picked because per-trade noise here is percent-level against edges of
+0.3–1.5pp. Nothing validates 1000 over 500 or 2000.
+
+⚠️ **Dispersion is still unused, and it matters.** `rsi_oversold` now scores **79 — the
+highest in the system — on the least trustworthy magnitude in it**: its rolling mean (+1.209pp)
+disagrees with its own holdout figure (+0.26pp) by ~5×, and its cross-window sd is **0.659pp
+against `support_bounce`'s 0.232pp**. Shrinkage by `n` cannot see that instability. Penalising
+by cross-window sd (or using a lower confidence bound, `edge − z·sd/√windows`) would; the data
+exists in *Rolling-window validation*. Not implemented.
 
 The score finally says what a user assumes it says: *how much this pattern beat buying the
 same stock on an arbitrary day*. Bands were re-cut to the new scale (**high ≥ 75, moderate

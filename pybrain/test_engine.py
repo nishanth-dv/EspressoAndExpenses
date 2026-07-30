@@ -100,6 +100,16 @@ assert not beats_random("rsi_oversold", "1wk"), "unmeasured at a benchmarked int
 assert beats_random("anything", "btst"), "an interval with no benchmark table is not gated"
 assert edge_base(None) is None and edge_base(-0.12) == 0.0, "no edge / negative edge score nothing"
 assert edge_base(0.2) == 0.5 and edge_base(2.55) > edge_base(0.35) and edge_base(9999) < 1, "edge base is monotone and saturating"
+
+from engine import shrink_edge, raw_edge_for, edge_for, EDGE_PRIOR_N
+assert shrink_edge(1.0, EDGE_PRIOR_N) == 0.5, "n equal to the prior halves the edge"
+assert shrink_edge(1.0, 10) < shrink_edge(1.0, 10000), "more trades = less shrinkage"
+assert shrink_edge(1.0, 10 ** 9) > 0.99, "a huge sample barely shrinks"
+assert shrink_edge(None, 500) == 0 and shrink_edge(0.5, 0) == 0, "no measurement / no trades = no edge"
+assert shrink_edge(-1.0, 500) < 0, "a negative edge stays negative under shrinkage"
+_d, _w = raw_edge_for("support_bounce", "1d"), raw_edge_for("support_bounce", "1wk")
+assert _w["edge"] > _d["edge"] and _w["n"] < _d["n"], "weekly: bigger raw edge, far fewer trades"
+assert edge_for("support_bounce", "1d") > edge_for("support_bounce", "1wk"),     "after shrinkage the better-evidenced daily edge outranks the thin weekly one"
 assert band_of(75) == "high" and band_of(74) == "moderate" and band_of(54) == "low", "bands sit on the edge scale"
 gated_1d = run_signals(candles, {"symbol": "TEST.NS", "interval": "1d", "timeframe": "6M"})
 assert all(beats_random(s["type"], "1d") for s in gated_1d["signals"]), "a default 1d run emits only detectors that beat random"

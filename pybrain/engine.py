@@ -397,31 +397,54 @@ def detect_all(candles, closes, rsi, piv):
 
 
 EDGE_FLOOR = 0.2
+EDGE_PRIOR_N = 1000
 
 EDGE_VS_RANDOM = {
     "1d": {
-        "support_bounce": 0.35, "rsi_oversold": 0.26, "hammer": 0.12, "double_bottom": 0.04,
-        "bullish_engulfing": 0.01, "morning_star": -0.02, "breakout": -0.12, "inverse_head_shoulders": -0.28,
+        "support_bounce": {"edge": 0.48, "n": 10143},
+        "rsi_oversold": {"edge": 1.209, "n": 1028},
+        "hammer": {"edge": 0.12, "n": 2544},
+        "double_bottom": {"edge": 0.04, "n": 1575},
+        "bullish_engulfing": {"edge": 0.01, "n": 3659},
+        "morning_star": {"edge": -0.02, "n": 3427},
+        "breakout": {"edge": -0.12, "n": 3891},
+        "inverse_head_shoulders": {"edge": -0.28, "n": 754},
     },
     "1wk": {
-        "support_bounce": 1.5, "bullish_engulfing": -0.91, "hammer": -1.09,
-        "morning_star": -1.94, "breakout": -2.22,
+        "support_bounce": {"edge": 1.516, "n": 266},
+        "bullish_engulfing": {"edge": -0.91, "n": 344},
+        "hammer": {"edge": -1.09, "n": 126},
+        "morning_star": {"edge": -1.94, "n": 212},
+        "breakout": {"edge": -2.22, "n": 258},
     },
 }
+
+
+def shrink_edge(edge, n):
+    if edge is None or not n:
+        return 0.0
+    return edge * n / (n + EDGE_PRIOR_N)
 
 
 def edge_for(t, interval):
     table = EDGE_VS_RANDOM.get(interval)
     if table is None:
         return None
-    return table.get(t)
+    row = table.get(t)
+    if row is None:
+        return None
+    return shrink_edge(row["edge"], row["n"])
+
+
+def raw_edge_for(t, interval):
+    table = EDGE_VS_RANDOM.get(interval)
+    return None if table is None else table.get(t)
 
 
 def beats_random(t, interval):
-    table = EDGE_VS_RANDOM.get(interval)
-    if table is None:
+    if EDGE_VS_RANDOM.get(interval) is None:
         return True
-    e = table.get(t)
+    e = edge_for(t, interval)
     return e is not None and e >= EDGE_FLOOR
 
 

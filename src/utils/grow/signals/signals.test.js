@@ -4,7 +4,7 @@ import { gradeSignal, scoreCard } from "./grade.js";
 import { atrSeries } from "./indicators.js";
 import { band as bandOf, edgeBase } from "./confidence.js";
 import { symbolBias } from "./bias.js";
-import { SUPPRESSED_TYPES, STYLES, LIVE_STYLES, styleFor, tradeType, beatsRandom } from "./contract.js";
+import { SUPPRESSED_TYPES, STYLES, LIVE_STYLES, styleFor, tradeType, beatsRandom, edgeFor, rawEdgeFor, shrinkEdge, EDGE_PRIOR_N } from "./contract.js";
 
 function candle(time, o, h, l, c, v = 1000) {
   return { time, open: o, high: h, low: l, close: c, volume: v };
@@ -106,6 +106,26 @@ assert(!beatsRandom("double_bottom", "1d"), "an edge below the floor does not qu
 assert(beatsRandom("support_bounce", "1wk") && !beatsRandom("bullish_engulfing", "1wk"), "1wk keeps only support_bounce");
 assert(!beatsRandom("rsi_oversold", "1wk"), "unmeasured at a benchmarked interval = no evidence = gated");
 assert(beatsRandom("anything", "btst"), "an interval with no benchmark table is not gated at all");
+
+assert.strictEqual(shrinkEdge(1.0, EDGE_PRIOR_N), 0.5, "n equal to the prior halves the edge");
+assert(shrinkEdge(1.0, 10) < shrinkEdge(1.0, 10000), "more trades = less shrinkage");
+assert(shrinkEdge(1.0, 1e9) > 0.99, "a huge sample barely shrinks");
+assert.strictEqual(shrinkEdge(null, 500), 0, "no measurement shrinks to zero");
+assert.strictEqual(shrinkEdge(0.5, 0), 0, "zero trades carries no information");
+assert(shrinkEdge(-1.0, 500) < 0, "a negative edge stays negative under shrinkage");
+
+const sbD = rawEdgeFor("support_bounce", "1d");
+const sbW = rawEdgeFor("support_bounce", "1wk");
+assert(sbW.edge > sbD.edge, "weekly measures a bigger raw edge than daily");
+assert(sbW.n < sbD.n, "weekly measures it on far fewer trades");
+assert(
+  edgeFor("support_bounce", "1d") > edgeFor("support_bounce", "1wk"),
+  "after shrinkage the better-evidenced daily edge outranks the thin weekly one",
+);
+console.log(
+  `ok — shrinkage: daily ${edgeFor("support_bounce", "1d").toFixed(3)} (n=${sbD.n}) now outranks ` +
+    `weekly ${edgeFor("support_bounce", "1wk").toFixed(3)} (n=${sbW.n}) despite a smaller raw edge`,
+);
 
 const bench = runSignals(candles, { symbol: "TEST.NS", interval: "1d", timeframe: "6M" });
 assert(

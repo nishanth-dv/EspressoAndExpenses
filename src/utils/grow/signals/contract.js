@@ -23,37 +23,47 @@ export const SUPPRESSED_TYPES = new Set([
 ]);
 
 export const EDGE_FLOOR = 0.2;
+export const EDGE_PRIOR_N = 1000;
 
 export const EDGE_VS_RANDOM = {
   "1d": {
-    support_bounce: 0.35,
-    rsi_oversold: 0.26,
-    hammer: 0.12,
-    double_bottom: 0.04,
-    bullish_engulfing: 0.01,
-    morning_star: -0.02,
-    breakout: -0.12,
-    inverse_head_shoulders: -0.28,
+    support_bounce: { edge: 0.48, n: 10143 },
+    rsi_oversold: { edge: 1.209, n: 1028 },
+    hammer: { edge: 0.12, n: 2544 },
+    double_bottom: { edge: 0.04, n: 1575 },
+    bullish_engulfing: { edge: 0.01, n: 3659 },
+    morning_star: { edge: -0.02, n: 3427 },
+    breakout: { edge: -0.12, n: 3891 },
+    inverse_head_shoulders: { edge: -0.28, n: 754 },
   },
   "1wk": {
-    support_bounce: 1.5,
-    bullish_engulfing: -0.91,
-    hammer: -1.09,
-    morning_star: -1.94,
-    breakout: -2.22,
+    support_bounce: { edge: 1.516, n: 266 },
+    bullish_engulfing: { edge: -0.91, n: 344 },
+    hammer: { edge: -1.09, n: 126 },
+    morning_star: { edge: -1.94, n: 212 },
+    breakout: { edge: -2.22, n: 258 },
   },
 };
 
+export function shrinkEdge(edge, n) {
+  if (edge == null || !n) return 0;
+  return (edge * n) / (n + EDGE_PRIOR_N);
+}
+
 export function edgeFor(type, interval) {
-  const table = EDGE_VS_RANDOM[interval];
-  if (!table) return null;
-  return table[type] ?? null;
+  const row = EDGE_VS_RANDOM[interval]?.[type];
+  if (!row) return null;
+  return shrinkEdge(row.edge, row.n);
+}
+
+export function rawEdgeFor(type, interval) {
+  return EDGE_VS_RANDOM[interval]?.[type] ?? null;
 }
 
 export function beatsRandom(type, interval) {
-  const table = EDGE_VS_RANDOM[interval];
-  if (!table) return true;
-  return (table[type] ?? -Infinity) >= EDGE_FLOOR;
+  if (!EDGE_VS_RANDOM[interval]) return true;
+  const e = edgeFor(type, interval);
+  return e != null && e >= EDGE_FLOOR;
 }
 
 export const CATEGORY_META = {

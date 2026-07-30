@@ -8,7 +8,6 @@ import { isWatched, toggleWatch, readWatchlist } from "../../utils/grow/watchlis
 import { ConfidenceBadge, ConfidenceReveal } from "./ConfidenceControl";
 import TradePlan from "./TradePlan";
 import SignalHistory from "./SignalHistory";
-import SymbolBias from "./SymbolBias";
 import GrowSection from "./GrowSection";
 import TrackStats from "./TrackStats";
 
@@ -373,11 +372,6 @@ export default function GrowSignals() {
                   onToggle={() => setOpenId(openId === s.id ? null : s.id)}
                 />
               </div>
-              <SymbolBias
-                bias={s.bias}
-                compact
-                conflict={!!s.bias && s.bias.label !== "neutral" && s.bias.label !== s.direction}
-              />
               <TradePlan plan={s.plan} tradeType={s.trade_type} interval={s.interval || iv} direction={s.direction} />
               <SignalHistory history={s.history} name={s.name} />
               {s.breakdown && <ConfidenceReveal open={openId === s.id} card={{ confidenceBreakdown: s.breakdown }} />}

@@ -3,7 +3,7 @@ import { BIAS_PARTS } from "../../utils/grow/signals/bias";
 const ICON = { bullish: "fa-arrow-trend-up", bearish: "fa-arrow-trend-down", neutral: "fa-arrows-left-right" };
 const WORD = { bullish: "Bullish", bearish: "Bearish", neutral: "Neutral" };
 
-export default function SymbolBias({ bias, compact = false, conflict = false }) {
+export default function SymbolBias({ bias, compact = false }) {
   if (!bias) return null;
   const pct = Math.round(Math.abs(bias.score) * 100);
   return (
@@ -13,14 +13,6 @@ export default function SymbolBias({ bias, compact = false, conflict = false }) 
         {compact ? `Stock ${WORD[bias.label].toLowerCase()}` : WORD[bias.label]}
         <em>{pct}%</em>
       </span>
-      {conflict && (
-        <span
-          className="grow-bias-conflict"
-          title="The setup and the stock's recent drift point opposite ways. That is normal for setups that buy weakness — in 5 years of testing, signals that disagreed with the stock's lean did no worse."
-        >
-          <i className="fa-solid fa-code-compare" /> opposite to this setup
-        </span>
-      )}
       {!compact && (
         <div className="grow-bias-scale" aria-hidden="true">
           <span>bearish</span>

@@ -12277,13 +12277,6 @@ html[data-skin="glass"] .adv-card {
   background: color-mix(in srgb, var(--amount-expense) 14%, transparent);
   color: var(--amount-expense);
 }
-.grow-bias-conflict {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--text-secondary);
-  font-size: 0.76rem;
-}
 .grow-bias-parts {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));

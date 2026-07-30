@@ -95,6 +95,7 @@ export default function GrowSignals() {
   const track = useMemo(() => {
     const num = (v) => (v == null ? 0 : Number(v));
     const overall = trackRows.find((r) => r.scope === "overall");
+    const rnd = trackRows.find((r) => r.scope === "random");
     const byBand = {};
     for (const r of trackRows) if (r.scope === "band") byBand[r.key] = r;
     return {
@@ -103,6 +104,9 @@ export default function GrowSignals() {
       avgReturn: overall ? num(overall.avg_return) : 0,
       byBand,
       num,
+      randomResolved: rnd ? num(rnd.resolved) : 0,
+      randomReturn: rnd ? num(rnd.avg_return) : 0,
+      edge: overall && rnd ? num(overall.avg_return) - num(rnd.avg_return) : null,
     };
   }, [trackRows]);
 
@@ -195,9 +199,31 @@ export default function GrowSignals() {
           className="grow-score"
           icon="fa-clipboard-check"
           title="How the live calls have actually done"
-          subtitle={`${track.resolved} past ${style.label.toLowerCase()} calls, scored on prices that happened after the scan — not a backtest. These are absolute returns: they include whatever the market did, so treat them as a floor on honesty, not as proof of edge.`}
+          subtitle={
+            track.edge != null
+              ? `${track.resolved} past ${style.label.toLowerCase()} calls, scored on prices that happened after the scan. Measured against ${track.randomResolved} random picks from the same universe on the same days, so the edge below is what the calls added over buying anything.`
+              : `${track.resolved} past ${style.label.toLowerCase()} calls, scored on prices that happened after the scan — not a backtest. These are absolute returns: they include whatever the market did, so treat them as a floor on honesty, not as proof of edge.`
+          }
         >
           <TrackStats hitRate={track.hitRate} avgReturn={track.avgReturn} resolved={track.resolved} />
+
+          {track.edge != null && (
+            <div className={`grow-bench${track.edge >= 0 ? " is-up" : " is-down"}`}>
+              <span className="grow-bench-k">
+                Edge over a random pick
+                <em>same days, {track.randomResolved} random symbols from the same universe</em>
+              </span>
+              <span className="grow-bench-v">
+                {track.edge >= 0 ? "+" : ""}
+                {(track.edge * 100).toFixed(2)}pp
+              </span>
+              <span className="grow-bench-sub">
+                calls {track.avgReturn >= 0 ? "+" : ""}
+                {(track.avgReturn * 100).toFixed(2)}% · random {track.randomReturn >= 0 ? "+" : ""}
+                {(track.randomReturn * 100).toFixed(2)}%
+              </span>
+            </div>
+          )}
           <div className="grow-score-sec">
             Does a higher confidence score actually win more often?
             <em>Live results, so the bars should fall from high to low if the score means anything.</em>

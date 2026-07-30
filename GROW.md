@@ -469,6 +469,25 @@ The +1.2% from the single bull year was regime-flattered; **+0.4% is the durable
 regime-robust number**, holding because the edge is mean-reversion at levels (works in
 any trend). Spearman train→OOS = +0.60 over 5 years.
 
+## Live random-entry baseline (2026-07-30)
+The backtest learned on 2026-07-29 that absolute expectancy is not edge. The **live** Track
+record still had the same flaw: it reported hit rate and average return with nothing to compare
+against, so a rising market read as a working strategy.
+
+Every scan now also writes **`RANDOM_PER_SCAN = 100` random entries** — real symbols from the
+same universe, entered at the same day's close — into **`grow_random`**, graded forward by the
+same `grade_past` (parameterised over the table) with the same exits. `grow_track` gained a
+`random` scope, and Signals shows **edge = calls − random** instead of an unbenchmarked number.
+
+⚠️ **This is not the same benchmark as the offline sweeps, and the UI says so.** Offline matched
+a signal against a random **day on the same stock** — entry timing. Live that is impossible: a
+signal fires today and there is no other day to draw from. So live matches against a random
+**symbol on the same day** — stock selection. Both are honest baselines for different questions;
+do not compare the two numbers directly.
+
+Sampling is seeded on `(scan_date, interval)`, so re-running a scan reproduces its baseline
+rather than re-rolling it. Requires migration `2026-07-30_random_baseline.sql`.
+
 ## Benchmarking — edge over random entry (2026-07-29)
 Every expectancy number in this file predates any benchmark. "The signals return +0.3%
 per trade" was never compared against **what an arbitrary entry on the same stock would

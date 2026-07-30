@@ -3,6 +3,7 @@ import datetime
 import io
 import json
 import os
+import random
 import sys
 import time
 import urllib.request
@@ -12,6 +13,7 @@ from engine import run_signals, avg_volume, detect_all, pivots, rsi_series, grad
 NIFTY200_CSV = "https://niftyindices.com/IndexConstituent/ind_nifty200list.csv"
 BANDRANK = {"high": 2, "moderate": 1, "low": 0}
 RECENCY_MAX = 2
+RANDOM_PER_SCAN = 100
 
 INTERVAL_RANGE = {
     "1m": "7d",
@@ -151,6 +153,31 @@ def collect_signals(cache, today, reliabilities, interval="1d", long_only=True, 
     return collected
 
 
+def random_rows(cache, today, interval, count=RANDOM_PER_SCAN):
+    """Same-day entries on randomly chosen symbols from the same universe.
+
+    The offline sweeps matched a signal against a random DAY on the same stock
+    (entry timing). Live that is impossible — a signal fires today and there is
+    no other day to draw. So this matches against a random SYMBOL on the same
+    day, which measures stock selection instead. Related question, not the same
+    one; the UI labels it as such.
+    """
+    pool = [(sym, candles) for sym, candles in cache if len(candles) >= 2]
+    if not pool:
+        return []
+    rg = random.Random(f"{today}:{interval}")
+    picked = rg.sample(pool, min(count, len(pool)))
+    out = []
+    for sym, candles in picked:
+        bar = candles[-1]
+        out.append({
+            "id": f"{sym}:{interval}:random:{bar['time']}",
+            "scan_date": today, "interval": interval, "symbol": sym,
+            "bar_time": bar["time"], "price": round(bar["close"], 2),
+        })
+    return out
+
+
 def sb(method, path, body=None, upsert=False):
     url = f"{SUPABASE_URL}/rest/v1/{path}"
     prefer = "return=minimal"
@@ -179,12 +206,13 @@ def sb_get(path):
         return json.loads(r.read())
 
 
-def grade_past(cache, today, interval="1d", grade_opts=None):
+def grade_past(cache, today, interval="1d", grade_opts=None, table="grow_signals"):
     if not SUPABASE_URL or not SUPABASE_KEY:
         return
     by_sym = {sym: candles for sym, candles in cache}
     atr_by_sym = {sym: atr_series(candles, 14) for sym, candles in cache}
-    rows = sb_get(f"grow_signals?outcome=is.null&interval=eq.{interval}&scan_date=lt.{today}&select=id,scan_date,symbol,direction,bar_time&limit=5000")
+    cols = "id,scan_date,symbol,bar_time" + (",direction" if table == "grow_signals" else "")
+    rows = sb_get(f"{table}?outcome=is.null&interval=eq.{interval}&scan_date=lt.{today}&select={cols}&limit=5000")
     now = datetime.datetime.now(datetime.timezone.utc).isoformat()
     updates = []
     for r in rows:
@@ -192,7 +220,7 @@ def grade_past(cache, today, interval="1d", grade_opts=None):
         if not candles:
             continue
         idx = {c["time"]: i for i, c in enumerate(candles)}
-        oc = grade_signal({"time": r["bar_time"], "direction": r["direction"]}, candles, idx, {**(grade_opts or {}), "atr": atr_by_sym[r["symbol"]]})
+        oc = grade_signal({"time": r["bar_time"], "direction": r.get("direction", "bullish")}, candles, idx, {**(grade_opts or {}), "atr": atr_by_sym[r["symbol"]]})
         if oc["status"] == "pending":
             continue
         updates.append({
@@ -200,11 +228,12 @@ def grade_past(cache, today, interval="1d", grade_opts=None):
             "outcome_return": round(oc["returnPct"], 4), "outcome_bars": oc["bars"], "graded_at": now,
         })
     for i in range(0, len(updates), 500):
-        sb("POST", "grow_signals?on_conflict=id,scan_date", updates[i : i + 500], upsert=True)
-    print(f"forward-graded {len(updates)} past {interval} signals")
+        sb("POST", f"{table}?on_conflict=id,scan_date", updates[i : i + 500], upsert=True)
+    label = "signals" if table == "grow_signals" else "random baseline entries"
+    print(f"forward-graded {len(updates)} past {interval} {label}")
 
 
-def write(collected, universe_size, today, interval="1d", vix=None, sentiment=None):
+def write(collected, universe_size, today, interval="1d", vix=None, sentiment=None, baseline=None):
     if not SUPABASE_URL or not SUPABASE_KEY:
         print(f"\nDRY RUN — no Supabase creds set. Top 20 ranked ({interval}):")
         for r in collected[:20]:
@@ -216,6 +245,11 @@ def write(collected, universe_size, today, interval="1d", vix=None, sentiment=No
     sb("DELETE", f"grow_signals?scan_date=eq.{today}&interval=eq.{interval}")
     for i in range(0, len(collected), 500):
         sb("POST", "grow_signals?on_conflict=id,scan_date", collected[i : i + 500], upsert=True)
+    if baseline:
+        sb("DELETE", f"grow_random?scan_date=eq.{today}&interval=eq.{interval}")
+        for i in range(0, len(baseline), 500):
+            sb("POST", "grow_random?on_conflict=id,scan_date", baseline[i : i + 500], upsert=True)
+        print(f"wrote {len(baseline)} random baseline entries for {today} {interval}")
     sb("POST", "grow_scans?on_conflict=scan_date,interval", {"scan_date": today, "interval": interval, "universe_size": universe_size, "signal_count": len(collected), "vix": vix, "sentiment": sentiment}, upsert=True)
     print(f"wrote {len(collected)} {interval} signals for {today} ({universe_size} names)")
 
@@ -382,8 +416,10 @@ def main():
     vix, sentiment = market_sentiment()
     if vix is not None:
         print(f"market sentiment: {sentiment} (India VIX {vix})")
-    write(collected, len(universe), today, scan_interval, vix, sentiment)
+    baseline = random_rows(cache, today, scan_interval)
+    write(collected, len(universe), today, scan_interval, vix, sentiment, baseline)
     grade_past(cache, today, scan_interval, grade_opts)
+    grade_past(cache, today, scan_interval, grade_opts, table="grow_random")
 
 
 if __name__ == "__main__":

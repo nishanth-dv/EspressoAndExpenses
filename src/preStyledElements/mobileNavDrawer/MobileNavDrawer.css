@@ -24,10 +24,6 @@
   gap: 50px;
 }
 
-.drawer-menu > div {
-  gap: 10px;
-}
-
 .drawer-item {
   padding: 16px;
   color: white;

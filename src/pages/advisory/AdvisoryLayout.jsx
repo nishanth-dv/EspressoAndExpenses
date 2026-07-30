@@ -13,7 +13,7 @@ const ANALYSE_TABS = [
   { to: "ask", label: "Ask" },
 ];
 const GROW_TABS = [
-  { to: "/Advisory/grow", label: "Overview", end: true },
+  { to: "/Advisory/grow", label: "Watchlist", end: true },
   { to: "/Advisory/grow/charts", label: "Charts" },
   { to: "/Advisory/grow/signals", label: "Signals" },
 ];

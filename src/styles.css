@@ -210,7 +210,7 @@ textarea {
   font-weight: 600;
   color: var(--bar-text);
   text-decoration: none;
-  border-radius: 999px;
+  border-radius: 9px;
   transition: opacity 0.2s ease;
 }
 
@@ -2127,11 +2127,7 @@ body.privacy-on .transaction-card:active * {
   box-sizing: border-box;
   background: var(--card-bg);
   border: 1px solid var(--card-border);
-  /* A BLACK-based shadow (not the page-coloured --card-shadow, which vanishes
-     on the dark theme) so the bright cream carousel actually levitates in both
-     themes — the dark cards get their lift from being a darker surface, which
-     this cream/bank-tint surface can't. */
-  box-shadow: 0 12px 22px -14px rgba(0, 0, 0, 0.55);
+  box-shadow: var(--levitate-shadow);
   border-radius: var(--card-radius);
 }
 html[data-skin="glass"] .balance-carousel {
@@ -11760,12 +11756,15 @@ html[data-skin="glass"] .tx-pulse {
   align-self: flex-start;
 }
 
-.notif-item,
 .pref-admin-card,
 .stmt-recon-card,
 .bank-split-card,
 .itd-picker-tile {
   box-shadow: var(--card-shadow);
+}
+
+.notif-item {
+  box-shadow: var(--levitate-shadow);
 }
 
 html[data-skin="glass"] .notif-item,
@@ -12830,4 +12829,240 @@ html[data-skin="glass"] .grow-score {
   margin: 12px 0 0;
   font-size: 0.72rem;
   color: var(--text-secondary);
+}
+.grow-watch {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.grow-watch-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+  font-weight: 700;
+}
+.grow-watch-count {
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+.grow-watch-note {
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--surface-border);
+  background: var(--surface-bg);
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+}
+.grow-watch-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  border: 1px solid var(--surface-border);
+  border-radius: 12px;
+  background: var(--surface-bg);
+  padding: 10px 12px;
+  box-shadow: var(--levitate-shadow);
+  transition: background 0.15s ease;
+}
+.grow-watch-row:hover {
+  background: var(--surface-active);
+}
+html[data-skin="glass"] .grow-watch-row {
+  box-shadow: 0 8px 24px -14px var(--glass-ambient, rgba(0, 0, 0, 0.4));
+}
+.grow-watch-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  border: none;
+  background: none;
+  padding: 0;
+  text-align: left;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+.grow-watch-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+.grow-watch-sym {
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+.grow-watch-quote {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  font-size: 0.86rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.grow-watch-quote em {
+  font-style: normal;
+  font-size: 0.78rem;
+}
+.grow-watch-quote.is-up {
+  color: var(--amount-income);
+}
+.grow-watch-quote.is-down {
+  color: var(--amount-expense);
+}
+.grow-watch-quote--dead {
+  color: var(--text-secondary);
+  font-weight: 500;
+  font-size: 0.76rem;
+}
+.grow-watch-mid {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 10px;
+}
+.grow-watch-sig {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  background: color-mix(in srgb, var(--text-secondary) 12%, transparent);
+  color: var(--text-secondary);
+}
+.grow-watch-sig em {
+  font-style: normal;
+  opacity: 0.8;
+}
+.grow-watch-sig-lane {
+  font-style: normal;
+  font-weight: 500;
+  font-size: 0.68rem;
+  opacity: 0.7;
+}
+.grow-watch-sig--high {
+  background: color-mix(in srgb, var(--amount-income) 16%, transparent);
+  color: var(--amount-income);
+}
+.grow-watch-sig--moderate {
+  background: color-mix(in srgb, var(--amount-income) 9%, transparent);
+  color: color-mix(in srgb, var(--amount-income) 78%, var(--text-primary));
+}
+.grow-watch-sig--none {
+  font-weight: 500;
+  background: none;
+  padding-left: 0;
+  opacity: 0.7;
+}
+.grow-watch-sr {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.74rem;
+  color: var(--text-secondary);
+}
+.grow-watch-sr-k {
+  font-weight: 700;
+  opacity: 0.7;
+}
+.grow-watch-sr-lo,
+.grow-watch-sr-hi {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  font-weight: 600;
+}
+.grow-watch-sr-lo em,
+.grow-watch-sr-hi em {
+  font-style: normal;
+  font-size: 0.68rem;
+  opacity: 0.75;
+}
+.grow-watch-sr-lo {
+  color: var(--amount-income);
+}
+.grow-watch-sr-hi {
+  color: var(--amount-expense);
+}
+.grow-watch-sr-none {
+  color: var(--text-secondary);
+  font-weight: 500;
+  opacity: 0.6;
+}
+.grow-watch-sr-bar {
+  flex: 1 1 auto;
+  height: 2px;
+  min-width: 18px;
+  border-radius: 2px;
+  background: linear-gradient(
+    to right,
+    color-mix(in srgb, var(--amount-income) 45%, transparent),
+    color-mix(in srgb, var(--amount-expense) 45%, transparent)
+  );
+}
+.grow-watch-earnings {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.73rem;
+  color: var(--amount-expense);
+}
+.grow-watch-star {
+  flex: 0 0 auto;
+  border: none;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 2px 4px;
+  font-size: 0.95rem;
+}
+.grow-watch-star.is-on {
+  color: #eab308;
+}
+.grow-watch-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 26px 18px;
+  border: 1px dashed var(--surface-border);
+  border-radius: 14px;
+  text-align: center;
+  color: var(--text-secondary);
+}
+.grow-watch-empty > i {
+  font-size: 1.6rem;
+  opacity: 0.5;
+}
+.grow-watch-empty p {
+  margin: 0;
+  max-width: 44ch;
+  font-size: 0.84rem;
+  line-height: 1.5;
+}
+.grow-watch-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 16px;
+  border: 1px solid var(--surface-border);
+  border-radius: 999px;
+  background: var(--surface-bg);
+  color: var(--text-primary);
+  font-weight: 600;
+  font-size: 0.84rem;
+  cursor: pointer;
+  box-shadow: var(--levitate-shadow);
+}
+.grow-watch-foot {
+  margin: 2px 0 0;
+  color: var(--text-secondary);
+  font-size: 0.73rem;
+  line-height: 1.5;
 }

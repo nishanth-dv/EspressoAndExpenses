@@ -19,7 +19,7 @@ import Preferences from "./pages/PreferencesPage";
 import AdminPage from "./pages/AdminPage";
 import AdvisoryLayout from "./pages/advisory/AdvisoryLayout";
 import AdvisoryHome from "./pages/advisory/AdvisoryHome";
-import GrowHome from "./pages/advisory/GrowHome";
+import GrowWatch from "./pages/advisory/GrowWatch";
 import GrowChart from "./pages/advisory/GrowChart";
 import GrowSignals from "./pages/advisory/GrowSignals";
 import ActionsLens from "./pages/advisory/ActionsLens";
@@ -185,7 +185,7 @@ export default function App() {
             }
           >
             <Route index element={<AdvisoryHome />} />
-            <Route path="grow" element={<GrowHome />} />
+            <Route path="grow" element={<GrowWatch />} />
             <Route path="grow/charts" element={<GrowChart />} />
             <Route path="grow/signals" element={<GrowSignals />} />
             <Route path="actions" element={<ActionsLens />} />

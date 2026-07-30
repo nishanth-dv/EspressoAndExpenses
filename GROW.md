@@ -94,7 +94,17 @@ and the per-pattern train→OOS expectancy correlation jumped from +0.03 to **+0
   banner** (India VIX regime — fear/neutral/calm, from the scan row), a **per-symbol bias chip**
   on each card (trend/momentum/flow/range, flagged when it disagrees with the call), and an
   **"⚠ results in Xd" chip** on any call whose company reports earnings inside the hold window.
-- **Overview** — the Money-Made ledger.
+- **Watchlist** (`src/pages/advisory/GrowWatch.jsx`) — the Grow landing page. One row per
+  followed symbol: last close and day change, the **per-symbol bias chip**, the **highest-
+  confidence live signal** across all three lanes (or "no live signal"), the **nearest
+  support/resistance bracket** with distance to each, and an earnings warning when results fall
+  inside the hold window. Tapping a row deep-links to Charts, retargeted to the signal's bar
+  when there is one. Bias and S/R are computed **client-side** from `6M` daily bars
+  (`symbolBias`, `srLevels`); signals come from the last nightly scan.
+    This replaced the **Money-Made ledger**, which was dead here: `preferences.moneyMade` is
+    written only by `ActionsLens` (fee/reward actions), nothing in the trading flow feeds it, and
+    `AdvisoryHome` already shows the same total. `GrowHome.jsx` is **kept but unrouted** so the
+    bucket/trend/recent-wins breakdown can be restored elsewhere.
 
 ---
 

@@ -16,6 +16,7 @@ import Modal from "../../preStyledElements/modal/Modal";
 import TradePlan from "./TradePlan";
 import SignalHistory from "./SignalHistory";
 import SymbolBias from "./SymbolBias";
+import GrowSection from "./GrowSection";
 import { symbolBias } from "../../utils/grow/signals/bias";
 
 const DEFAULT = { symbol: "RELIANCE.NS", name: "Reliance Industries" };
@@ -39,6 +40,16 @@ const CANDLE_BARS = {
   morning_star: 3,
   evening_star: 3,
 };
+
+const TF_GROUPS = [
+  { key: "interval", label: "Bar size", hint: "how much time one candle covers" },
+  { key: "range", label: "Period", hint: "how far back the chart looks" },
+];
+
+const IND_GROUPS = [
+  { key: "price", label: "Drawn on the price chart", hint: "lines and bands over the candles" },
+  { key: "separate", label: "Drawn in their own panel", hint: "different scale, so they sit below" },
+];
 
 const INR = new Intl.NumberFormat("en-IN", {
   style: "currency",
@@ -479,6 +490,8 @@ export default function GrowChart() {
 
   const bias = useMemo(() => symbolBias(candles), [candles]);
 
+  const activeIndCount = Object.values(ind).filter(Boolean).length;
+
   function pick(r) {
     setSymbol({ symbol: r.symbol, name: r.name });
     setQuery("");
@@ -590,106 +603,118 @@ export default function GrowChart() {
         )}
       </div>
 
-      <SymbolBias bias={bias} />
+      {bias && (
+        <GrowSection
+          icon="fa-scale-balanced"
+          title="Which way is it leaning?"
+          subtitle="Four readings of how this stock has behaved lately. They describe the backdrop only — testing showed they do not improve a signal's odds."
+        >
+          <SymbolBias bias={bias} />
+        </GrowSection>
+      )}
 
-      <div className="grow-chart-tfs">
-        {TIMEFRAMES.map((t, i) => (
-          <Fragment key={t.key}>
-            {i > 0 && t.group !== TIMEFRAMES[i - 1].group && (
-              <span className="grow-chart-tf-sep" aria-hidden="true" />
-            )}
-            <button
-              type="button"
-              className={`grow-chart-tf${tf === t.key ? " is-active" : ""}`}
-              title={
-                t.group !== "range"
-                  ? `${t.interval} bars`
-                  : t.viewBars
-                    ? `${t.label} of ${t.interval} bars · ${t.range} loaded for indicators`
-                    : `${t.range} of ${t.interval} bars`
-              }
-              onClick={() => setTf(t.key)}
-            >
-              {tf === t.key && (
-                <motion.span
-                  layoutId="growTfPill"
-                  className="grow-chart-tf-pill"
-                  transition={{ type: "spring", stiffness: 480, damping: 38 }}
-                />
-              )}
-              <span>{t.label}</span>
-            </button>
-          </Fragment>
-        ))}
-      </div>
+      <GrowSection
+        icon="fa-chart-column"
+        title="Price chart"
+        subtitle="Each candle is one bar: the body runs from open to close, the thin wicks mark the high and low. Green closed up, red closed down."
+        aside={
+          <button type="button" className="grow-ind-editor-btn" onClick={() => setEditorOpen(true)}>
+            <i className="fa-solid fa-sliders" /> Indicators
+            {activeIndCount > 0 && <span className="grow-ind-editor-count">{activeIndCount}</span>}
+          </button>
+        }
+      >
+        <div className="grow-chart-tfs">
+          {TF_GROUPS.map((g) => (
+            <div key={g.key} className="grow-tfg">
+              <span className="grow-tfg-label">{g.label}</span>
+              <span className="grow-tfg-hint">{g.hint}</span>
+              <div className="grow-tfg-row">
+                {TIMEFRAMES.filter((t) => t.group === g.key).map((t) => (
+                  <button
+                    key={t.key}
+                    type="button"
+                    className={`grow-chart-tf${tf === t.key ? " is-active" : ""}`}
+                    title={
+                      t.group !== "range"
+                        ? `${t.interval} bars`
+                        : t.viewBars
+                          ? `${t.label} of ${t.interval} bars · ${t.range} loaded for indicators`
+                          : `${t.range} of ${t.interval} bars`
+                    }
+                    onClick={() => setTf(t.key)}
+                  >
+                    {tf === t.key && (
+                      <motion.span
+                        layoutId="growTfPill"
+                        className="grow-chart-tf-pill"
+                        transition={{ type: "spring", stiffness: 480, damping: 38 }}
+                      />
+                    )}
+                    <span>{t.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
 
-      <div className="grow-chart-inds">
         {spanLabel && (
           <span className={`grow-chart-span${picked != null ? " is-picked" : ""}`}>
             <i className="fa-regular fa-calendar" /> {spanLabel}
+            {picked != null && <em>tap the chart again to clear</em>}
           </span>
         )}
-        <button
-          type="button"
-          className="grow-ind-editor-btn"
-          onClick={() => setEditorOpen(true)}
-        >
-          <i className="fa-solid fa-sliders" /> Chart editor
-          {Object.values(ind).filter(Boolean).length > 0 && (
-            <span className="grow-ind-editor-count">
-              {Object.values(ind).filter(Boolean).length}
-            </span>
+
+        <div className="grow-chart-canvas" ref={chartWrapRef}>
+          <div ref={holderRef} className="grow-chart-lw" />
+          {loading && (
+            <div className="grow-chart-overlay">
+              <i className="fa-solid fa-spinner fa-spin" /> Loading…
+            </div>
           )}
-        </button>
-      </div>
-
-      <div className="grow-chart-canvas" ref={chartWrapRef}>
-        <div ref={holderRef} className="grow-chart-lw" />
-        {loading && (
-          <div className="grow-chart-overlay">
-            <i className="fa-solid fa-spinner fa-spin" /> Loading…
-          </div>
-        )}
-        {!loading && error && (
-          <div className="grow-chart-overlay grow-chart-overlay--err">
-            <i className="fa-solid fa-triangle-exclamation" /> {error}
-          </div>
-        )}
-      </div>
-
-      {signals.length > 0 && (
-        <div className="grow-legend-key">
-          <span className="grow-legend-hint">
-            <i className="fa-solid fa-hand-pointer" /> Tap a signal below to plot its pattern on the chart
-          </span>
+          {!loading && error && (
+            <div className="grow-chart-overlay grow-chart-overlay--err">
+              <i className="fa-solid fa-triangle-exclamation" /> {error}
+            </div>
+          )}
         </div>
-      )}
+      </GrowSection>
 
       {card.overall.resolved > 0 && (
-        <div className="grow-score">
-          <div className="grow-score-head">
-            <i className="fa-solid fa-clipboard-check" /> Track record
-            <span className="grow-score-sub">this symbol’s history · backtest, not advice</span>
-          </div>
+        <GrowSection
+          className="grow-score"
+          icon="fa-clipboard-check"
+          title="How these patterns did on this symbol"
+          subtitle="Every pattern above, replayed against the candles that came after it. One stock’s history — a backtest, not advice."
+        >
           <div className="grow-score-hero">
             <div className="grow-score-stat">
               <span className="grow-score-val">{Math.round(card.overall.hitRate * 100)}%</span>
               <span className="grow-score-lbl">hit rate</span>
+              <span className="grow-score-cap">reached the target before the stop</span>
             </div>
             <div className="grow-score-stat">
               <span className={`grow-score-val ${card.overall.avgReturn >= 0 ? "is-up" : "is-down"}`}>
                 {card.overall.avgReturn >= 0 ? "+" : ""}
                 {(card.overall.avgReturn * 100).toFixed(1)}%
               </span>
-              <span className="grow-score-lbl">avg return</span>
+              <span className="grow-score-lbl">average result</span>
+              <span className="grow-score-cap">per signal, after trading costs</span>
             </div>
             <div className="grow-score-stat">
               <span className="grow-score-val">{card.overall.resolved}</span>
-              <span className="grow-score-lbl">graded</span>
+              <span className="grow-score-lbl">signals scored</span>
+              <span className="grow-score-cap">
+                {card.overall.resolved < 20 ? "too few to lean on" : "enough for a rough read"}
+              </span>
             </div>
           </div>
 
-          <div className="grow-score-sec">Does confidence predict wins?</div>
+          <div className="grow-score-sec">
+            Does a higher confidence score actually win more often?
+            <em>If the bars fall from high to low, the score is telling you something.</em>
+          </div>
           <div className="grow-cal">
             {card.byBand
               .filter((b) => b.resolved > 0)
@@ -708,7 +733,10 @@ export default function GrowChart() {
 
           {card.byType.length > 0 && (
             <>
-              <div className="grow-score-sec">By pattern</div>
+              <div className="grow-score-sec">
+                By pattern
+                <em>hit rate · average result · how many were scored</em>
+              </div>
               <ul className="grow-score-types">
                 {card.byType.slice(0, 6).map((t) => (
                   <li key={t.type} className="grow-score-type">
@@ -727,18 +755,22 @@ export default function GrowChart() {
             </>
           )}
           <p className="grow-score-note">
-            Each past signal walked forward vs later candles (2× ATR target / 1.5× ATR stop, 10-bar
-            horizon, worst-case fills, net of costs). One symbol’s backtest — not advice.
+            Each signal is scored by replaying the candles after it: it wins if price reached a target
+            <strong> 2× the stock’s typical daily move</strong> before falling <strong>1.5×</strong> against
+            you, within 10 bars. Ties inside a single bar count as a loss, and trading costs are
+            deducted. One symbol’s backtest — not advice.
           </p>
-        </div>
+        </GrowSection>
       )}
 
       {signals.length > 0 && (
-        <div className="grow-sig">
-          <div className="grow-sig-head">
-            <i className="fa-solid fa-wand-magic-sparkles" /> Signals
-            <span className="grow-sig-count">{signals.length}</span>
-          </div>
+        <GrowSection
+          className="grow-sig"
+          icon="fa-wand-magic-sparkles"
+          title="Patterns found on this chart"
+          subtitle="Tap one to draw it on the chart above. Every pattern is shown here, including ones the scanner filters out — this view is for exploring."
+          aside={<span className="grow-sig-count">{signals.length}</span>}
+        >
           <ul className="grow-sig-list">
             {signals.map((s) => (
               <li
@@ -785,26 +817,38 @@ export default function GrowChart() {
               </li>
             ))}
           </ul>
-        </div>
+        </GrowSection>
       )}
 
       <Modal open={editorOpen} onClose={() => setEditorOpen(false)} title="Chart editor">
         <div className="grow-editor">
-          <div className="grow-editor-sec">
-            <div className="grow-editor-sec-head">Indicators</div>
-            <div className="grow-editor-grid">
-              {INDICATORS.map((def) => (
-                <button
-                  key={def.key}
-                  type="button"
-                  className={`grow-ind-chip${ind[def.key] ? " is-on" : ""}`}
-                  onClick={() => setInd((p) => ({ ...p, [def.key]: !p[def.key] }))}
-                >
-                  {def.label}
-                </button>
-              ))}
+          {IND_GROUPS.map((g) => (
+            <div className="grow-editor-sec" key={g.key}>
+              <div className="grow-editor-sec-head">
+                {g.label}
+                <em>{g.hint}</em>
+              </div>
+              <div className="grow-editor-list">
+                {INDICATORS.filter((d) => d.pane === g.key).map((def) => (
+                  <button
+                    key={def.key}
+                    type="button"
+                    className={`grow-ind-row${ind[def.key] ? " is-on" : ""}`}
+                    aria-pressed={!!ind[def.key]}
+                    onClick={() => setInd((p) => ({ ...p, [def.key]: !p[def.key] }))}
+                  >
+                    <span className="grow-ind-check">
+                      <i className={`fa-solid ${ind[def.key] ? "fa-check" : "fa-plus"}`} />
+                    </span>
+                    <span className="grow-ind-text">
+                      <span className="grow-ind-name">{def.label}</span>
+                      <span className="grow-ind-blurb">{def.blurb}</span>
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
+          ))}
           {/* NOTE: this modal is the single home for ALL chart editors. Every
               future picker — pattern filters, drawing tools, extra overlays —
               mounts as a new <section> here, each reading from its own registry

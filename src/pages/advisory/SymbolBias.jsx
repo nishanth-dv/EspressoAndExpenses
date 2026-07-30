@@ -22,6 +22,13 @@ export default function SymbolBias({ bias, compact = false, conflict = false }) 
         </span>
       )}
       {!compact && (
+        <div className="grow-bias-scale" aria-hidden="true">
+          <span>bearish</span>
+          <span className="grow-bias-scale-bar" />
+          <span>bullish</span>
+        </div>
+      )}
+      {!compact && (
         <div className="grow-bias-parts">
           {BIAS_PARTS.map((p) => {
             const v = bias.parts[p.key] ?? 0;

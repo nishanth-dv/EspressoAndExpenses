@@ -311,6 +311,7 @@ export function srLevels(candles, tol = 0.01, perSide = 4) {
 export const INDICATORS = [
   {
     key: "ma",
+    blurb: "Two rolling averages of price. When the fast one sits above the slow one, recent prices are stronger than older ones.",
     label: "MA 20/50",
     pane: "price",
     build: (candles) => {
@@ -323,6 +324,7 @@ export const INDICATORS = [
   },
   {
     key: "ma200",
+    blurb: "The long-run average. Trading above it is usually called an uptrend, below it a downtrend.",
     label: "MA 200",
     pane: "price",
     build: (candles) => [
@@ -331,6 +333,7 @@ export const INDICATORS = [
   },
   {
     key: "boll",
+    blurb: "Bands that widen when the stock gets jumpy. Price hugging the top band is stretched high, the bottom band stretched low.",
     label: "Bollinger",
     pane: "price",
     build: (candles) => {
@@ -344,6 +347,7 @@ export const INDICATORS = [
   },
   {
     key: "sr",
+    blurb: "Prices this stock has bounced off or stalled at more than once. Green below the current price, red above.",
     label: "S/R Levels",
     pane: "price",
     build: (candles) => {
@@ -366,12 +370,14 @@ export const INDICATORS = [
   },
   {
     key: "vwap",
+    blurb: "Average price weighted by how much actually traded there — day traders treat it as the session's fair value.",
     label: "VWAP",
     pane: "price",
     build: (candles) => [{ data: toLine(candles, vwap(candles)), color: "#f59e0b", width: 2 }],
   },
   {
     key: "supertrend",
+    blurb: "A trailing line that flips sides when the trend turns. Below price and green in an uptrend, above and red in a downtrend.",
     label: "Supertrend",
     pane: "price",
     build: (candles) => {
@@ -386,6 +392,7 @@ export const INDICATORS = [
   },
   {
     key: "ichimoku",
+    blurb: "A cloud built from several averages. Above the cloud is bullish, below is bearish, inside means undecided.",
     label: "Ichimoku",
     pane: "price",
     build: (candles) => {
@@ -404,6 +411,7 @@ export const INDICATORS = [
   },
   {
     key: "rsi",
+    blurb: "How fast gains are arriving versus losses, on a 0–100 scale. Under 30 is often called oversold, over 70 overbought.",
     label: "RSI",
     pane: "separate",
     priceLines: [30, 70],
@@ -413,6 +421,7 @@ export const INDICATORS = [
   },
   {
     key: "macd",
+    blurb: "Whether momentum is building or fading. Bars above zero mean the fast average is pulling away from the slow one.",
     label: "MACD",
     pane: "separate",
     build: (candles) => {
@@ -433,6 +442,7 @@ export const INDICATORS = [
   },
   {
     key: "stoch",
+    blurb: "Where today's close sits inside the recent high–low range. Under 20 is near the bottom of the range, over 80 near the top.",
     label: "Stochastic",
     pane: "separate",
     priceLines: [20, 80],
@@ -446,6 +456,7 @@ export const INDICATORS = [
   },
   {
     key: "adx",
+    blurb: "How strong the trend is, ignoring direction. Above 25 usually means a genuine trend rather than sideways chop.",
     label: "ADX",
     pane: "separate",
     priceLines: [25],
@@ -460,18 +471,21 @@ export const INDICATORS = [
   },
   {
     key: "atr",
+    blurb: "The average size of a bar's move. Bigger means wider swings — it is what every target and stop here is sized from.",
     label: "ATR",
     pane: "separate",
     build: (candles) => [{ data: toLine(candles, atrSeries(candles, 14)), color: "#a855f7", width: 2 }],
   },
   {
     key: "obv",
+    blurb: "Volume added on up bars and subtracted on down bars. Rising while price stays flat can hint at quiet buying.",
     label: "OBV",
     pane: "separate",
     build: (candles) => [{ data: toLine(candles, obv(candles)), color: "#0ea5e9", width: 2 }],
   },
   {
     key: "volume",
+    blurb: "How many shares changed hands each bar. Spikes show unusual interest, in either direction.",
     label: "Volume",
     pane: "separate",
     build: (candles) => [

@@ -14,6 +14,9 @@
   --amount-expense: #ef4444;
   --amount-income: #16a34a;
   --amount-investment: #5b8dee;
+  /* The app's blue. Shared by every "back" affordance and the shortcut
+     picker's selected state; identical in both themes like --amount-*. */
+  --accent-blue: #5b8dee;
   --amount-repayment: #8b5cf6;
   --category-bg: #2a160c;
   --category-text: #e0d6d5;
@@ -617,22 +620,88 @@ textarea {
   flex-shrink: 0;
 }
 
-/* ── Preferences: Shortcuts manager ──────────────────── */
+/* ── Preferences: Shortcuts manager ────────────────────
+   Selection language mirrors the Investment types panel: a flat row that
+   picks up a tinted border + wash when it's on, rather than a solid fill. */
 .sc-list {
-  margin-bottom: 14px;
+  list-style: none;
+  margin: 0 0 14px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sc-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--surface-border);
+  border-radius: 10px;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.sc-row--on {
+  border-color: color-mix(in srgb, var(--accent-blue) 35%, transparent);
+  background: color-mix(in srgb, var(--accent-blue) 5%, var(--bg));
 }
 
 .sc-row--off {
   opacity: 0.55;
 }
 
+.sc-row-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+  border-radius: 10px;
+  font-size: 14px;
+  background: color-mix(in srgb, var(--accent-blue) 13%, transparent);
+  color: var(--accent-blue);
+}
+
+.sc-row--off .sc-row-icon {
+  background: var(--surface-active);
+  color: var(--text-label);
+}
+
+.sc-row-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.sc-row-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.sc-row-path {
+  font-size: 12px;
+  color: var(--text-label);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .sc-row-tag {
-  font-size: 9.5px;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
   padding: 1px 6px;
   border-radius: 999px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
   background: var(--surface-active);
   color: var(--text-label);
 }
@@ -681,18 +750,7 @@ textarea {
 }
 
 .sc-add-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
   margin-bottom: 10px;
-}
-
-.sc-count {
-  font-size: 12px;
-  font-weight: 700;
-  color: var(--text-label);
-  font-variant-numeric: tabular-nums;
 }
 
 .sc-chips {
@@ -707,8 +765,40 @@ textarea {
   border-top: 1px solid var(--surface-border);
 }
 
-.sc-chips .pref-zone-tab i {
-  font-size: 11px;
+.sc-pick {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 13px;
+  border: 1px solid var(--surface-border);
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.sc-pick i {
+  font-size: 12px;
+  color: var(--text-label);
+}
+
+.sc-pick:hover {
+  border-color: var(--surface-border-open);
+  color: var(--text-primary);
+}
+
+.sc-pick--on {
+  border-color: color-mix(in srgb, var(--accent-blue) 35%, transparent);
+  background: color-mix(in srgb, var(--accent-blue) 5%, var(--bg));
+  color: var(--text-primary);
+}
+
+.sc-pick--on i {
+  color: var(--accent-blue);
 }
 
 .sc-add-foot {
@@ -748,7 +838,7 @@ textarea {
   background: var(--surface-bg);
   border: 1px solid var(--surface-border);
   border-radius: 10px;
-  color: var(--text-primary);
+  color: var(--accent-blue);
   font-size: 16px;
   cursor: pointer;
   transition:
@@ -758,8 +848,8 @@ textarea {
 }
 
 .pref-back-btn:hover {
-  background: var(--surface-active);
-  border-color: var(--surface-border-open);
+  background: color-mix(in srgb, var(--accent-blue) 12%, transparent);
+  border-color: color-mix(in srgb, var(--accent-blue) 45%, transparent);
 }
 
 .pref-back-btn:active {
@@ -2776,12 +2866,12 @@ html[data-skin="glass"] .balance-carousel {
   font-family: inherit;
   font-size: 0.85rem;
   font-weight: 600;
-  color: var(--text-muted, #6b7280);
+  color: var(--accent-blue);
   cursor: pointer;
   transition: color 0.16s ease;
 }
 .deeplink-back:hover {
-  color: var(--accent, #6c5ce7);
+  color: color-mix(in srgb, var(--accent-blue) 78%, var(--text-primary));
 }
 
 @media (max-width: 1024px) {
@@ -4609,13 +4699,13 @@ html[data-skin="glass"] .tx-note {
   border-radius: 8px;
   font-size: 0.85rem;
   font-weight: 600;
-  color: var(--text-muted, #6b7280);
+  color: var(--accent-blue);
   cursor: pointer;
   transition: color 0.16s ease;
 }
 
 .adv-back-btn:hover {
-  color: var(--accent, #6c5ce7);
+  color: color-mix(in srgb, var(--accent-blue) 78%, var(--text-primary));
 }
 
 .adv-subnav {

@@ -73,24 +73,28 @@ const ShortcutsManager = () => {
         shortcut hides itself and comes back when the page does.
       </p>
 
+      <p className="pref-inv-types-summary">
+        <strong>{stored.length}</strong> of {SHORTCUT_LIMIT} shortcuts saved
+      </p>
+
       {rows.length > 0 && (
-        <ul className="pref-pages-list sc-list">
+        <ul className="sc-list">
           {rows.map(({ entry, info }, i) => (
             <li
               key={info ? `${info.key}-${i}` : `unknown-${i}`}
-              className={`pref-page-row${info?.available ? "" : " sc-row--off"}`}
+              className={`sc-row${info?.available ? " sc-row--on" : " sc-row--off"}`}
             >
-              <span className="pref-page-icon">
+              <span className="sc-row-icon">
                 <i className={`fa-solid ${info?.icon ?? "fa-link-slash"}`} />
               </span>
-              <div className="pref-page-meta">
-                <span className="pref-page-name">
+              <div className="sc-row-meta">
+                <span className="sc-row-name">
                   {info?.label ?? "Unavailable shortcut"}
                   {info && !info.available && (
                     <span className="sc-row-tag">{info.unavailableReason}</span>
                   )}
                 </span>
-                <span className="pref-page-blurb">
+                <span className="sc-row-path">
                   {info?.path ?? `${entry?.page ?? "?"} · ${entry?.tab ?? ""}`}
                 </span>
               </div>
@@ -130,9 +134,6 @@ const ShortcutsManager = () => {
       <div className="sc-add">
         <div className="sc-add-head">
           <p className="pref-row-label">Add a shortcut</p>
-          <span className="sc-count">
-            {stored.length} / {SHORTCUT_LIMIT}
-          </span>
         </div>
 
         {full ? (
@@ -146,7 +147,7 @@ const ShortcutsManager = () => {
                 <button
                   key={t.key}
                   type="button"
-                  className={`pref-zone-tab${pickPage === t.key ? " pref-zone-tab--active" : ""}`}
+                  className={`sc-pick${pickPage === t.key ? " sc-pick--on" : ""}`}
                   onClick={() => {
                     setPickPage(t.key);
                     setPickTab("");
@@ -163,7 +164,7 @@ const ShortcutsManager = () => {
               <div className="sc-chips sc-chips--tabs">
                 <button
                   type="button"
-                  className={`pref-zone-tab${pickTab === "" ? " pref-zone-tab--active" : ""}`}
+                  className={`sc-pick${pickTab === "" ? " sc-pick--on" : ""}`}
                   onClick={() => setPickTab("")}
                   aria-pressed={pickTab === ""}
                 >
@@ -173,7 +174,7 @@ const ShortcutsManager = () => {
                   <button
                     key={tab.key}
                     type="button"
-                    className={`pref-zone-tab${pickTab === tab.key ? " pref-zone-tab--active" : ""}`}
+                    className={`sc-pick${pickTab === tab.key ? " sc-pick--on" : ""}`}
                     onClick={() => setPickTab(tab.key)}
                     aria-pressed={pickTab === tab.key}
                   >

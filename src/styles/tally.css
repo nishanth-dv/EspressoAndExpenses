@@ -430,7 +430,7 @@ body.tx-highlighting .tally-fab {
   padding: 4px 4px;
   background: transparent;
   border: none;
-  color: var(--text-secondary);
+  color: var(--accent-blue);
   font-family: inherit;
   font-size: 13px;
   font-weight: 600;
@@ -438,7 +438,7 @@ body.tx-highlighting .tally-fab {
 }
 
 .tally-calc-back:hover {
-  color: var(--text-primary);
+  color: color-mix(in srgb, var(--accent-blue) 78%, var(--text-primary));
 }
 
 .tally-calc-expr {

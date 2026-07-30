@@ -284,7 +284,7 @@
   border-radius: 20px;
   border: 1px solid var(--surface-border);
   background: var(--surface-bg);
-  color: var(--text-secondary);
+  color: var(--accent-blue);
   font-family: "Smooch Sans", sans-serif;
   font-size: 14px;
   font-weight: 700;
@@ -295,8 +295,9 @@
 }
 
 .inv-back-btn:hover {
-  color: var(--text-primary);
-  border-color: var(--surface-border-open);
+  color: var(--accent-blue);
+  border-color: color-mix(in srgb, var(--accent-blue) 45%, transparent);
+  background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
 }
 
 .inv-holdings-header {

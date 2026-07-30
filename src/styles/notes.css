@@ -169,18 +169,17 @@
   width: 28px;
   height: 28px;
   padding: 0;
-  border: 1px solid var(--surface-border);
+  border: 1px solid color-mix(in srgb, var(--accent-blue) 35%, transparent);
   border-radius: 8px;
-  background: var(--surface-bg);
-  color: var(--text-secondary);
+  background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
+  color: var(--accent-blue);
   font-size: 11px;
   cursor: pointer;
   transition: background 0.14s ease, color 0.14s ease;
 }
 
 .al-back-btn:hover {
-  background: var(--surface-active);
-  color: var(--text-primary);
+  background: color-mix(in srgb, var(--accent-blue) 18%, transparent);
 }
 
 .al-panel-title {

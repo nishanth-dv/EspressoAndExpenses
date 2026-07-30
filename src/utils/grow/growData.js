@@ -25,7 +25,7 @@ export const INTERVAL_TF = {
   "1h": "1h",
   "1d": "1Y",
   "1wk": "5Y",
-  btst: "1Y",
+  btst: "1M",
 };
 
 function parseChart(json) {

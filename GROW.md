@@ -56,6 +56,13 @@ and the per-pattern train→OOS expectancy correlation jumped from +0.03 to **+0
   bars. Horizontal-scroll strip on mobile. Opens at **Today** (`DEFAULT_TF`) on the last
   symbol viewed (`localStorage["grow-chart-last"]`, symbol only — the timeframe is
   deliberately not sticky); `?i=<scan interval>` from Signals overrides via `INTERVAL_TF`.
+  - **`INTERVAL_TF` must match the trade's horizon, not just its bar size.** `btst` pointed at
+    the `1Y` tab until 2026-07-30 — a next-day trade opening on a year of daily candles. It now
+    targets `1M` (daily bars, `viewBars: 21`), which still fetches 1y so indicators warm up but
+    shows only the last month. `1d` → `1Y` stays deliberate: a ~10-day swing on `support_bounce`
+    needs enough history to see the level being tested. ⚠️ This mapping has **no test** —
+    `growData.js` imports `googleDrive`/`priceService` and will not load under node, so it is
+    verified by inspection only.
   A **Chart editor** modal toggles indicators from a registry
   (`src/utils/grow/chartIndicators.js`): MA 20/50, MA 200, Bollinger, VWAP,
   Supertrend, Ichimoku (price pane) and RSI, MACD, Stochastic, ADX, ATR, OBV, Volume

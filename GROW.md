@@ -94,8 +94,16 @@ and the per-pattern train→OOS expectancy correlation jumped from +0.03 to **+0
   banner** (India VIX regime — fear/neutral/calm, from the scan row), a **per-symbol bias chip**
   on each card (trend/momentum/flow/range, flagged when it disagrees with the call), and an
   **"⚠ results in Xd" chip** on any call whose company reports earnings inside the hold window.
-- **Watchlist** (`src/pages/advisory/GrowWatch.jsx`) — the Grow landing page. One row per
-  followed symbol: last close and day change, the **per-symbol bias chip**, the **highest-
+- **Portfolio & Watchlist** (`src/pages/advisory/GrowWatch.jsx`) — the Grow landing page.
+  **Holdings** come from the Investments page: `investments` filtered to `type === "stock"`
+  with a `ticker`, grouped through the shared `groupInvestmentsByTicker` so multiple lots
+  become one position with a weighted average cost. Tickers are stored as `INFY.NS`, the same
+  format Grow uses, so they join to candles and signals directly. Each holding shows quantity,
+  average cost, current value and P&L, above a portfolio strip of value / overall P&L / today /
+  invested. **Only stocks** — other asset types are deliberately excluded because the signal
+  engine cannot read them. Holdings are valued at the latest close, which can differ from the
+  Investments page when its stored `currentPrice` is stale. Below that, **Watchlist** lists
+  followed-but-not-held symbols. Every row shows: last close and day change, the **per-symbol bias chip**, the **highest-
   confidence live signal** across all three lanes (or "no live signal"), the **nearest
   support/resistance bracket** with distance to each, and an earnings warning when results fall
   inside the hold window. Tapping a row deep-links to Charts, retargeted to the signal's bar

@@ -13457,3 +13457,73 @@ html[data-skin="glass"] .grow-sec {
 .grow-sigflt-toggle.is-active > i {
   color: #eab308;
 }
+.grow-pf {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px 14px;
+  margin-bottom: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--surface-border);
+  background: color-mix(in srgb, var(--text-secondary) 6%, transparent);
+}
+.grow-pf-stat {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.grow-pf-val {
+  font-size: 1.06rem;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+}
+.grow-pf-val.is-up {
+  color: var(--amount-income);
+}
+.grow-pf-val.is-down {
+  color: var(--amount-expense);
+}
+.grow-pf.is-up .grow-pf-pl {
+  color: var(--amount-income);
+}
+.grow-pf.is-down .grow-pf-pl {
+  color: var(--amount-expense);
+}
+.grow-pf-lbl {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+}
+.grow-pos {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+  padding: 6px 9px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--text-secondary) 8%, transparent);
+  font-size: 0.78rem;
+}
+.grow-pos-qty {
+  font-weight: 600;
+}
+.grow-pos-qty em,
+.grow-pos-val em {
+  font-style: normal;
+  font-weight: 500;
+  margin-left: 7px;
+  font-size: 0.92em;
+  color: var(--text-secondary);
+}
+.grow-pos-val {
+  font-weight: 700;
+  white-space: nowrap;
+}
+.grow-pos.is-up .grow-pos-val em {
+  color: var(--amount-income);
+}
+.grow-pos.is-down .grow-pos-val em {
+  color: var(--amount-expense);
+}

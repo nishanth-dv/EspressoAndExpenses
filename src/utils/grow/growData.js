@@ -23,7 +23,7 @@ export const INTERVAL_TF = {
   "5m": "5m",
   "15m": "15m",
   "1h": "1h",
-  "1d": "1Y",
+  "1d": "6M",
   "1wk": "5Y",
   btst: "1M",
 };

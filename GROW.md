@@ -59,8 +59,9 @@ and the per-pattern train→OOS expectancy correlation jumped from +0.03 to **+0
   - **`INTERVAL_TF` must match the trade's horizon, not just its bar size.** `btst` pointed at
     the `1Y` tab until 2026-07-30 — a next-day trade opening on a year of daily candles. It now
     targets `1M` (daily bars, `viewBars: 21`), which still fetches 1y so indicators warm up but
-    shows only the last month. `1d` → `1Y` stays deliberate: a ~10-day swing on `support_bounce`
-    needs enough history to see the level being tested. ⚠️ This mapping has **no test** —
+    shows only the last month. `1d` → `6M` for the same reason (daily bars, `viewBars: 126`,
+    fetching 2y): a ~10-day swing needs enough history to show the level `support_bounce` is
+    testing, but not a full year of it. ⚠️ This mapping has **no test** —
     `growData.js` imports `googleDrive`/`priceService` and will not load under node, so it is
     verified by inspection only.
   A **Chart editor** modal toggles indicators from a registry

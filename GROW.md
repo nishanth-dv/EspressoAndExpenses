@@ -682,12 +682,45 @@ floor, and shrinkage can only move a negative edge *toward* zero, never across t
 weight. It was picked because per-trade noise here is percent-level against edges of
 0.3–1.5pp. Nothing validates 1000 over 500 or 2000.
 
-⚠️ **Dispersion is still unused, and it matters.** `rsi_oversold` now scores **79 — the
-highest in the system — on the least trustworthy magnitude in it**: its rolling mean (+1.209pp)
-disagrees with its own holdout figure (+0.26pp) by ~5×, and its cross-window sd is **0.659pp
-against `support_bounce`'s 0.232pp**. Shrinkage by `n` cannot see that instability. Penalising
-by cross-window sd (or using a lower confidence bound, `edge − z·sd/√windows`) would; the data
-exists in *Rolling-window validation*. Not implemented.
+#### Dispersion penalty (2026-07-30)
+Sample size alone missed *period variability*. `rsi_oversold` scored **79 — highest in the
+system** — because its edge is large, while being far less consistent than `support_bounce`
+(cross-window sd **0.659pp vs 0.232pp**). The score now takes a one-standard-error **lower
+confidence bound** across rolling windows before shrinking by `n`:
+
+```
+lowerBound(edge, sd, windows) = edge − EDGE_Z · sd / √windows      EDGE_Z = 1
+effective                     = shrinkEdge(lowerBound(...), n)
+```
+
+| Interval | Pattern | raw | sd | win | lcb | shrunk | conf |
+|---|---|---|---|---|---|---|---|
+| `1d` | `rsi_oversold` | +1.017 | 0.659 | 9 | +0.797 | **+0.404** | 71 |
+| `1d` | `support_bounce` | +0.442 | 0.232 | 9 | +0.365 | **+0.332** | 66 |
+| `1wk` | `support_bounce` | +1.512 | 1.030 | 5 | +1.051 | **+0.221** | 56 |
+
+`rsi_oversold` loses **0.613pp** of its raw edge to the two penalties; `support_bounce` loses
+**0.110pp**. Patterns with no rolling `sd` recorded take no dispersion penalty (all are
+gated-out negatives, where it cannot change the outcome).
+
+**A correction to what this file previously claimed.** The earlier note said `rsi_oversold`'s
+rolling mean "disagrees with its own holdout figure by ~5×", implying a broken measurement.
+**That was wrong.** The holdout period *is* rolling windows 7+8, whose trade-weighted edge is
+**0.268** — exactly the holdout's +0.26. There is no contradiction: `rsi_oversold` genuinely
+averages ~1.0pp over nine windows and simply had a weak last twelve months (window 7 =
++0.02pp). The real property is **period variability**, which is what `sd` measures and what
+this penalty now prices.
+
+Window means are also now **trade-weighted**, not unweighted. Unweighted overstated
+`rsi_oversold` at 1.210 vs 1.017, because a 30-trade window counted as much as a 190-trade one.
+
+⚠️ **Two consequences worth watching.**
+1. **Nothing reaches the `high` band any more** — the best score is 71 against a 75 cut, so
+   "high" is currently unreachable. Defensible reading: no detector has evidence that strong
+   yet. But an unreachable band is dead UI, and the 75/55 cuts remain unvalidated anyway.
+2. **Weekly `support_bounce` clears the 0.2pp floor by only 0.021pp.** Any downward revision
+   empties the Investment lane entirely. A test asserts this margin so the fragility is visible
+   rather than discovered in production.
 
 The score finally says what a user assumes it says: *how much this pattern beat buying the
 same stock on an arbitrary day*. Bands were re-cut to the new scale (**high ≥ 75, moderate

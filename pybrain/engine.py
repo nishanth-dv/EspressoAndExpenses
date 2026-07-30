@@ -398,11 +398,12 @@ def detect_all(candles, closes, rsi, piv):
 
 EDGE_FLOOR = 0.2
 EDGE_PRIOR_N = 1000
+EDGE_Z = 1
 
 EDGE_VS_RANDOM = {
     "1d": {
-        "support_bounce": {"edge": 0.48, "n": 10143},
-        "rsi_oversold": {"edge": 1.209, "n": 1028},
+        "support_bounce": {"edge": 0.442, "n": 10143, "sd": 0.232, "windows": 9},
+        "rsi_oversold": {"edge": 1.017, "n": 1028, "sd": 0.659, "windows": 9},
         "hammer": {"edge": 0.12, "n": 2544},
         "double_bottom": {"edge": 0.04, "n": 1575},
         "bullish_engulfing": {"edge": 0.01, "n": 3659},
@@ -411,13 +412,21 @@ EDGE_VS_RANDOM = {
         "inverse_head_shoulders": {"edge": -0.28, "n": 754},
     },
     "1wk": {
-        "support_bounce": {"edge": 1.516, "n": 266},
+        "support_bounce": {"edge": 1.512, "n": 266, "sd": 1.03, "windows": 5},
         "bullish_engulfing": {"edge": -0.91, "n": 344},
         "hammer": {"edge": -1.09, "n": 126},
         "morning_star": {"edge": -1.94, "n": 212},
         "breakout": {"edge": -2.22, "n": 258},
     },
 }
+
+
+def lower_bound(edge, sd, windows):
+    if edge is None:
+        return None
+    if not sd or not windows:
+        return edge
+    return edge - EDGE_Z * sd / (windows ** 0.5)
 
 
 def shrink_edge(edge, n):
@@ -433,7 +442,7 @@ def edge_for(t, interval):
     row = table.get(t)
     if row is None:
         return None
-    return shrink_edge(row["edge"], row["n"])
+    return shrink_edge(lower_bound(row["edge"], row.get("sd"), row.get("windows")), row["n"])
 
 
 def raw_edge_for(t, interval):

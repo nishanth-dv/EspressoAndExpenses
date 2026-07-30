@@ -4,7 +4,7 @@ import { gradeSignal, scoreCard } from "./grade.js";
 import { atrSeries } from "./indicators.js";
 import { band as bandOf, edgeBase } from "./confidence.js";
 import { symbolBias } from "./bias.js";
-import { SUPPRESSED_TYPES, STYLES, LIVE_STYLES, styleFor, tradeType, beatsRandom, edgeFor, rawEdgeFor, shrinkEdge, EDGE_PRIOR_N } from "./contract.js";
+import { SUPPRESSED_TYPES, STYLES, LIVE_STYLES, styleFor, tradeType, beatsRandom, edgeFor, rawEdgeFor, shrinkEdge, lowerBound, EDGE_PRIOR_N, EDGE_FLOOR } from "./contract.js";
 
 function candle(time, o, h, l, c, v = 1000) {
   return { time, open: o, high: h, low: l, close: c, volume: v };
@@ -113,6 +113,31 @@ assert(shrinkEdge(1.0, 1e9) > 0.99, "a huge sample barely shrinks");
 assert.strictEqual(shrinkEdge(null, 500), 0, "no measurement shrinks to zero");
 assert.strictEqual(shrinkEdge(0.5, 0), 0, "zero trades carries no information");
 assert(shrinkEdge(-1.0, 500) < 0, "a negative edge stays negative under shrinkage");
+
+assert.strictEqual(lowerBound(1.0, 0, 9), 1.0, "no dispersion data = no dispersion penalty");
+assert.strictEqual(lowerBound(1.0, 0.3, 9), 0.9, "penalty is z * sd / sqrt(windows)");
+assert(lowerBound(1.0, 0.9, 9) < lowerBound(1.0, 0.3, 9), "a more variable edge is penalised harder");
+assert(lowerBound(1.0, 0.6, 36) > lowerBound(1.0, 0.6, 4), "more windows = a tighter bound");
+assert(lowerBound(-1.0, 0.5, 4) < -1.0, "a negative edge is pushed further negative, never rescued");
+
+const rsi = rawEdgeFor("rsi_oversold", "1d");
+const sb1d = rawEdgeFor("support_bounce", "1d");
+assert(rsi.sd > sb1d.sd, "rsi_oversold is the more variable detector across periods");
+assert(
+  rsi.edge - edgeFor("rsi_oversold", "1d") > sb1d.edge - edgeFor("support_bounce", "1d"),
+  "the more variable, thinner-sampled detector loses more of its raw edge to the penalties",
+);
+console.log(
+  `ok — dispersion: rsi_oversold ${rsi.edge}→${edgeFor("rsi_oversold", "1d").toFixed(3)} (sd ${rsi.sd}), ` +
+    `support_bounce ${sb1d.edge}→${edgeFor("support_bounce", "1d").toFixed(3)} (sd ${sb1d.sd})`,
+);
+
+const wk = rawEdgeFor("support_bounce", "1wk");
+assert(edgeFor("support_bounce", "1wk") >= EDGE_FLOOR, "the weekly lane still has a detector at all");
+assert(
+  edgeFor("support_bounce", "1wk") - EDGE_FLOOR < 0.05,
+  "weekly support_bounce clears the floor only narrowly — revising it down empties the Investment lane",
+);
 
 const sbD = rawEdgeFor("support_bounce", "1d");
 const sbW = rawEdgeFor("support_bounce", "1wk");

@@ -101,7 +101,17 @@ assert beats_random("anything", "btst"), "an interval with no benchmark table is
 assert edge_base(None) is None and edge_base(-0.12) == 0.0, "no edge / negative edge score nothing"
 assert edge_base(0.2) == 0.5 and edge_base(2.55) > edge_base(0.35) and edge_base(9999) < 1, "edge base is monotone and saturating"
 
-from engine import shrink_edge, raw_edge_for, edge_for, EDGE_PRIOR_N
+from engine import shrink_edge, raw_edge_for, edge_for, lower_bound, EDGE_PRIOR_N, EDGE_FLOOR
+assert lower_bound(1.0, 0, 9) == 1.0, "no dispersion data = no dispersion penalty"
+assert abs(lower_bound(1.0, 0.3, 9) - 0.9) < 1e-9, "penalty is z * sd / sqrt(windows)"
+assert lower_bound(1.0, 0.9, 9) < lower_bound(1.0, 0.3, 9), "a more variable edge is penalised harder"
+assert lower_bound(1.0, 0.6, 36) > lower_bound(1.0, 0.6, 4), "more windows = a tighter bound"
+assert lower_bound(-1.0, 0.5, 4) < -1.0, "a negative edge is pushed further negative"
+_r, _s = raw_edge_for("rsi_oversold", "1d"), raw_edge_for("support_bounce", "1d")
+assert _r["sd"] > _s["sd"], "rsi_oversold is the more variable detector"
+assert _r["edge"] - edge_for("rsi_oversold", "1d") > _s["edge"] - edge_for("support_bounce", "1d"),     "the more variable, thinner-sampled detector loses more raw edge to the penalties"
+assert edge_for("support_bounce", "1wk") >= EDGE_FLOOR, "the weekly lane still has a detector"
+assert edge_for("support_bounce", "1wk") - EDGE_FLOOR < 0.05,     "weekly clears the floor only narrowly — revising it down empties the Investment lane"
 assert shrink_edge(1.0, EDGE_PRIOR_N) == 0.5, "n equal to the prior halves the edge"
 assert shrink_edge(1.0, 10) < shrink_edge(1.0, 10000), "more trades = less shrinkage"
 assert shrink_edge(1.0, 10 ** 9) > 0.99, "a huge sample barely shrinks"

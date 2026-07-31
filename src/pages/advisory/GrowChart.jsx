@@ -423,7 +423,7 @@ export default function GrowChart() {
       if (idx >= 0) {
         const n = CANDLE_BARS[active.type] ?? 1;
         const bull = active.direction === "bullish";
-        for (let i = Math.max(0, idx - n + 1); i <= idx; i++) {
+        for (let i = Math.max(0, idx - n + 1); i < idx; i++) {
           marks.push({ time: candles[i].time, position: bull ? "belowBar" : "aboveBar", shape: "circle", color: PATTERN_COLOR });
         }
       }

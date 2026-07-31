@@ -6,6 +6,7 @@ import { CATEGORY_META, LIVE_STYLES } from "../../utils/grow/signals/contract";
 import { persistSetPreference } from "../../redux/slices/transactionSlice";
 import { isWatched, toggleWatch, readWatchlist } from "../../utils/grow/watchlist";
 import { ConfidenceBadge, ConfidenceReveal } from "./ConfidenceControl";
+import { breakdownSignal } from "../../utils/grow/signals/confidence";
 import TradePlan from "./TradePlan";
 import SignalHistory from "./SignalHistory";
 import SignalEvidence from "./SignalEvidence";
@@ -394,7 +395,10 @@ export default function GrowSignals() {
               <TradePlan plan={s.plan} tradeType={s.trade_type} interval={s.interval || iv} direction={s.direction} />
               <SignalEvidence type={s.type} interval={s.interval || iv} />
               <SignalHistory history={s.history} name={s.name} />
-              {s.breakdown && <ConfidenceReveal open={openId === s.id} card={{ confidenceBreakdown: s.breakdown }} />}
+              <ConfidenceReveal
+                open={openId === s.id}
+                card={{ confidenceBreakdown: s.breakdown ?? breakdownSignal(s.factors ?? {}) }}
+              />
             </li>
           ))}
         </ul>

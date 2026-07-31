@@ -13913,3 +13913,14 @@ html[data-skin="glass"] .grow-sec .grow-hist {
 .grow-sig-meta {
   margin-top: 4px;
 }
+/* The confidence panel is shared with the other Advisory tabs, so its
+   near-black bits are recoloured only inside Grow. The per-row points stay
+   green/red — those are semantic, not emphasis. */
+.grow-chart .adv-conf-panel-head strong,
+.grow-sig .adv-conf-panel-head strong,
+.grow-chart .adv-conf-row--total .adv-conf-row-label,
+.grow-sig .adv-conf-row--total .adv-conf-row-label,
+.grow-chart .adv-conf-row--total .adv-conf-row-pts,
+.grow-sig .adv-conf-row--total .adv-conf-row-pts {
+  color: var(--grow-strong);
+}

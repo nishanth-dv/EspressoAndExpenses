@@ -12660,26 +12660,6 @@ html[data-skin="glass"] .adv-card {
 .grow-cat--chart {
   --cat: var(--amount-income);
 }
-.grow-sig-oc {
-  flex-shrink: 0;
-  font-size: 0.72rem;
-  font-weight: 700;
-  padding: 2px 7px;
-  border-radius: 999px;
-  white-space: nowrap;
-}
-.grow-sig-oc--win {
-  color: var(--amount-income);
-  background: color-mix(in srgb, var(--amount-income) 14%, transparent);
-}
-.grow-sig-oc--loss {
-  color: var(--amount-expense);
-  background: color-mix(in srgb, var(--amount-expense) 14%, transparent);
-}
-.grow-sig-oc--flat {
-  color: var(--text-secondary);
-  background: var(--surface-active);
-}
 
 /* ---- Grow → Signals tab (breadth scan) ---- */
 .grow-sigflt {
@@ -13716,4 +13696,108 @@ html[data-theme="dark"] .grow-watch-tag--watch {
 }
 .grow-mkey-item--active > i {
   color: #f59e0b;
+}
+.grow-sig-when {
+  display: block;
+  margin-top: 2px;
+  font-size: 0.72rem;
+  opacity: 0.85;
+}
+.grow-sig-when > i,
+.grow-sig-meta > i {
+  margin-right: 4px;
+  opacity: 0.7;
+}
+.grow-oc {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 8px;
+  padding: 9px 11px;
+  border-radius: 10px;
+  border: 1px solid var(--surface-border);
+  font-size: 0.76rem;
+  line-height: 1.45;
+}
+.grow-oc-head {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-weight: 700;
+}
+.grow-oc-head b {
+  margin-left: auto;
+  font-size: 1.02em;
+}
+.grow-oc-why {
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+}
+.grow-oc--win {
+  border-color: color-mix(in srgb, var(--amount-income) 34%, transparent);
+  background: color-mix(in srgb, var(--amount-income) 8%, transparent);
+}
+.grow-oc--win .grow-oc-head {
+  color: var(--amount-income);
+}
+.grow-oc--loss {
+  border-color: color-mix(in srgb, var(--amount-expense) 34%, transparent);
+  background: color-mix(in srgb, var(--amount-expense) 8%, transparent);
+}
+.grow-oc--loss .grow-oc-head {
+  color: var(--amount-expense);
+}
+.grow-oc--flat,
+.grow-oc--pending {
+  background: color-mix(in srgb, var(--text-secondary) 6%, transparent);
+}
+.grow-oc--flat .grow-oc-head,
+.grow-oc--pending .grow-oc-head {
+  color: var(--text-secondary);
+}
+
+@media (max-width: 560px) {
+  .grow-sig-row {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+  .grow-sig-main {
+    flex: 1 1 100%;
+    order: 1;
+  }
+  .grow-watch-star,
+  .grow-sig-row > .grow-watch-star {
+    order: 2;
+  }
+  .grow-sig-row > .grow-conf {
+    order: 3;
+    margin-left: auto;
+  }
+  .grow-sig-title {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+  }
+  .grow-plan {
+    gap: 8px 12px;
+  }
+  .grow-plan-cell {
+    flex: 1 1 40%;
+  }
+  .grow-oc-head b {
+    margin-left: 0;
+  }
+  .grow-oc-head {
+    flex-wrap: wrap;
+  }
+  .grow-pf {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .grow-watch-top {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+  .grow-sec {
+    padding: 12px 11px;
+  }
 }

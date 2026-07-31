@@ -9,6 +9,7 @@ import { ConfidenceBadge, ConfidenceReveal } from "./ConfidenceControl";
 import TradePlan from "./TradePlan";
 import SignalHistory from "./SignalHistory";
 import SignalEvidence from "./SignalEvidence";
+import { whenLabel } from "../../utils/grow/when";
 import GrowSection from "./GrowSection";
 import TrackStats from "./TrackStats";
 
@@ -361,6 +362,9 @@ export default function GrowSignals() {
                     </span>
                     <span className="grow-sig-meta">
                       {s.title} · ₹{Number(s.price).toFixed(2)} <em>at signal</em>
+                      <span className="grow-sig-when">
+                        <i className="fa-regular fa-clock" /> Spotted {whenLabel(s.bar_time, iv !== "1d" && iv !== "1wk")}
+                      </span>
                       {s.earnings_in != null && (
                         <span className="grow-sig-earnings">
                           {" · "}

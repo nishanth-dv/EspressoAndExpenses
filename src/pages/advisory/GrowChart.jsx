@@ -16,10 +16,12 @@ import Modal from "../../preStyledElements/modal/Modal";
 import TradePlan from "./TradePlan";
 import SignalHistory from "./SignalHistory";
 import SignalEvidence from "./SignalEvidence";
+import SignalOutcome from "./SignalOutcome";
 import SymbolBias from "./SymbolBias";
 import GrowSection from "./GrowSection";
 import TrackStats from "./TrackStats";
 import { symbolBias } from "../../utils/grow/signals/bias";
+import { whenLabel } from "../../utils/grow/when";
 
 const DEFAULT = { symbol: "RELIANCE.NS", name: "Reliance Industries" };
 const LS_LAST = "grow-chart-last";
@@ -106,18 +108,6 @@ function currentTheme() {
   return document.documentElement.getAttribute("data-theme") || "dark";
 }
 
-function outcomeChip(oc) {
-  if (!oc || oc.status === "pending") return null;
-  const cls = oc.status === "win" ? "win" : oc.status === "loss" ? "loss" : "flat";
-  const icon = oc.status === "win" ? "fa-check" : oc.status === "loss" ? "fa-xmark" : "fa-minus";
-  const sign = oc.returnPct >= 0 ? "+" : "";
-  return (
-    <span className={`grow-sig-oc grow-sig-oc--${cls}`}>
-      <i className={`fa-solid ${icon}`} /> {sign}
-      {(oc.returnPct * 100).toFixed(1)}%
-    </span>
-  );
-}
 
 export default function GrowChart() {
   const [params] = useSearchParams();
@@ -525,6 +515,7 @@ export default function GrowChart() {
   const bias = useMemo(() => symbolBias(candles), [candles]);
 
   const activeIndCount = Object.values(ind).filter(Boolean).length;
+  const intradayTf = TIMEFRAMES.find((t) => t.key === tf)?.intraday ?? false;
   const activeCount = activeIndCount + Object.values(overlay).filter(Boolean).length;
 
 
@@ -830,12 +821,11 @@ export default function GrowChart() {
                         {s.title}
                       </span>
                       <span className="grow-sig-meta">
-                        {new Date(s.time * 1000).toLocaleDateString("en-IN")}
+                        <i className="fa-regular fa-clock" /> Spotted {whenLabel(s.time, intradayTf)}
                         {s.factors.confluence > 0 ? ` · +${s.factors.confluence} confirming` : ""}
                       </span>
                     </span>
                   </button>
-                  {outcomeChip(outcomeById.get(s.id))}
                   <ConfidenceBadge
                     score={s.confidence}
                     band={s.confidenceBreakdown?.band}
@@ -849,6 +839,7 @@ export default function GrowChart() {
                   interval={TIMEFRAMES.find((t) => t.key === tf)?.interval ?? "1d"}
                   direction={s.direction}
                 />
+                <SignalOutcome outcome={outcomeById.get(s.id)} horizonBars={s.plan?.horizonBars} />
                 <SignalEvidence type={s.type} interval={TIMEFRAMES.find((t) => t.key === tf)?.interval ?? "1d"} />
                 <SignalHistory history={s.history} name={s.name} />
                 <ConfidenceReveal open={openId === s.id} card={s} />

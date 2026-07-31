@@ -12110,24 +12110,6 @@ html[data-skin="glass"] .adv-card {
 .grow-chart-quote.is-down .grow-chart-chg {
   color: var(--amount-expense);
 }
-.grow-chart-tfs {
-  display: flex;
-  flex-wrap: nowrap;
-  gap: 4px;
-  padding: 4px;
-  border-radius: 12px;
-  background: var(--surface-bg);
-  align-self: flex-start;
-  width: max-content;
-  max-width: 100%;
-  overflow-x: auto;
-  scrollbar-width: none;
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior-x: contain;
-}
-.grow-chart-tfs::-webkit-scrollbar {
-  display: none;
-}
 .grow-chart-tf {
   position: relative;
   z-index: 0;
@@ -12401,9 +12383,8 @@ html[data-skin="glass"] .adv-card {
 }
 .grow-plan {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 14px;
+  flex-direction: column;
+  gap: 9px;
   margin-top: 10px;
   padding: 9px 12px;
   border-radius: 12px;
@@ -12452,7 +12433,6 @@ html[data-skin="glass"] .adv-card {
   color: var(--amount-expense);
 }
 .grow-plan-tag {
-  margin-left: auto;
   font-size: 0.7rem;
   font-weight: 600;
   color: var(--text-secondary);
@@ -13239,10 +13219,13 @@ html[data-skin="glass"] .grow-sec {
   opacity: 0.75;
 }
 .grow-cgroup-row {
-  display: flex;
+  display: inline-flex;
   flex-wrap: wrap;
   gap: 4px;
   margin-top: 4px;
+  padding: 4px;
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--text-secondary) 8%, transparent);
 }
 .grow-chart-span em {
   font-style: normal;
@@ -13799,5 +13782,65 @@ html[data-theme="dark"] .grow-watch-tag--watch {
   }
   .grow-sec {
     padding: 12px 11px;
+  }
+}
+.grow-plan-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.grow-plan-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px 14px;
+}
+.grow-plan-grid .grow-plan-cell {
+  min-width: 0;
+}
+.grow-plan-v {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.grow-plan--noplan {
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 10px;
+}
+.grow-sec .grow-oc,
+.grow-sec .grow-ev,
+.grow-sec .grow-plan,
+.grow-sec .grow-hist {
+  box-shadow: var(--levitate-shadow);
+}
+html[data-skin="glass"] .grow-sec .grow-oc,
+html[data-skin="glass"] .grow-sec .grow-ev,
+html[data-skin="glass"] .grow-sec .grow-plan,
+html[data-skin="glass"] .grow-sec .grow-hist {
+  box-shadow: 0 8px 24px -14px var(--glass-ambient, rgba(0, 0, 0, 0.4));
+}
+.grow-hist,
+.grow-ev,
+.grow-oc {
+  border: 1px solid var(--surface-border);
+  background: var(--surface-bg);
+}
+.grow-oc--win {
+  background: color-mix(in srgb, var(--amount-income) 8%, var(--surface-bg));
+}
+.grow-oc--loss {
+  background: color-mix(in srgb, var(--amount-expense) 8%, var(--surface-bg));
+}
+.grow-ev {
+  background: color-mix(in srgb, var(--amount-income) 7%, var(--surface-bg));
+}
+@media (max-width: 560px) {
+  .grow-plan-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .grow-cgroup-row {
+    width: 100%;
   }
 }

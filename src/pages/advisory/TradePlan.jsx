@@ -12,10 +12,10 @@ function pctOf(v, entry) {
 
 function horizonLabel(interval, bars) {
   if (interval === "btst") return "exit next day";
-  if (interval === "1d") return `~${bars}d hold`;
-  if (interval === "1wk") return `~${bars}w hold`;
-  if (interval === "1mo") return `~${bars}mo hold`;
-  return `~${bars} bars`;
+  if (interval === "1d") return `about ${bars} days`;
+  if (interval === "1wk") return `about ${bars} weeks`;
+  if (interval === "1mo") return `about ${bars} months`;
+  return `about ${bars} bars`;
 }
 
 export default function TradePlan({ plan, tradeType, interval, direction }) {
@@ -33,7 +33,15 @@ export default function TradePlan({ plan, tradeType, interval, direction }) {
   }
   return (
     <div className="grow-plan">
-      <span className="grow-plan-action">Bullish</span>
+      <div className="grow-plan-top">
+        <span className="grow-plan-action">Bullish</span>
+        {tradeType && (
+          <span className="grow-plan-tag">
+            {tradeType} · {horizonLabel(interval, plan.horizonBars)}
+          </span>
+        )}
+      </div>
+      <div className="grow-plan-grid">
       <span className="grow-plan-cell">
         <span className="grow-plan-k">Entry</span>
         <span className="grow-plan-v">{INR.format(plan.entry)}</span>
@@ -50,11 +58,7 @@ export default function TradePlan({ plan, tradeType, interval, direction }) {
           {INR.format(plan.stop)} <em>{pctOf(plan.stop, plan.entry)}</em>
         </span>
       </span>
-      {tradeType && (
-        <span className="grow-plan-tag">
-          {tradeType} · {horizonLabel(interval, plan.horizonBars)}
-        </span>
-      )}
+      </div>
       <span className="grow-plan-note">
         These exits define the trade the measured edge was scored on — target at 2× this stock’s typical move, stop at
         1.5×, closed after {plan.horizonBars} bars either way. Change them and that number no longer applies.

@@ -430,8 +430,8 @@ export default function GrowChart() {
     }
     if (!marks.length) return undefined;
     marks.sort((x, y) => x.time - y.time);
-    const timer = setTimeout(() => m.setMarkers(marks), 450);
-    return () => clearTimeout(timer);
+    m.setMarkers(marks);
+    return undefined;
   }, [activeId, signals, candles, theme, overlay]);
 
   useEffect(() => {
@@ -517,6 +517,16 @@ export default function GrowChart() {
 
   const activeIndCount = Object.values(ind).filter(Boolean).length;
   const activeCount = activeIndCount + Object.values(overlay).filter(Boolean).length;
+
+  const markerKey = useMemo(() => {
+    const seen = new Map();
+    for (const s of signals) {
+      if (!s.marker?.text) continue;
+      const k = `${s.marker.text}|${s.direction}`;
+      if (!seen.has(k)) seen.set(k, { code: s.marker.text, name: s.name, direction: s.direction });
+    }
+    return [...seen.values()].sort((a2, b2) => a2.code.localeCompare(b2.code));
+  }, [signals]);
 
   function pick(r) {
     setSymbol({ symbol: r.symbol, name: r.name });
@@ -705,6 +715,21 @@ export default function GrowChart() {
             </div>
           )}
         </div>
+        {overlay.markers && markerKey.length > 0 && (
+          <div className="grow-mkey">
+            <span className="grow-mkey-lbl">Marker key</span>
+            {markerKey.map((k) => (
+              <span key={`${k.code}-${k.direction}`} className={`grow-mkey-item grow-mkey-item--${k.direction}`}>
+                <i className={`fa-solid fa-caret-${k.direction === "bullish" ? "up" : "down"}`} />
+                <b>{k.code}</b>
+                {k.name}
+              </span>
+            ))}
+            <span className="grow-mkey-hint">
+              arrow below the candle = bullish · above = bearish · tap one to open its card
+            </span>
+          </div>
+        )}
       </GrowSection>
 
       {card.overall.resolved > 0 && (

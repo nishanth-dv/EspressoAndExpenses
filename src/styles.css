@@ -13666,3 +13666,47 @@ html[data-theme="dark"] .grow-watch-tag--watch {
   opacity: 0.4;
   cursor: default;
 }
+.grow-mkey {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin-top: 10px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--surface-border);
+  background: color-mix(in srgb, var(--text-secondary) 5%, transparent);
+  font-size: 0.74rem;
+}
+.grow-mkey-lbl {
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-secondary);
+}
+.grow-mkey-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--text-secondary);
+}
+.grow-mkey-item b {
+  padding: 1px 6px;
+  border-radius: 5px;
+  font-size: 0.7rem;
+  background: color-mix(in srgb, var(--text-secondary) 14%, transparent);
+  color: var(--text-primary);
+}
+.grow-mkey-item--bullish > i {
+  color: var(--amount-income);
+}
+.grow-mkey-item--bearish > i {
+  color: var(--amount-expense);
+}
+.grow-mkey-hint {
+  flex: 1 1 100%;
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  opacity: 0.85;
+}

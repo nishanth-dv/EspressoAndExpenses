@@ -13847,3 +13847,52 @@ html[data-skin="glass"] .grow-sec .grow-hist {
   margin-left: auto;
   flex-shrink: 0;
 }
+
+/* ---- Grow → strong text ----
+   Bold text in Grow rendered as near-black (--text-primary is #080816 in the
+   light theme), which read as heavy and flat across a page that is mostly
+   cards. --grow-strong mixes the existing --accent-blue INTO --text-primary,
+   so it stays bold and high-contrast while picking up the product's blue, and
+   it flips with the theme for free: deep slate-blue on light, blue-tinted
+   cream on dark. Scoped to the Grow containers — deliberately not a global
+   accent. Semantic colours (income/expense, category tints, warnings) are left
+   alone; they mean something. */
+.grow-chart,
+.grow-sig,
+.grow-watch {
+  --grow-strong: color-mix(in srgb, var(--accent-blue) 42%, var(--text-primary));
+}
+.grow-chart-res-sym,
+.grow-chart-res-fallback b,
+.grow-chart-name,
+.grow-chart-price,
+.grow-plan-v,
+.grow-sig-head,
+.grow-sig-title,
+.grow-sig-pattern,
+.grow-hist strong,
+.grow-score-head,
+.grow-score-val,
+.grow-cal-pct,
+.grow-sec-title,
+.grow-bench-k,
+.grow-bench-v,
+.grow-pf-val,
+.grow-pos-val,
+.grow-watch-head,
+.grow-watch-sym,
+.grow-watch-sr-k,
+.grow-ind-name,
+.grow-ev-main strong,
+.grow-mkey-item b {
+  color: var(--grow-strong);
+}
+.grow-score-val.is-up,
+.grow-pf-val.is-up,
+.grow-ev-main strong {
+  color: var(--amount-income);
+}
+.grow-score-val.is-down,
+.grow-pf-val.is-down {
+  color: var(--amount-expense);
+}

@@ -245,13 +245,20 @@ def write(collected, universe_size, today, interval="1d", vix=None, sentiment=No
     sb("DELETE", f"grow_signals?scan_date=eq.{today}&interval=eq.{interval}")
     for i in range(0, len(collected), 500):
         sb("POST", "grow_signals?on_conflict=id,scan_date", collected[i : i + 500], upsert=True)
-    if baseline:
-        sb("DELETE", f"grow_random?scan_date=eq.{today}&interval=eq.{interval}")
-        for i in range(0, len(baseline), 500):
-            sb("POST", "grow_random?on_conflict=id,scan_date", baseline[i : i + 500], upsert=True)
-        print(f"wrote {len(baseline)} random baseline entries for {today} {interval}")
     sb("POST", "grow_scans?on_conflict=scan_date,interval", {"scan_date": today, "interval": interval, "universe_size": universe_size, "signal_count": len(collected), "vix": vix, "sentiment": sentiment}, upsert=True)
     print(f"wrote {len(collected)} {interval} signals for {today} ({universe_size} names)")
+    # The random baseline is additive: if its migration has not been run the scan
+    # must still stand. It is written AFTER grow_scans and never allowed to raise,
+    # because a missing optional table once left signals in the DB with no scan
+    # row, which the Worker reads as "no scan" and the UI renders as empty.
+    if baseline:
+        try:
+            sb("DELETE", f"grow_random?scan_date=eq.{today}&interval=eq.{interval}")
+            for i in range(0, len(baseline), 500):
+                sb("POST", "grow_random?on_conflict=id,scan_date", baseline[i : i + 500], upsert=True)
+            print(f"wrote {len(baseline)} random baseline entries for {today} {interval}")
+        except Exception as e:
+            print(f"random baseline skipped ({e}) — run migrations/2026-07-30_random_baseline.sql to enable it")
 
 
 def candle_rows(bhav_rows, date, interval="1d"):
@@ -419,7 +426,10 @@ def main():
     baseline = random_rows(cache, today, scan_interval)
     write(collected, len(universe), today, scan_interval, vix, sentiment, baseline)
     grade_past(cache, today, scan_interval, grade_opts)
-    grade_past(cache, today, scan_interval, grade_opts, table="grow_random")
+    try:
+        grade_past(cache, today, scan_interval, grade_opts, table="grow_random")
+    except Exception as e:
+        print(f"random baseline grading skipped ({e})")
 
 
 if __name__ == "__main__":

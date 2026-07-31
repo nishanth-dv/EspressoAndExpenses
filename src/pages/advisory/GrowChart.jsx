@@ -157,6 +157,7 @@ export default function GrowChart() {
   const deepDone = useRef(false);
   const chartWrapRef = useRef(null);
   const signalsRef = useRef([]);
+  const scrollOnSelect = useRef(false);
 
   const viewFrom = useMemo(() => {
     const bars = TIMEFRAMES.find((t) => t.key === tf)?.viewBars ?? 0;
@@ -178,6 +179,13 @@ export default function GrowChart() {
   useEffect(() => {
     signalsRef.current = signals;
   }, [signals]);
+
+  useEffect(() => {
+    if (!scrollOnSelect.current || !activeId) return;
+    scrollOnSelect.current = false;
+    const el = document.getElementById(`gsig-${activeId}`);
+    if (el) requestAnimationFrame(() => el.scrollIntoView({ behavior: "smooth", block: "center" }));
+  }, [activeId]);
   const outcomeById = useMemo(() => {
     const m = new Map();
     card.graded.forEach((g) => m.set(g.signal.id, g.outcome));
@@ -246,10 +254,8 @@ export default function GrowChart() {
       const hits = signalsRef.current.filter((x) => x.time === p.time);
       if (!hits.length) return;
       const best = hits.reduce((a2, b2) => ((b2.confidence ?? 0) > (a2.confidence ?? 0) ? b2 : a2));
+      scrollOnSelect.current = true;
       setActiveId(best.id);
-      requestAnimationFrame(() =>
-        document.getElementById(`gsig-${best.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" }),
-      );
     });
     return () => {
       chart.remove();

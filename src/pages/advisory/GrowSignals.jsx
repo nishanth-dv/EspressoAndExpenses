@@ -392,13 +392,13 @@ export default function GrowSignals() {
                   onToggle={() => setOpenId(openId === s.id ? null : s.id)}
                 />
               </div>
-              <TradePlan plan={s.plan} tradeType={s.trade_type} interval={s.interval || iv} direction={s.direction} />
-              <SignalEvidence type={s.type} interval={s.interval || iv} />
-              <SignalHistory history={s.history} name={s.name} />
               <ConfidenceReveal
                 open={openId === s.id}
                 card={{ confidenceBreakdown: s.breakdown ?? breakdownSignal(s.factors ?? {}) }}
               />
+              <TradePlan plan={s.plan} tradeType={s.trade_type} interval={s.interval || iv} direction={s.direction} />
+              <SignalEvidence type={s.type} interval={s.interval || iv} />
+              <SignalHistory history={s.history} name={s.name} />
             </li>
           ))}
         </ul>

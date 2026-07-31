@@ -833,6 +833,7 @@ export default function GrowChart() {
                     onToggle={() => setOpenId(openId === s.id ? null : s.id)}
                   />
                 </div>
+                <ConfidenceReveal open={openId === s.id} card={s} />
                 <TradePlan
                   plan={s.plan}
                   tradeType={s.tradeType}
@@ -842,7 +843,6 @@ export default function GrowChart() {
                 <SignalOutcome outcome={outcomeById.get(s.id)} horizonBars={s.plan?.horizonBars} />
                 <SignalEvidence type={s.type} interval={TIMEFRAMES.find((t) => t.key === tf)?.interval ?? "1d"} />
                 <SignalHistory history={s.history} name={s.name} />
-                <ConfidenceReveal open={openId === s.id} card={s} />
               </li>
             ))}
           </ul>

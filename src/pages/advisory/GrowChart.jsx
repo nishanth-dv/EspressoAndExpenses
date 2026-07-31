@@ -145,6 +145,7 @@ export default function GrowChart() {
   const [activeId, setActiveId] = useState(null);
   const [ind, setInd] = useState({ ma: false, boll: false, rsi: false });
   const [editorOpen, setEditorOpen] = useState(false);
+  const [overlay, setOverlay] = useState({ markers: true });
 
   const holderRef = useRef(null);
   const chartRef = useRef(null);
@@ -155,6 +156,7 @@ export default function GrowChart() {
   const indRef = useRef([]);
   const deepDone = useRef(false);
   const chartWrapRef = useRef(null);
+  const signalsRef = useRef([]);
 
   const viewFrom = useMemo(() => {
     const bars = TIMEFRAMES.find((t) => t.key === tf)?.viewBars ?? 0;
@@ -172,6 +174,10 @@ export default function GrowChart() {
   }, [candles, symbol, tf, viewFrom]);
 
   const card = useMemo(() => scoreCard(signals, candles), [signals, candles]);
+
+  useEffect(() => {
+    signalsRef.current = signals;
+  }, [signals]);
   const outcomeById = useMemo(() => {
     const m = new Map();
     card.graded.forEach((g) => m.set(g.signal.id, g.outcome));
@@ -234,7 +240,17 @@ export default function GrowChart() {
     seriesRef.current = series;
     patternRef.current = pattern;
     markersRef.current = createSeriesMarkers(series, []);
-    chart.subscribeClick((p) => setPicked(typeof p.time === "number" ? p.time : null));
+    chart.subscribeClick((p) => {
+      if (typeof p.time !== "number") return;
+      setPicked(p.time);
+      const hits = signalsRef.current.filter((x) => x.time === p.time);
+      if (!hits.length) return;
+      const best = hits.reduce((a2, b2) => ((b2.confidence ?? 0) > (a2.confidence ?? 0) ? b2 : a2));
+      setActiveId(best.id);
+      requestAnimationFrame(() =>
+        document.getElementById(`gsig-${best.id}`)?.scrollIntoView({ behavior: "smooth", block: "center" }),
+      );
+    });
     return () => {
       chart.remove();
       chartRef.current = null;
@@ -397,19 +413,26 @@ export default function GrowChart() {
     const m = markersRef.current;
     if (!m) return undefined;
     m.setMarkers([]);
-    const active = signals.find((s) => s.id === activeId);
-    if (!active || active.category === "chart") return undefined;
-    const idx = candles.findIndex((c) => c.time === active.time);
-    if (idx < 0) return undefined;
-    const n = CANDLE_BARS[active.type] ?? 1;
-    const bull = active.direction === "bullish";
     const marks = [];
-    for (let i = Math.max(0, idx - n + 1); i <= idx; i++) {
-      marks.push({ time: candles[i].time, position: bull ? "belowBar" : "aboveBar", shape: "circle", color: PATTERN_COLOR });
+    if (overlay.markers) {
+      for (const s of signals) if (s.marker) marks.push({ ...s.marker, size: s.id === activeId ? 2 : 1 });
     }
+    const active = signals.find((s) => s.id === activeId);
+    if (active && active.category !== "chart") {
+      const idx = candles.findIndex((c) => c.time === active.time);
+      if (idx >= 0) {
+        const n = CANDLE_BARS[active.type] ?? 1;
+        const bull = active.direction === "bullish";
+        for (let i = Math.max(0, idx - n + 1); i <= idx; i++) {
+          marks.push({ time: candles[i].time, position: bull ? "belowBar" : "aboveBar", shape: "circle", color: PATTERN_COLOR });
+        }
+      }
+    }
+    if (!marks.length) return undefined;
+    marks.sort((x, y) => x.time - y.time);
     const timer = setTimeout(() => m.setMarkers(marks), 450);
     return () => clearTimeout(timer);
-  }, [activeId, signals, candles, theme]);
+  }, [activeId, signals, candles, theme, overlay]);
 
   useEffect(() => {
     if (deepDone.current || !signals.length) return;
@@ -493,6 +516,7 @@ export default function GrowChart() {
   const bias = useMemo(() => symbolBias(candles), [candles]);
 
   const activeIndCount = Object.values(ind).filter(Boolean).length;
+  const activeCount = activeIndCount + Object.values(overlay).filter(Boolean).length;
 
   function pick(r) {
     setSymbol({ symbol: r.symbol, name: r.name });
@@ -621,8 +645,8 @@ export default function GrowChart() {
         subtitle="Each candle is one bar: the body runs from open to close, the thin wicks mark the high and low. Green closed up, red closed down."
         aside={
           <button type="button" className="grow-ind-editor-btn" onClick={() => setEditorOpen(true)}>
-            <i className="fa-solid fa-sliders" /> Indicators
-            {activeIndCount > 0 && <span className="grow-ind-editor-count">{activeIndCount}</span>}
+            <i className="fa-solid fa-sliders" /> Chart editor
+            {activeCount > 0 && <span className="grow-ind-editor-count">{activeCount}</span>}
           </button>
         }
       >
@@ -760,6 +784,7 @@ export default function GrowChart() {
             {signals.map((s) => (
               <li
                 key={s.id}
+                id={`gsig-${s.id}`}
                 className={`grow-sig-card grow-sig-card--${s.direction}${activeId === s.id ? " grow-sig-card--active" : ""}`}
                 onMouseEnter={() => hover(s)}
                 onMouseLeave={unhover}
@@ -808,6 +833,49 @@ export default function GrowChart() {
 
       <Modal open={editorOpen} onClose={() => setEditorOpen(false)} title="Chart editor">
         <div className="grow-editor">
+          <div className="grow-editor-bar">
+            <span className="grow-editor-count">
+              {activeCount === 0 ? "Nothing added" : `${activeCount} added to the chart`}
+            </span>
+            <button
+              type="button"
+              className="grow-editor-clear"
+              disabled={activeCount === 0}
+              onClick={() => {
+                setInd({});
+                setOverlay({ markers: false });
+              }}
+            >
+              <i className="fa-solid fa-eraser" /> Clear all
+            </button>
+          </div>
+
+          <div className="grow-editor-sec">
+            <div className="grow-editor-sec-head">
+              Drawn over the candles
+              <em>what the engine found, marked on the chart itself</em>
+            </div>
+            <div className="grow-editor-list">
+              <button
+                type="button"
+                className={`grow-ind-row${overlay.markers ? " is-on" : ""}`}
+                aria-pressed={overlay.markers}
+                onClick={() => setOverlay((p) => ({ ...p, markers: !p.markers }))}
+              >
+                <span className="grow-ind-check">
+                  <i className={`fa-solid ${overlay.markers ? "fa-check" : "fa-plus"}`} />
+                </span>
+                <span className="grow-ind-text">
+                  <span className="grow-ind-name">Signal markers</span>
+                  <span className="grow-ind-blurb">
+                    Every pattern found in this window, pinned to its bar — a green arrow below the candle for bullish,
+                    a red arrow above for bearish, each labelled with the pattern&rsquo;s code. Tap one to open its card.
+                  </span>
+                </span>
+              </button>
+            </div>
+          </div>
+
           {IND_GROUPS.map((g) => (
             <div className="grow-editor-sec" key={g.key}>
               <div className="grow-editor-sec-head">

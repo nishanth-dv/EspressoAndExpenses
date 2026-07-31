@@ -13896,3 +13896,20 @@ html[data-skin="glass"] .grow-sec .grow-hist {
 .grow-pf-val.is-down {
   color: var(--amount-expense);
 }
+.grow-chart strong,
+.grow-sig strong,
+.grow-watch strong {
+  color: var(--grow-strong);
+}
+.grow-ev-main strong {
+  color: var(--amount-income);
+}
+.grow-oc--win .grow-oc-head b {
+  color: var(--amount-income);
+}
+.grow-oc--loss .grow-oc-head b {
+  color: var(--amount-expense);
+}
+.grow-sig-meta {
+  margin-top: 4px;
+}

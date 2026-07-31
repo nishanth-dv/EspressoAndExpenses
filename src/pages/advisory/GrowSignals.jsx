@@ -252,7 +252,7 @@ export default function GrowSignals() {
         scan && (
           <div className="grow-sig-note">
             <i className="fa-solid fa-hourglass-half" /> Building the out-of-sample track record — the first forward
-            outcomes appear once the current signals age (~2 weeks). Check back.
+            outcomes appear once the current signals age — about two weeks. Check back.
           </div>
         )
       )}

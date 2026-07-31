@@ -42,10 +42,10 @@ const COLORS = { bullish: "#16a34a", bearish: "#ef4444", neutral: "#9ca3af" };
 
 function markerFor(sig) {
   if (sig.direction === DIRECTION.BULL)
-    return { time: sig.time, position: "belowBar", shape: "arrowUp", color: COLORS.bullish, text: sig.code };
+    return { time: sig.time, position: "belowBar", shape: "circle", color: COLORS.bullish };
   if (sig.direction === DIRECTION.BEAR)
-    return { time: sig.time, position: "aboveBar", shape: "arrowDown", color: COLORS.bearish, text: sig.code };
-  return { time: sig.time, position: "inBar", shape: "circle", color: COLORS.neutral, text: sig.code };
+    return { time: sig.time, position: "aboveBar", shape: "circle", color: COLORS.bearish };
+  return { time: sig.time, position: "inBar", shape: "circle", color: COLORS.neutral };
 }
 
 export function runSignals(candles, ctx = {}) {

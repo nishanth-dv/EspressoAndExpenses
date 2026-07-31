@@ -518,15 +518,6 @@ export default function GrowChart() {
   const activeIndCount = Object.values(ind).filter(Boolean).length;
   const activeCount = activeIndCount + Object.values(overlay).filter(Boolean).length;
 
-  const markerKey = useMemo(() => {
-    const seen = new Map();
-    for (const s of signals) {
-      if (!s.marker?.text) continue;
-      const k = `${s.marker.text}|${s.direction}`;
-      if (!seen.has(k)) seen.set(k, { code: s.marker.text, name: s.name, direction: s.direction });
-    }
-    return [...seen.values()].sort((a2, b2) => a2.code.localeCompare(b2.code));
-  }, [signals]);
 
   function pick(r) {
     setSymbol({ symbol: r.symbol, name: r.name });
@@ -715,18 +706,17 @@ export default function GrowChart() {
             </div>
           )}
         </div>
-        {overlay.markers && markerKey.length > 0 && (
+        {overlay.markers && signals.length > 0 && (
           <div className="grow-mkey">
             <span className="grow-mkey-lbl">Marker key</span>
-            {markerKey.map((k) => (
-              <span key={`${k.code}-${k.direction}`} className={`grow-mkey-item grow-mkey-item--${k.direction}`}>
-                <i className={`fa-solid fa-caret-${k.direction === "bullish" ? "up" : "down"}`} />
-                <b>{k.code}</b>
-                {k.name}
-              </span>
-            ))}
+            <span className="grow-mkey-item grow-mkey-item--bullish">
+              <i className="fa-solid fa-circle" /> below the candle = bullish
+            </span>
+            <span className="grow-mkey-item grow-mkey-item--bearish">
+              <i className="fa-solid fa-circle" /> above the candle = bearish
+            </span>
             <span className="grow-mkey-hint">
-              arrow below the candle = bullish · above = bearish · tap one to open its card
+              Tap any dot to see which pattern it is — the selected one enlarges and its card opens below.
             </span>
           </div>
         )}

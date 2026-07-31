@@ -12706,7 +12706,8 @@ html[data-skin="glass"] .adv-card {
 .grow-hist {
   display: flex;
   align-items: center;
-  gap: 7px;
+  flex-wrap: wrap;
+  gap: 4px 7px;
   margin-top: 8px;
   padding: 6px 10px;
   border-radius: 8px;
@@ -12724,8 +12725,7 @@ html[data-skin="glass"] .adv-card {
   font-weight: 700;
 }
 .grow-hist-warn {
-  flex-shrink: 0;
-  margin-left: auto;
+  flex: 1 1 100%;
   font-size: 0.66rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -13709,4 +13709,7 @@ html[data-theme="dark"] .grow-watch-tag--watch {
   color: var(--text-secondary);
   font-size: 0.7rem;
   opacity: 0.85;
+}
+.grow-mkey-item--active > i {
+  color: #f59e0b;
 }

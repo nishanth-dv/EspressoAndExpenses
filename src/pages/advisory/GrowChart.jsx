@@ -415,7 +415,10 @@ export default function GrowChart() {
     m.setMarkers([]);
     const marks = [];
     if (overlay.markers) {
-      for (const s of signals) if (s.marker) marks.push({ ...s.marker, size: s.id === activeId ? 2 : 1 });
+      for (const s of signals) {
+        if (!s.marker) continue;
+        marks.push(s.id === activeId ? { ...s.marker, color: PATTERN_COLOR } : s.marker);
+      }
     }
     const active = signals.find((s) => s.id === activeId);
     if (active && active.category !== "chart") {
@@ -714,6 +717,9 @@ export default function GrowChart() {
             </span>
             <span className="grow-mkey-item grow-mkey-item--bearish">
               <i className="fa-solid fa-circle" /> above the candle = bearish
+            </span>
+            <span className="grow-mkey-item grow-mkey-item--active">
+              <i className="fa-solid fa-circle" /> selected
             </span>
             <span className="grow-mkey-hint">
               Tap any dot to see which pattern it is — the selected one enlarges and its card opens below.

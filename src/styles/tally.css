@@ -427,18 +427,21 @@ body.tx-highlighting .tally-fab {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 4px 4px;
-  background: transparent;
-  border: none;
+  padding: 5px 11px;
+  background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent-blue) 35%, transparent);
+  border-radius: 8px;
   color: var(--accent-blue);
   font-family: inherit;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
+  transition: background 0.16s ease, border-color 0.16s ease;
 }
 
 .tally-calc-back:hover {
-  color: color-mix(in srgb, var(--accent-blue) 78%, var(--text-primary));
+  background: color-mix(in srgb, var(--accent-blue) 18%, transparent);
+  border-color: color-mix(in srgb, var(--accent-blue) 50%, transparent);
 }
 
 .tally-calc-expr {

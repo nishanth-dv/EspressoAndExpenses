@@ -25,7 +25,11 @@ import BankChipSelector from "../components/BankChipSelector";
 import OptionField from "../components/OptionField";
 import DateField from "../components/DateField";
 import LoggingModeSelector from "../components/LoggingModeSelector";
-import { LOG_MODES, recommendedLogMode } from "../utils/loggingMode";
+import {
+  LOG_MODES,
+  recommendedLogMode,
+  suggestedLogMode,
+} from "../utils/loggingMode";
 import {
   fetchCurrentPrice,
   searchStockTickers,
@@ -47,16 +51,22 @@ function buildFormFromSchema(schema, existing) {
       else if (f.type === "month-grid") out[f.key] = [];
       else if (f.type === "deduct-from-balance") out[f.key] = false;
       else if (f.type === "auto-deduct") {
-        out[f.key] =
-          ex && typeof ex === "object"
-            ? ex
-            : {
-                enabled: !!f.locked,
-                frequency: f.config?.frequency ?? "monthly",
-                dayOfMonth: f.config?.dayOfMonth ?? 1,
-                variableAmount: !!f.config?.variableAmount,
-                accountId: "",
-              };
+        if (ex && typeof ex === "object") {
+          out[f.key] =
+            ex.mode === undefined
+              ? { ...ex, mode: suggestedLogMode(schema?.key, f.config) }
+              : ex;
+        } else {
+          const mode = suggestedLogMode(schema?.key, f.config);
+          out[f.key] = {
+            mode,
+            enabled: mode !== "off",
+            frequency: f.config?.frequency ?? "monthly",
+            dayOfMonth: f.config?.dayOfMonth ?? 1,
+            variableAmount: !!f.config?.variableAmount,
+            accountId: "",
+          };
+        }
       } else out[f.key] = "";
     }
   }
@@ -627,8 +637,7 @@ function AutoDeductField({
   const update = (patch) => onChange({ ...v, ...patch });
   const designerDefault = field?.config?.defaultMode;
   const reco = recommendedLogMode(typeKey);
-  const suggested =
-    designerDefault || (reco.mode === "off" ? "manual" : reco.mode);
+  const suggested = suggestedLogMode(typeKey, field?.config);
   const context =
     !designerDefault && reco.mode !== "off"
       ? reco.context

@@ -8972,6 +8972,131 @@ textarea {
   gap: 6px;
 }
 
+.settle-bill-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px dashed var(--surface-border);
+  background: var(--field-bg);
+}
+
+.settle-bill-panel .dyn-form-checkbox {
+  font-size: 15px;
+  color: var(--field-text);
+}
+
+.settle-bill-panel .dyn-form-checkbox input[type="checkbox"] {
+  accent-color: var(--amount-income);
+}
+
+.settle-bill-items {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 160px;
+  overflow-y: auto;
+  padding-top: 4px;
+  border-top: 1px dashed var(--surface-border);
+}
+
+.settle-bill-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 12.5px;
+  color: var(--text-secondary);
+}
+
+.settle-bill-item-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.settle-bill-item-date {
+  flex-shrink: 0;
+  width: 44px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+  text-transform: uppercase;
+  color: var(--text-label);
+}
+
+.settle-bill-item-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settle-bill-item-amount {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+}
+
+.settle-bill-item--adjusted {
+  color: var(--amount-income);
+  font-weight: 600;
+}
+
+.settle-bill-emi-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 6px;
+  padding: 0;
+  border: none;
+  background: none;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--text-label);
+  cursor: pointer;
+  vertical-align: middle;
+  transition: color 0.12s;
+}
+
+.settle-bill-emi-badge i {
+  font-size: 8px;
+  opacity: 0.75;
+}
+
+.settle-bill-emi-badge:hover {
+  color: #5b8dee;
+}
+
+.settle-bill-emi-remaining {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 54px;
+}
+
+.settle-bill-emi-remaining-bar {
+  flex: 1;
+  max-width: 90px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--surface-active);
+  overflow: hidden;
+}
+
+.settle-bill-emi-remaining-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: #5b8dee;
+}
+
+.settle-bill-emi-remaining-text {
+  font-size: 11px;
+  color: var(--text-label);
+}
+
 /* Soft variant — multi-line explanatory hints under form controls.
    Same colour, slightly relaxed line-height so a 2-3 line block
    reads cleanly. */

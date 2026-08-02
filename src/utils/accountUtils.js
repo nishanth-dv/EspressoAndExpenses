@@ -2,6 +2,10 @@
 // the raw accounts/transactions arrays from Redux — no store coupling so
 // these can be unit-tested or called from any component.
 
+function round2(n) {
+  return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+
 // Per-account computed balance from opening + tagged transactions + self
 // transfers. Self transfers don't move aggregate balance but DO move
 // per-account balance, so they're applied here.
@@ -19,7 +23,7 @@ export function computeAccountBalance(account, transactions = []) {
     else if (t.cardId) continue; // credit-card spend, doesn't touch bank
     else bal -= parseFloat(t.amount) || 0;
   }
-  return bal;
+  return round2(bal);
 }
 
 export function computeRunningBalances(transactions = [], multiBank = true) {
@@ -36,7 +40,7 @@ export function computeRunningBalances(transactions = [], multiBank = true) {
   const running = new Map();
   const result = new Map();
   const bump = (key, delta) => {
-    const next = (running.get(key) || 0) + delta;
+    const next = round2((running.get(key) || 0) + delta);
     running.set(key, next);
     return next;
   };
@@ -86,10 +90,11 @@ export function balanceAsOf(account, transactions = [], asOf) {
 export function getReconciliationDelta(account, transactions = []) {
   if (account?.verifiedBalance == null || !account.verifiedAt) return null;
   const computed = balanceAsOf(account, transactions, account.verifiedAt);
+  const verifiedBalance = round2(parseFloat(account.verifiedBalance) || 0);
   return {
-    delta: computed - (parseFloat(account.verifiedBalance) || 0),
+    delta: round2(computed - verifiedBalance),
     verifiedAt: account.verifiedAt,
-    verifiedBalance: parseFloat(account.verifiedBalance) || 0,
+    verifiedBalance,
     computed,
   };
 }
@@ -118,7 +123,7 @@ export function getAccountMonthlyDelta(account, transactions = []) {
     else if (t.cardId) continue;
     else delta -= amt;
   }
-  return delta;
+  return round2(delta);
 }
 
 // Aggregate balance — sum of every account's balance, nothing else.
@@ -129,5 +134,5 @@ export function getAccountMonthlyDelta(account, transactions = []) {
 export function computeAggregateBalance(accounts = [], transactions = []) {
   let total = 0;
   for (const a of accounts) total += computeAccountBalance(a, transactions);
-  return total;
+  return round2(total);
 }

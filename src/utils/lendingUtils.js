@@ -4,6 +4,6 @@
 // past what was owed, nor drive it negative.
 export function lendingOutstandingAfter(lending, delta) {
   const total = parseFloat(lending.amount);
-  const raw = (parseFloat(lending.outstanding) || 0) + delta;
+  const raw = Math.round(((parseFloat(lending.outstanding) || 0) + delta + Number.EPSILON) * 100) / 100;
   return Math.max(0, total > 0 ? Math.min(total, raw) : raw);
 }

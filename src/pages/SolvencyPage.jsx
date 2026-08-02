@@ -30,6 +30,13 @@ import {
   calcPrincipalFromEMI,
   calcOutstanding,
   calcOutstandingFromSnapshot,
+  round2,
+  computeCardOutstanding,
+  getBilledCardEmiTotal,
+  billedCardChargeTotal,
+  cardRepaymentIds,
+  isCardRepaymentTx,
+  repaymentTxValue,
   daysUntilCardDue,
   daysUntilCommitmentDue,
   getUpcomingDues,
@@ -1231,14 +1238,15 @@ function CardItem({
     ? daysUntilCardDue(card, transactions, commitments)
     : null;
 
-  const {linkedTx, cycleTotals} = useMemo(() => {
+  const {linkedTx, cycleTotals, lifetimeWaived} = useMemo(() => {
     // The ledger lists only THIS card's own activity: outgoing charges (cardId
     // tagged) and repayments paid TO this card (repaymentFor tagged). A pooled
     // sibling's charges are summarised in the pool banner instead of listed
     // row-by-row, so they no longer clutter this card's ledger.
     const charges = transactions.filter((t) => t.cardId === card.id);
+    const repaymentIds = cardRepaymentIds(card, commitments);
     const repayments = transactions
-      .filter((t) => t.repaymentFor === card.id)
+      .filter((t) => isCardRepaymentTx(t, repaymentIds))
       .map((t) => ({ ...t, _isRepayment: true }));
     const real = [...charges, ...repayments];
     const synthetic = [];
@@ -1296,8 +1304,11 @@ function CardItem({
       const k = cycleKeyOf(t.occurredAt, stmtDay);
       totals[k] = (totals[k] || 0) + (parseFloat(t.amount) || 0);
     }
-    return {linkedTx: all.slice(0, 10), cycleTotals: totals};
-  }, [transactions, commitments, card.id, card.statementDay]);
+    const lifetimeWaived = round2(
+      repayments.reduce((s, t) => s + (parseFloat(t.adjustmentAmount) || 0), 0),
+    );
+    return {linkedTx: all.slice(0, 10), cycleTotals: totals, lifetimeWaived};
+  }, [transactions, commitments, card]);
 
   return (
     <div
@@ -1407,6 +1418,17 @@ function CardItem({
                     {INR.format(Math.max(0, displayLimit - displayOutstanding))}
                   </span>
                 </div>
+                {lifetimeWaived > 0 && (
+                  <div className="sol-detail-stat">
+                    <span className="sol-detail-stat-label">Lifetime waived</span>
+                    <span
+                      className="sol-detail-stat-value"
+                      style={{color: "var(--amount-income)"}}
+                    >
+                      {INR.format(lifetimeWaived)}
+                    </span>
+                  </div>
+                )}
                 {isPooled && (
                   <div className="sol-detail-stat">
                     <span className="sol-detail-stat-label">This card</span>
@@ -1514,6 +1536,11 @@ function CardItem({
                             </div>
                             <div className="sol-linked-tx-date">
                               {fmtDate(tx.occurredAt)}
+                              {tx._isRepayment && tx.adjustmentAmount > 0 && (
+                                <span className="sol-linked-tx-waived">
+                                  {" "}· {INR.format(parseFloat(tx.adjustmentAmount))} waived
+                                </span>
+                              )}
                             </div>
                           </div>
                           <div className="sol-linked-tx-right">
@@ -1647,22 +1674,21 @@ function CommitmentItem({commitment, onEdit, onDelete, autoExpand, onExpandDone}
   const cards = useSelector(
     (state) => state.transactions.transactionData?.cards ?? []
   );
+  const allCommitments = useSelector(
+    (state) => state.transactions.transactionData?.commitments ?? []
+  );
   const linkedCard = commitment.cardId
     ? cards.find((c) => c.id === commitment.cardId)
+    : null;
+  const cardSettled = linkedCard
+    ? computeCardOutstanding(linkedCard, allTransactions, allCommitments, new Date()) <= 0
     : null;
 
   const isLoan = commitment.type === "emi";
   const tenureMonths = parseInt(commitment.tenureMonths) || 0;
-  const monthsPaid = (() => {
-    if (!isLoan || !commitment.startDate) return 0;
-    const start = new Date(commitment.startDate);
-    const now = new Date();
-    return Math.max(
-      0,
-      (now.getFullYear() - start.getFullYear()) * 12 +
-        (now.getMonth() - start.getMonth())
-    );
-  })();
+  const monthsPaid = isLoan
+    ? emiInstallmentsBilled(commitment, new Date(), linkedCard?.statementDay)
+    : 0;
   const remaining =
     isLoan && tenureMonths > 0 ? Math.max(0, tenureMonths - monthsPaid) : 0;
   const emiAmount = parseFloat(commitment.emiAmount) || 0;
@@ -1745,6 +1771,17 @@ function CommitmentItem({commitment, onEdit, onDelete, autoExpand, onExpandDone}
               {monthsPaid} of {tenureMonths} paid · {INR.format(outstanding)} left
               {commitment.interestRate ? ` · ${commitment.interestRate}%` : ""}
             </div>
+            {linkedCard && (
+              <div
+                className="sol-commit-card-settled"
+                style={{
+                  color: cardSettled ? "var(--amount-income)" : "var(--amount-expense)",
+                }}
+              >
+                <i className={`fa-solid ${cardSettled ? "fa-circle-check" : "fa-circle-exclamation"}`} />
+                {cardSettled ? "Card balance settled" : "Card has a balance pending"}
+              </div>
+            )}
           </>
         )}
 
@@ -2344,55 +2381,37 @@ const SolvencyPage = () => {
     const chargeByCard = new Map();
     const repayByCard = new Map();
     for (const t of allTransactions) {
-      const amt = parseFloat(t.amount) || 0;
-      if (t.cardId) chargeByCard.set(t.cardId, (chargeByCard.get(t.cardId) || 0) + amt);
-      if (t.repaymentFor)
-        repayByCard.set(t.repaymentFor, (repayByCard.get(t.repaymentFor) || 0) + amt);
+      if (t.cardId) {
+        if (!chargeByCard.has(t.cardId)) chargeByCard.set(t.cardId, []);
+        chargeByCard.get(t.cardId).push(t);
+      }
+      if (t.repaymentFor && !t.lendingId)
+        repayByCard.set(t.repaymentFor, (repayByCard.get(t.repaymentFor) || 0) + repaymentTxValue(t));
     }
     // Per-card outstanding (transactions and EMI) — same result as before.
+    const now = new Date();
     const perCard = cards.map((card) => {
-      const txOutstanding = chargeByCard.get(card.id) || 0;
-      const repayments = repayByCard.get(card.id) || 0;
-      const emiOutstanding = commitments
-        .filter((c) => emiCardId(c) === card.id && commitmentIsActive(c))
-        .reduce((s, c) => {
-          const emi = parseFloat(c.emiAmount) || 0;
-          if (c.currentOutstanding != null) {
-            return (
-              s +
-              calcOutstandingFromSnapshot(
-                c.currentOutstanding,
-                c.interestRate || 0,
-                emi,
-                monthsSince(c.currentOutstandingDate || c.startDate)
-              )
-            );
-          }
-          const tenure = parseInt(c.tenureMonths) || 0;
-          const principal = calcPrincipalFromEMI(
-            emi,
-            c.interestRate || 0,
-            tenure
-          );
-          if (!principal || !tenure) return s + emi;
-          const start = c.startDate ? new Date(c.startDate) : null;
-          const now = new Date();
-          const paid = start
-            ? Math.max(
-                0,
-                (now.getFullYear() - start.getFullYear()) * 12 +
-                  (now.getMonth() - start.getMonth())
-              )
-            : 0;
-          return (
-            s + calcOutstanding(principal, c.interestRate || 0, tenure, paid)
-          );
-        }, 0);
-      // Repayments only offset regular tx charges. emiOutstanding is self-accounting via amortization.
-      const txNet = Math.max(0, txOutstanding - repayments);
+      const txOutstanding = billedCardChargeTotal(
+        card.id,
+        chargeByCard.get(card.id) || [],
+        now,
+        card.statementDay,
+      );
+      let repayments = 0;
+      for (const id of cardRepaymentIds(card, commitments)) {
+        repayments += repayByCard.get(id) || 0;
+      }
+      repayments = round2(repayments);
+      const emiOutstanding = getBilledCardEmiTotal(
+        card.id,
+        commitments,
+        now,
+        card.statementDay,
+      );
+      const txNet = Math.max(0, round2(txOutstanding - repayments));
       return {
         ...card,
-        ownOutstanding: txNet + emiOutstanding,
+        ownOutstanding: round2(txNet + emiOutstanding),
         txOutstanding,
         txNet,
       };
@@ -2412,7 +2431,7 @@ const SolvencyPage = () => {
       // not the sum, so the displayed pool limit reflects the real ceiling
       // instead of double-counting it across siblings.
       g.limit = Math.max(g.limit, parseFloat(c.limit) || 0);
-      g.outstanding += c.ownOutstanding;
+      g.outstanding = round2(g.outstanding + c.ownOutstanding);
       g.members.push({ id: c.id, name: c.name, ownOutstanding: c.ownOutstanding });
       groupTotals.set(c.creditGroupId, g);
     });

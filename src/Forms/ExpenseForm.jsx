@@ -13,8 +13,17 @@ import FormError from "../components/FormError";
 import SmartFillBar from "../components/SmartFillBar";
 import { predictEntry, normalizeName } from "../utils/smartFill";
 import { NoteBulletHint } from "../components/NoteText";
-import { getCardDue, isCardFundedEmi } from "../utils/solvencyUtils";
+import { useDeepLinkNav } from "../hooks/useDeepLinkNav";
+import {
+  computeCardOutstanding,
+  isCardFundedEmi,
+  round2,
+  currentCycleCardCharges,
+  currentCycleCardEmiItems,
+  emiInstallmentsBilled,
+} from "../utils/solvencyUtils";
 import { pickFilteredAccountId } from "../utils/filterUtils";
+import { INR } from "../utils/dashboardUtils";
 
 const EMPTY = {
   name: "",
@@ -26,6 +35,7 @@ const EMPTY = {
   cardId: "",
   repaymentFor: "",
   accountId: "",
+  settlesBill: false,
 };
 
 function fromExisting(existing) {
@@ -39,7 +49,16 @@ function fromExisting(existing) {
     cardId: existing.cardId ?? "",
     repaymentFor: existing.repaymentFor ?? existing.lendingId ?? "",
     accountId: existing.accountId ?? "",
+    settlesBill: existing.settlesBill ?? false,
   };
+}
+
+function fmtBillDate(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  const day = String(d.getDate()).padStart(2, "0");
+  const month = d.toLocaleDateString("en-IN", { month: "short" });
+  return `${day} ${month}`;
 }
 
 function fromInvestmentTarget(inv) {
@@ -72,6 +91,7 @@ const ExpenseForm = ({
         : { ...EMPTY, accountId: filteredAccountId },
   );
   const dispatch = useDispatch();
+  const deepNav = useDeepLinkNav();
 
   const cards = useSelector((state) => state.transactions.transactionData?.cards ?? []);
   const commitments = useSelector(
@@ -278,6 +298,7 @@ const ExpenseForm = ({
           target?.amount && target.amount > 0
             ? String(target.amount)
             : f.amount,
+        settlesBill: false,
       }));
       return;
     }
@@ -340,6 +361,13 @@ const ExpenseForm = ({
     if (!paidByCard || !transaction.cardId) delete transaction.cardId;
     if (!isRepayment || !extra.repaymentFor) delete transaction.repaymentFor;
     if (!isRepayment || !extra.lendingId) delete transaction.lendingId;
+    if (settlingBill && billAdjustment > 0) {
+      transaction.settlesBill = true;
+      transaction.adjustmentAmount = billAdjustment;
+    } else {
+      delete transaction.settlesBill;
+      delete transaction.adjustmentAmount;
+    }
     // Card-paid expenses don't touch a bank account directly — the bank
     // only moves when the card bill is repaid. Drop accountId so the
     // per-bank balance math stays correct.
@@ -357,9 +385,9 @@ const ExpenseForm = ({
   }
 
   // Everything the app knows you owe and can repay:
-  //   • Cards with an outstanding balance (statement-cycle-aware bill via
-  //     getCardDue — the same figure Solvency shows). Zero-balance cards
-  //     are skipped: nothing to repay.
+  //   • Cards with an outstanding balance (computeCardOutstanding — the same
+  //     figure Solvency's card-wise ledger shows). Zero-balance cards are
+  //     skipped: nothing to repay.
   //   • Commitments (EMIs / loans) that are NOT funded by a credit card —
   //     card-funded EMIs already ride the card's bill above, so listing
   //     them again would double-tag the same money.
@@ -373,7 +401,8 @@ const ExpenseForm = ({
       .map((c) => ({
         id: c.id,
         label: c.name,
-        amount: getCardDue(c, allTransactions, commitments, now)?.amount ?? 0,
+        amount: computeCardOutstanding(c, allTransactions, commitments, now),
+        kind: "card",
       }))
       .filter((t) => t.amount > 0);
     const emiTargets = commitments
@@ -381,7 +410,8 @@ const ExpenseForm = ({
       .map((c) => ({
         id: c.id,
         label: c.name,
-        amount: parseFloat(c.emiAmount) || 0,
+        amount: round2(parseFloat(c.emiAmount) || 0),
+        kind: "emi",
       }));
     const lendingTargets = lendings
       .filter(
@@ -391,10 +421,99 @@ const ExpenseForm = ({
       .map((l) => ({
         id: l.id,
         label: `Return to ${l.name}`,
-        amount: parseFloat(l.outstanding) || 0,
+        amount: round2(parseFloat(l.outstanding) || 0),
+        kind: "lending",
       }));
     return [...cardTargets, ...emiTargets, ...lendingTargets];
   }, [cards, commitments, allTransactions, lendings]);
+
+  const selectedRepaymentTarget = repaymentTargets.find(
+    (t) => t.id === form.repaymentFor,
+  );
+  const canSettleBill = isRepayment && !!selectedRepaymentTarget;
+  const settlingBill = canSettleBill && form.settlesBill;
+  const billAdjustment = settlingBill
+    ? Math.max(0, round2(selectedRepaymentTarget.amount - (parseFloat(form.amount) || 0)))
+    : 0;
+
+  const billItems = useMemo(() => {
+    if (!canSettleBill) return [];
+    const now = new Date();
+    if (selectedRepaymentTarget.kind === "card") {
+      const card = cards.find((c) => c.id === selectedRepaymentTarget.id);
+      if (!card) return [];
+      const charges = currentCycleCardCharges(
+        card.id,
+        allTransactions,
+        now,
+        card.statementDay,
+      ).map((t) => ({
+        id: t.id,
+        name: t.name || "Charge",
+        amount: round2(parseFloat(t.amount) || 0),
+        date: fmtBillDate(t.occurredAt),
+      }));
+      const emiItems = currentCycleCardEmiItems(
+        card.id,
+        commitments,
+        now,
+        card.statementDay,
+      ).map((c) => ({
+        id: c.id,
+        name: c.name,
+        amount: c.amount,
+        date: fmtBillDate(c.occurredAt),
+        isEmi: true,
+        tenure: c.tenure,
+        remaining: c.remaining,
+      }));
+      return [...charges, ...emiItems];
+    }
+    if (selectedRepaymentTarget.kind === "emi") {
+      const commitment = commitments.find(
+        (c) => c.id === selectedRepaymentTarget.id,
+      );
+      if (!commitment) return [];
+      const tenure = parseInt(commitment.tenureMonths) || 0;
+      const billed = emiInstallmentsBilled(commitment, now, undefined);
+      return [
+        {
+          id: commitment.id,
+          name: `${commitment.name} installment`,
+          amount: round2(parseFloat(commitment.emiAmount) || 0),
+          date: fmtBillDate(now.toISOString()),
+          isEmi: true,
+          tenure,
+          remaining: tenure > 0 ? Math.max(0, tenure - billed) : null,
+        },
+      ];
+    }
+    if (selectedRepaymentTarget.kind === "lending") {
+      const initialTx = allTransactions.find(
+        (t) => t.lendingId === selectedRepaymentTarget.id && t.lendingInitial,
+      );
+      if (!initialTx) return [];
+      return [
+        {
+          id: initialTx.id,
+          name: initialTx.name,
+          amount: round2(parseFloat(initialTx.amount) || 0),
+          date: fmtBillDate(initialTx.occurredAt),
+        },
+      ];
+    }
+    return [];
+  }, [canSettleBill, selectedRepaymentTarget, cards, commitments, allTransactions]);
+
+  function handleSettlesBillChange(e) {
+    setForm((f) => ({ ...f, settlesBill: e.target.checked }));
+  }
+
+  function handleEmiJump(e, commitmentId) {
+    e.stopPropagation();
+    onCancel?.();
+    deepNav(`/Solvency?highlight=${commitmentId}&focus=commitment`);
+  }
 
   // Both the card and repayment pickers default to "None" — the user must
   // consciously pick a target, and submit is blocked (validated) until they do.
@@ -656,6 +775,83 @@ const ExpenseForm = ({
               ]}
               invalid={invalidKeys.has("repaymentFor")}
             />
+          )}
+
+          {canSettleBill && (
+            <div className="settle-bill-panel">
+              <label className="dyn-form-checkbox">
+                <input
+                  type="checkbox"
+                  checked={form.settlesBill}
+                  onChange={handleSettlesBillChange}
+                />
+                Settle bill in full
+              </label>
+              <p className="dyn-form-hint">
+                If the amount you enter is less than the computed due, the
+                difference is treated as waived (cashback, fee reversal, etc.)
+                instead of still owed.
+              </p>
+              {billItems.length > 0 && (
+                <div className="settle-bill-items">
+                  {billItems.map((item) => (
+                    <div
+                      key={item.id}
+                      className={`settle-bill-item${item.isEmi ? " settle-bill-item--emi" : ""}`}
+                    >
+                      <div className="settle-bill-item-row">
+                        <span className="settle-bill-item-date">{item.date}</span>
+                        <span className="settle-bill-item-name">
+                          {item.name}
+                          {item.isEmi && (
+                            <button
+                              type="button"
+                              className="settle-bill-emi-badge"
+                              onClick={(e) => handleEmiJump(e, item.id)}
+                              title="Open in Commitments tab"
+                            >
+                              EMI
+                              <i className="fa-solid fa-arrow-up-right-from-square" />
+                            </button>
+                          )}
+                        </span>
+                        <span className="settle-bill-item-amount">
+                          {INR.format(item.amount)}
+                        </span>
+                      </div>
+                      {item.isEmi && item.remaining != null && item.tenure > 0 && (
+                        <div className="settle-bill-emi-remaining">
+                          <div className="settle-bill-emi-remaining-bar">
+                            <div
+                              className="settle-bill-emi-remaining-fill"
+                              style={{
+                                width: `${Math.round(((item.tenure - item.remaining) / item.tenure) * 100)}%`,
+                              }}
+                            />
+                          </div>
+                          <span className="settle-bill-emi-remaining-text">
+                            {item.remaining} of {item.tenure} left
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  {settlingBill && billAdjustment > 0 && (
+                    <div className="settle-bill-item settle-bill-item--adjusted">
+                      <div className="settle-bill-item-row">
+                        <span className="settle-bill-item-date">
+                          {fmtBillDate(new Date().toISOString())}
+                        </span>
+                        <span className="settle-bill-item-name">Adjusted</span>
+                        <span className="settle-bill-item-amount">
+                          {INR.format(billAdjustment)}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           )}
 
           <OptionField

@@ -95,6 +95,18 @@ export function recommendedLogMode(typeKey) {
   };
 }
 
+// The mode a form should PRE-SELECT for a type: the designer's declared
+// default, else the recommendation, with "off" collapsed to "manual" (a
+// schedule field only exists on types that have something to schedule).
+// Callers must persist this — a mode that is only rendered, never stored,
+// leaves resolveLogMode() falling through to "manual".
+export function suggestedLogMode(typeKey, fieldConfig) {
+  const declared = fieldConfig?.defaultMode;
+  if (declared) return declared;
+  const reco = recommendedLogMode(typeKey).mode;
+  return reco === "off" ? "manual" : reco;
+}
+
 export function resolveLogMode(inv) {
   const m = inv?.autoDeduct?.mode;
   if (m === "auto" || m === "manual" || m === "off") return m;

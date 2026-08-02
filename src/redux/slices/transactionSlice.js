@@ -165,6 +165,7 @@ import {
   getInvestmentTypeSchema,
 } from "../../utils/investmentTypeSchemas";
 import { DISCOVER_INVESTMENT_TYPES } from "../../data/investmentTypesDiscover";
+import { suggestedLogMode } from "../../utils/loggingMode";
 import {
   parseAlertEmail,
   buildCaptureTransaction,
@@ -2330,6 +2331,36 @@ export const persistLogAutoDeductPayment =
     await persistDelta(getState, state.transactionData);
     return true;
   };
+
+// One-shot repair for records saved before the schedule form persisted a
+// logging mode. Those carry `autoDeduct.enabled` with no `mode`, which
+// resolveLogMode() reads as "manual" — so they were nudging the user instead
+// of auto-posting, whichever chip the form had shown as selected. Writes the
+// mode the form displayed at save time (designer default → recommendation),
+// so what the user saw is what the scheduler now honours. Records that
+// already carry a mode are left alone — an explicit choice outranks this.
+// Only the current period is ever posted afterwards, so no backdated flood.
+export const persistBackfillLogModes = () => async (dispatch, getState) => {
+  const before = getState().transactions.transactionData;
+  const userTypes = before?.investmentTypes ?? [];
+  const upserts = [];
+
+  for (const inv of before?.investments ?? []) {
+    const ad = inv.autoDeduct;
+    if (!ad || typeof ad !== "object" || ad.mode !== undefined) continue;
+    const config = (getInvestmentTypeSchema(inv.type, userTypes)?.rows ?? [])
+      .flatMap((r) => r.fields ?? [])
+      .find((f) => f.type === "auto-deduct")?.config;
+    const mode = suggestedLogMode(inv.type, config);
+    const next = { ...inv, autoDeduct: { ...ad, mode, enabled: mode !== "off" } };
+    dispatch(updateInvestment(next));
+    upserts.push({ collection: "investments", entity: next });
+  }
+
+  if (!upserts.length) return 0;
+  await persistBatch(getState, { upserts });
+  return upserts.length;
+};
 
 export const persistAutoDeductInstalment =
   (inv) => async (dispatch, getState) => {

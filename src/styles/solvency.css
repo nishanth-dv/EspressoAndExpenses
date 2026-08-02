@@ -467,6 +467,15 @@ html[data-skin="glass"] .sol-df {
   color: var(--text-label);
 }
 
+.sol-commit-card-settled {
+  margin-top: 4px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
 .sol-lending-age {
   margin-top: 3px;
   font-size: 11.5px;
@@ -1985,6 +1994,11 @@ html[data-skin="glass"] .sol-due-item {
 .sol-linked-tx-date {
   font-size: 11px;
   color: var(--text-secondary);
+}
+
+.sol-linked-tx-waived {
+  color: var(--amount-income);
+  font-weight: 600;
 }
 
 .sol-linked-tx-amount {

@@ -215,10 +215,13 @@ const Actions = () => {
         )
       : null;
     if (lending) {
+      const drawDown =
+        (parseFloat(transaction.amount) || 0) +
+        (parseFloat(transaction.adjustmentAmount) || 0);
       dispatch(
         persistRepayLending({
           lending,
-          amount: parseFloat(transaction.amount) || 0,
+          amount: drawDown,
           occurredAt: transaction.occurredAt,
           affectBalance: true,
           accountId: transaction.accountId,

@@ -5,6 +5,10 @@ import { nextRenewal as subscriptionNextRenewal } from "./subscriptionUtils";
 // from summing charges against equal repayments — not a real due.
 const SETTLED_EPS = 0.5;
 
+export function round2(n) {
+  return Math.round((n + Number.EPSILON) * 100) / 100;
+}
+
 export function calcPrincipalFromEMI(emi, annualRate, tenureMonths) {
   if (!emi || !tenureMonths) return 0;
   if (!annualRate) return emi * tenureMonths;
@@ -36,14 +40,14 @@ export function calcOutstandingFromSnapshot(snapshot, annualRate, emi, monthsEla
 export function calcOutstanding(principal, annualRate, tenureMonths, paidMonths) {
   if (!principal || !tenureMonths) return 0;
   if (!annualRate) {
-    return Math.max(0, principal - (principal / tenureMonths) * paidMonths);
+    return Math.max(0, round2(principal - (principal / tenureMonths) * paidMonths));
   }
   const R = annualRate / 1200;
   const emi = calcEMI(principal, annualRate, tenureMonths);
   const outstanding =
     principal * Math.pow(1 + R, paidMonths) -
     emi * ((Math.pow(1 + R, paidMonths) - 1) / R);
-  return Math.max(0, Math.round(outstanding * 100) / 100);
+  return Math.max(0, round2(outstanding));
 }
 
 export function cardUtilization(card) {
@@ -72,6 +76,119 @@ export function isCardFundedEmi(commitment) {
 // card. Same recipe used inside getUpcomingDues; extracted so the
 // repayment picker can filter cards the user actually owes money on
 // without duplicating the formula.
+export function cardRepaymentIds(card, commitments = []) {
+  const ids = new Set([card.id]);
+  for (const c of commitments) {
+    if (emiCardId(c) === card.id) ids.add(c.id);
+  }
+  return ids;
+}
+
+export function isCardRepaymentTx(t, repaymentIds) {
+  return repaymentIds.has(t.repaymentFor) && !t.lendingId;
+}
+
+export function repaymentTxValue(t) {
+  return (parseFloat(t.amount) || 0) + (parseFloat(t.adjustmentAmount) || 0);
+}
+
+export function billedCardCharges(
+  cardId,
+  allTransactions = [],
+  today = new Date(),
+  statementDay,
+) {
+  const cutoff = lastStatementDate(statementDay, today) ?? today;
+  const dayEnd = new Date(
+    cutoff.getFullYear(),
+    cutoff.getMonth(),
+    cutoff.getDate(),
+    23,
+    59,
+    59,
+    999,
+  );
+  return allTransactions.filter(
+    (t) => t.cardId === cardId && new Date(t.occurredAt) <= dayEnd,
+  );
+}
+
+export function billedCardChargeTotal(
+  cardId,
+  allTransactions = [],
+  today = new Date(),
+  statementDay,
+) {
+  return round2(
+    billedCardCharges(cardId, allTransactions, today, statementDay).reduce(
+      (s, t) => s + (parseFloat(t.amount) || 0),
+      0,
+    ),
+  );
+}
+
+function currentCycleBounds(statementDay, today) {
+  const day = parseInt(statementDay);
+  if (!day) {
+    const start = new Date(today.getFullYear(), today.getMonth(), 1);
+    const end = new Date(today.getFullYear(), today.getMonth() + 1, 0, 23, 59, 59, 999);
+    return { start, end };
+  }
+  const end = lastStatementDate(statementDay, today);
+  const dayBeforeEnd = new Date(end.getFullYear(), end.getMonth(), end.getDate() - 1);
+  const prevEnd = lastStatementDate(statementDay, dayBeforeEnd);
+  const start = prevEnd
+    ? new Date(prevEnd.getFullYear(), prevEnd.getMonth(), prevEnd.getDate() + 1)
+    : new Date(0);
+  const endOfDay = new Date(end.getFullYear(), end.getMonth(), end.getDate(), 23, 59, 59, 999);
+  return { start, end: endOfDay };
+}
+
+export function currentCycleCardCharges(
+  cardId,
+  allTransactions = [],
+  today = new Date(),
+  statementDay,
+) {
+  const { start, end } = currentCycleBounds(statementDay, today);
+  return allTransactions.filter((t) => {
+    if (t.cardId !== cardId) return false;
+    const d = new Date(t.occurredAt);
+    return d >= start && d <= end;
+  });
+}
+
+export function currentCycleCardEmiItems(
+  cardId,
+  commitments = [],
+  today = new Date(),
+  statementDay,
+) {
+  const { start, end } = currentCycleBounds(statementDay, today);
+  const dayBeforeStart = new Date(start.getFullYear(), start.getMonth(), start.getDate() - 1);
+  const items = [];
+  for (const c of commitments) {
+    if (emiCardId(c) !== cardId) continue;
+    if (!commitmentIsActive(c)) continue;
+    const amt = parseFloat(c.emiAmount) || 0;
+    const billedByEnd = emiInstallmentsBilled(c, end, statementDay);
+    const billedBeforeStart = emiInstallmentsBilled(c, dayBeforeStart, statementDay);
+    const count = billedByEnd - billedBeforeStart;
+    if (count <= 0) continue;
+    const tenure = parseInt(c.tenureMonths) || 0;
+    items.push({
+      id: c.id,
+      name: c.name,
+      amount: round2(count * amt),
+      occurredAt: end.toISOString(),
+      tenure,
+      billed: billedByEnd,
+      remaining: tenure > 0 ? Math.max(0, tenure - billedByEnd) : null,
+    });
+  }
+  return items;
+}
+
 export function computeCardOutstanding(
   card,
   allTransactions = [],
@@ -79,19 +196,25 @@ export function computeCardOutstanding(
   today = new Date(),
 ) {
   if (!card?.id) return 0;
-  const txOutstanding = allTransactions
-    .filter((t) => t.cardId === card.id)
-    .reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
-  const repayments = allTransactions
-    .filter((t) => t.repaymentFor === card.id)
-    .reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
+  const repaymentIds = cardRepaymentIds(card, commitments);
+  const txOutstanding = billedCardChargeTotal(
+    card.id,
+    allTransactions,
+    today,
+    card.statementDay,
+  );
+  const repayments = round2(
+    allTransactions
+      .filter((t) => isCardRepaymentTx(t, repaymentIds))
+      .reduce((s, t) => s + repaymentTxValue(t), 0),
+  );
   const billedEmis = getBilledCardEmiTotal(
     card.id,
     commitments,
     today,
     card.statementDay,
   );
-  return Math.max(0, txOutstanding + billedEmis - repayments);
+  return Math.max(0, round2(txOutstanding + billedEmis - repayments));
 }
 
 export function commitmentProgress(commitment) {
@@ -160,9 +283,10 @@ export function getCardDue(card, allTransactions = [], commitments = [], now = n
   if (!dueDay) return null;
   const stmtDay = parseInt(card?.statementDay);
 
+  const repaymentIds = cardRepaymentIds(card, commitments);
   const repayments = allTransactions
-    .filter((t) => t.repaymentFor === card.id)
-    .reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
+    .filter((t) => isCardRepaymentTx(t, repaymentIds))
+    .reduce((s, t) => s + repaymentTxValue(t), 0);
   // Charges (txns + EMI instalments) billed on or before `cutoff`, net of all
   // repayments. Positive ⇒ that cycle's bill is still (partly) unpaid.
   // The cutoff is extended to the END of the statement day so a charge dated
@@ -179,12 +303,12 @@ export function getCardDue(card, allTransactions = [], commitments = [], now = n
       59,
       999,
     );
-    return (
+    return round2(
       allTransactions
         .filter((t) => t.cardId === card.id && new Date(t.occurredAt) <= dayEnd)
         .reduce((s, t) => s + (parseFloat(t.amount) || 0), 0) +
       getBilledCardEmiTotal(card.id, commitments, dayEnd, stmtDay) -
-      repayments
+      repayments,
     );
   };
 
@@ -216,7 +340,10 @@ export function getCardDue(card, allTransactions = [], commitments = [], now = n
   for (let i = -14; i <= 2; i++) {
     const s = statementOn(stmtDay, cur.getFullYear(), cur.getMonth() + i);
     const bal = unpaidAsOf(s);
-    if (bal > SETTLED_EPS) return result(bal, dueDateForStatement(s, dueDay));
+    if (bal > SETTLED_EPS) {
+      const amount = s <= now ? unpaidAsOf(now) : bal;
+      return result(amount, dueDateForStatement(s, dueDay));
+    }
   }
   return null;
 }
@@ -258,7 +385,7 @@ export function commitmentCycleSettled(
         (t.repaymentFor === commitment.id ||
           t.repaymentFor === commitment.cardId),
     )
-    .reduce((s, t) => s + (parseFloat(t.amount) || 0), 0);
+    .reduce((s, t) => s + repaymentTxValue(t), 0);
   return repaid + SETTLED_EPS >= billed * emi;
 }
 
@@ -489,7 +616,7 @@ export function getBilledCardEmiTotal(
     const amt = parseFloat(c.emiAmount) || 0;
     total += emiInstallmentsBilled(c, today, statementDay) * amt;
   }
-  return total;
+  return round2(total);
 }
 
 export function commitmentIsActive(c) {

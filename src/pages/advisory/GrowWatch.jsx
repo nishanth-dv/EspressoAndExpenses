@@ -21,6 +21,18 @@ const INR = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR",
 const INR0 = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 });
 const NUM = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 });
 
+const LANE_RANK = { "1d": 0, "1wk": 1, btst: 2 };
+
+// Confidence is NOT comparable across lanes — btst has no benchmark, so its
+// score falls back to a win rate while 1d/1wk use measured edge over random.
+// Rank by lane first, and only compare scores inside the same lane.
+function better(a, b) {
+  const ra = LANE_RANK[a.interval] ?? 9;
+  const rb = LANE_RANK[b.interval] ?? 9;
+  if (ra !== rb) return ra < rb;
+  return (a.confidence ?? 0) > (b.confidence ?? 0);
+}
+
 function quoteOf(candles) {
   if (candles.length < 2) return null;
   const last = candles[candles.length - 1].close;
@@ -138,7 +150,7 @@ export default function GrowWatch() {
     const m = new Map();
     for (const s of signals) {
       const cur = m.get(s.symbol);
-      if (!cur || (s.confidence ?? 0) > (cur.confidence ?? 0)) m.set(s.symbol, s);
+      if (!cur || better(s, cur)) m.set(s.symbol, s);
     }
     return m;
   }, [signals]);

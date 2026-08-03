@@ -280,7 +280,10 @@ export default function GrowChart() {
     chart.subscribeClick((p) => {
       if (typeof p.time !== "number") return;
       setPicked(p.time);
-      const best = nearestSignal(signalsRef.current, candlesRef.current, p.time);
+      const hitId = p.hoveredInfo?.objectId ?? p.hoveredObjectId;
+      const best =
+        (typeof hitId === "string" && signalsRef.current.find((x) => x.id === hitId)) ||
+        nearestSignal(signalsRef.current, candlesRef.current, p.time);
       if (!best) return;
       if (best.id === activeIdRef.current) {
         scrollToCard(best.id);
@@ -455,7 +458,8 @@ export default function GrowChart() {
     if (overlay.markers) {
       for (const s of signals) {
         if (!s.marker) continue;
-        marks.push(s.id === activeId ? { ...s.marker, color: PATTERN_COLOR } : s.marker);
+        const base = { ...s.marker, id: s.id };
+        marks.push(s.id === activeId ? { ...base, color: PATTERN_COLOR } : base);
       }
     }
     const active = signals.find((s) => s.id === activeId);

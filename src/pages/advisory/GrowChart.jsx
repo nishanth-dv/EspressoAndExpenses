@@ -104,6 +104,36 @@ function candleOptions() {
   return { upColor: up, downColor: down, wickUpColor: up, wickDownColor: down, borderVisible: false };
 }
 
+function scrollToCard(id) {
+  const el = document.getElementById(`gsig-${id}`);
+  if (!el) return;
+  requestAnimationFrame(() => el.scrollIntoView({ behavior: "smooth", block: "center" }));
+}
+
+function barSeconds(candles) {
+  if (candles.length < 2) return 86400;
+  const gaps = [];
+  for (let i = 1; i < Math.min(candles.length, 40); i++) gaps.push(candles[i].time - candles[i - 1].time);
+  gaps.sort((a, b) => a - b);
+  return gaps[Math.floor(gaps.length / 2)] || 86400;
+}
+
+function nearestSignal(signals, candles, time, tolBars = 2) {
+  if (!signals.length) return null;
+  const tol = barSeconds(candles) * tolBars;
+  let best = null;
+  let bestD = Infinity;
+  for (const s of signals) {
+    const d = Math.abs(s.time - time);
+    if (d > tol) continue;
+    if (d < bestD || (d === bestD && (s.confidence ?? 0) > (best?.confidence ?? 0))) {
+      best = s;
+      bestD = d;
+    }
+  }
+  return best;
+}
+
 function currentTheme() {
   return document.documentElement.getAttribute("data-theme") || "dark";
 }
@@ -147,6 +177,8 @@ export default function GrowChart() {
   const deepDone = useRef(false);
   const chartWrapRef = useRef(null);
   const signalsRef = useRef([]);
+  const candlesRef = useRef([]);
+  const activeIdRef = useRef(null);
   const scrollOnSelect = useRef(false);
 
   const viewFrom = useMemo(() => {
@@ -171,10 +203,17 @@ export default function GrowChart() {
   }, [signals]);
 
   useEffect(() => {
+    candlesRef.current = candles;
+  }, [candles]);
+
+  useEffect(() => {
+    activeIdRef.current = activeId;
+  }, [activeId]);
+
+  useEffect(() => {
     if (!scrollOnSelect.current || !activeId) return;
     scrollOnSelect.current = false;
-    const el = document.getElementById(`gsig-${activeId}`);
-    if (el) requestAnimationFrame(() => el.scrollIntoView({ behavior: "smooth", block: "center" }));
+    scrollToCard(activeId);
   }, [activeId]);
   const outcomeById = useMemo(() => {
     const m = new Map();
@@ -241,9 +280,12 @@ export default function GrowChart() {
     chart.subscribeClick((p) => {
       if (typeof p.time !== "number") return;
       setPicked(p.time);
-      const hits = signalsRef.current.filter((x) => x.time === p.time);
-      if (!hits.length) return;
-      const best = hits.reduce((a2, b2) => ((b2.confidence ?? 0) > (a2.confidence ?? 0) ? b2 : a2));
+      const best = nearestSignal(signalsRef.current, candlesRef.current, p.time);
+      if (!best) return;
+      if (best.id === activeIdRef.current) {
+        scrollToCard(best.id);
+        return;
+      }
       scrollOnSelect.current = true;
       setActiveId(best.id);
     });

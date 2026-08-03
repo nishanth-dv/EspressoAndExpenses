@@ -9055,7 +9055,7 @@ textarea {
   font-weight: 600;
   letter-spacing: 0.03em;
   text-transform: uppercase;
-  color: var(--text-label);
+  color: color-mix(in srgb, var(--accent-blue) 55%, white);
   cursor: pointer;
   vertical-align: middle;
   transition: color 0.12s;
@@ -9067,34 +9067,7 @@ textarea {
 }
 
 .settle-bill-emi-badge:hover {
-  color: #5b8dee;
-}
-
-.settle-bill-emi-remaining {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding-left: 54px;
-}
-
-.settle-bill-emi-remaining-bar {
-  flex: 1;
-  max-width: 90px;
-  height: 4px;
-  border-radius: 999px;
-  background: var(--surface-active);
-  overflow: hidden;
-}
-
-.settle-bill-emi-remaining-fill {
-  height: 100%;
-  border-radius: 999px;
-  background: #5b8dee;
-}
-
-.settle-bill-emi-remaining-text {
-  font-size: 11px;
-  color: var(--text-label);
+  color: var(--accent-blue);
 }
 
 /* Soft variant — multi-line explanatory hints under form controls.
@@ -13758,53 +13731,6 @@ html[data-theme="dark"] .grow-watch-tag--watch {
   opacity: 0.4;
   cursor: default;
 }
-.grow-mkey {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 6px 12px;
-  margin-top: 10px;
-  padding: 9px 12px;
-  border-radius: 10px;
-  border: 1px solid var(--surface-border);
-  background: color-mix(in srgb, var(--text-secondary) 5%, transparent);
-  font-size: 0.74rem;
-}
-.grow-mkey-lbl {
-  font-size: 0.64rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--text-secondary);
-}
-.grow-mkey-item {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  color: var(--text-secondary);
-}
-.grow-mkey-item b {
-  padding: 1px 6px;
-  border-radius: 5px;
-  font-size: 0.7rem;
-  background: color-mix(in srgb, var(--text-secondary) 14%, transparent);
-  color: var(--text-primary);
-}
-.grow-mkey-item--bullish > i {
-  color: var(--amount-income);
-}
-.grow-mkey-item--bearish > i {
-  color: var(--amount-expense);
-}
-.grow-mkey-hint {
-  flex: 1 1 100%;
-  color: var(--text-secondary);
-  font-size: 0.7rem;
-  opacity: 0.85;
-}
-.grow-mkey-item--active > i {
-  color: #f59e0b;
-}
 .grow-sig-when {
   display: block;
   margin-top: 2px;
@@ -14009,9 +13935,6 @@ html[data-skin="glass"] .grow-sec .grow-hist {
 .grow-watch-sr-k,
 .grow-ind-name,
 .grow-ev-main strong,
-.grow-mkey-item b {
-  color: var(--grow-strong);
-}
 .grow-score-val.is-up,
 .grow-pf-val.is-up,
 .grow-ev-main strong {

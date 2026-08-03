@@ -104,35 +104,8 @@ function candleOptions() {
   return { upColor: up, downColor: down, wickUpColor: up, wickDownColor: down, borderVisible: false };
 }
 
-function scrollToCard(id) {
-  const el = document.getElementById(`gsig-${id}`);
-  if (!el) return;
-  requestAnimationFrame(() => el.scrollIntoView({ behavior: "smooth", block: "center" }));
-}
 
-function barSeconds(candles) {
-  if (candles.length < 2) return 86400;
-  const gaps = [];
-  for (let i = 1; i < Math.min(candles.length, 40); i++) gaps.push(candles[i].time - candles[i - 1].time);
-  gaps.sort((a, b) => a - b);
-  return gaps[Math.floor(gaps.length / 2)] || 86400;
-}
 
-function nearestSignal(signals, candles, time, tolBars = 2) {
-  if (!signals.length) return null;
-  const tol = barSeconds(candles) * tolBars;
-  let best = null;
-  let bestD = Infinity;
-  for (const s of signals) {
-    const d = Math.abs(s.time - time);
-    if (d > tol) continue;
-    if (d < bestD || (d === bestD && (s.confidence ?? 0) > (best?.confidence ?? 0))) {
-      best = s;
-      bestD = d;
-    }
-  }
-  return best;
-}
 
 function currentTheme() {
   return document.documentElement.getAttribute("data-theme") || "dark";
@@ -165,7 +138,6 @@ export default function GrowChart() {
   const [activeId, setActiveId] = useState(null);
   const [ind, setInd] = useState({ ma: false, boll: false, rsi: false });
   const [editorOpen, setEditorOpen] = useState(false);
-  const [overlay, setOverlay] = useState({ markers: false });
 
   const holderRef = useRef(null);
   const chartRef = useRef(null);
@@ -177,9 +149,6 @@ export default function GrowChart() {
   const deepDone = useRef(false);
   const chartWrapRef = useRef(null);
   const signalsRef = useRef([]);
-  const candlesRef = useRef([]);
-  const activeIdRef = useRef(null);
-  const scrollOnSelect = useRef(false);
 
   const viewFrom = useMemo(() => {
     const bars = TIMEFRAMES.find((t) => t.key === tf)?.viewBars ?? 0;
@@ -226,19 +195,6 @@ export default function GrowChart() {
     signalsRef.current = signals;
   }, [signals]);
 
-  useEffect(() => {
-    candlesRef.current = candles;
-  }, [candles]);
-
-  useEffect(() => {
-    activeIdRef.current = activeId;
-  }, [activeId]);
-
-  useEffect(() => {
-    if (!scrollOnSelect.current || !activeId) return;
-    scrollOnSelect.current = false;
-    scrollToCard(activeId);
-  }, [activeId]);
   const outcomeById = useMemo(() => {
     const m = new Map();
     card.graded.forEach((g) => m.set(g.signal.id, g.outcome));
@@ -301,21 +257,7 @@ export default function GrowChart() {
     seriesRef.current = series;
     patternRef.current = pattern;
     markersRef.current = createSeriesMarkers(series, []);
-    chart.subscribeClick((p) => {
-      if (typeof p.time !== "number") return;
-      setPicked(p.time);
-      const hitId = p.hoveredInfo?.objectId ?? p.hoveredObjectId;
-      const best =
-        (typeof hitId === "string" && signalsRef.current.find((x) => x.id === hitId)) ||
-        nearestSignal(signalsRef.current, candlesRef.current, p.time);
-      if (!best) return;
-      if (best.id === activeIdRef.current) {
-        scrollToCard(best.id);
-        return;
-      }
-      scrollOnSelect.current = true;
-      setActiveId(best.id);
-    });
+    chart.subscribeClick((p) => setPicked(typeof p.time === "number" ? p.time : null));
     return () => {
       chart.remove();
       chartRef.current = null;
@@ -478,33 +420,19 @@ export default function GrowChart() {
     const m = markersRef.current;
     if (!m) return undefined;
     m.setMarkers([]);
-    const marks = [];
     const active = signals.find((s) => s.id === activeId);
-    // Only the selected signal is marked unless the user opts into seeing all
-    // of them. The active dot is always drawn, so a single-bar pattern is not
-    // left unmarked by the highlight loop below (which skips its own bar).
-    for (const s of signals) {
-      if (!s.marker) continue;
-      const isActive = s.id === activeId;
-      if (!overlay.markers && !isActive) continue;
-      const base = { ...s.marker, id: s.id };
-      marks.push(isActive ? { ...base, color: PATTERN_COLOR } : base);
+    if (!active || active.category === "chart") return undefined;
+    const idx = candles.findIndex((c) => c.time === active.time);
+    if (idx < 0) return undefined;
+    const n = CANDLE_BARS[active.type] ?? 1;
+    const bull = active.direction === "bullish";
+    const marks = [];
+    for (let i = Math.max(0, idx - n + 1); i <= idx; i++) {
+      marks.push({ time: candles[i].time, position: bull ? "belowBar" : "aboveBar", shape: "circle", color: PATTERN_COLOR });
     }
-    if (active && active.category !== "chart") {
-      const idx = candles.findIndex((c) => c.time === active.time);
-      if (idx >= 0) {
-        const n = CANDLE_BARS[active.type] ?? 1;
-        const bull = active.direction === "bullish";
-        for (let i = Math.max(0, idx - n + 1); i < idx; i++) {
-          marks.push({ time: candles[i].time, position: bull ? "belowBar" : "aboveBar", shape: "circle", color: PATTERN_COLOR });
-        }
-      }
-    }
-    if (!marks.length) return undefined;
-    marks.sort((x, y) => x.time - y.time);
     m.setMarkers(marks);
     return undefined;
-  }, [activeId, signals, candles, theme, overlay]);
+  }, [activeId, signals, candles, theme]);
 
   useEffect(() => {
     if (deepDone.current || !signals.length) return;
@@ -589,7 +517,6 @@ export default function GrowChart() {
 
   const activeIndCount = Object.values(ind).filter(Boolean).length;
   const intradayTf = TIMEFRAMES.find((t) => t.key === tf)?.intraday ?? false;
-  const activeCount = activeIndCount + Object.values(overlay).filter(Boolean).length;
 
 
   function pick(r) {
@@ -720,7 +647,7 @@ export default function GrowChart() {
         aside={
           <button type="button" className="grow-ind-editor-btn" onClick={() => setEditorOpen(true)}>
             <i className="fa-solid fa-sliders" /> Chart editor
-            {activeCount > 0 && <span className="grow-ind-editor-count">{activeCount}</span>}
+            {activeIndCount > 0 && <span className="grow-ind-editor-count">{activeIndCount}</span>}
           </button>
         }
       >
@@ -779,35 +706,6 @@ export default function GrowChart() {
             </div>
           )}
         </div>
-        {activeId && !overlay.markers && (
-          <div className="grow-mkey">
-            <span className="grow-mkey-lbl">Marker key</span>
-            <span className="grow-mkey-item grow-mkey-item--active">
-              <i className="fa-solid fa-circle" /> the signal you selected
-            </span>
-            <span className="grow-mkey-hint">
-              Pick another from the list below, or turn on “Signal markers” in the chart editor to see every pattern at
-              once.
-            </span>
-          </div>
-        )}
-        {overlay.markers && signals.length > 0 && (
-          <div className="grow-mkey">
-            <span className="grow-mkey-lbl">Marker key</span>
-            <span className="grow-mkey-item grow-mkey-item--bullish">
-              <i className="fa-solid fa-circle" /> below the candle = bullish
-            </span>
-            <span className="grow-mkey-item grow-mkey-item--bearish">
-              <i className="fa-solid fa-circle" /> above the candle = bearish
-            </span>
-            <span className="grow-mkey-item grow-mkey-item--active">
-              <i className="fa-solid fa-circle" /> selected
-            </span>
-            <span className="grow-mkey-hint">
-              Tap any dot to see which pattern it is — the selected one enlarges and its card opens below.
-            </span>
-          </div>
-        )}
       </GrowSection>
 
       {card.overall.resolved > 0 && (
@@ -887,7 +785,6 @@ export default function GrowChart() {
             {signals.map((s) => (
               <li
                 key={s.id}
-                id={`gsig-${s.id}`}
                 className={`grow-sig-card grow-sig-card--${s.direction}${activeId === s.id ? " grow-sig-card--active" : ""}`}
                 onMouseEnter={() => hover(s)}
                 onMouseLeave={unhover}
@@ -938,46 +835,16 @@ export default function GrowChart() {
         <div className="grow-editor">
           <div className="grow-editor-bar">
             <span className="grow-editor-count">
-              {activeCount === 0 ? "Nothing added" : `${activeCount} added to the chart`}
+              {activeIndCount === 0 ? "Nothing added" : `${activeIndCount} added to the chart`}
             </span>
             <button
               type="button"
               className="grow-editor-clear"
-              disabled={activeCount === 0}
-              onClick={() => {
-                setInd({});
-                setOverlay({ markers: false });
-              }}
+              disabled={activeIndCount === 0}
+              onClick={() => setInd({})}
             >
               <i className="fa-solid fa-eraser" /> Clear all
             </button>
-          </div>
-
-          <div className="grow-editor-sec">
-            <div className="grow-editor-sec-head">
-              Drawn over the candles
-              <em>what the engine found, marked on the chart itself</em>
-            </div>
-            <div className="grow-editor-list">
-              <button
-                type="button"
-                className={`grow-ind-row${overlay.markers ? " is-on" : ""}`}
-                aria-pressed={overlay.markers}
-                onClick={() => setOverlay((p) => ({ ...p, markers: !p.markers }))}
-              >
-                <span className="grow-ind-check">
-                  <i className={`fa-solid ${overlay.markers ? "fa-check" : "fa-plus"}`} />
-                </span>
-                <span className="grow-ind-text">
-                  <span className="grow-ind-name">Signal markers</span>
-                  <span className="grow-ind-blurb">
-                    Off by default: only the signal you select is marked. Turn this on to pin every pattern found in
-                    this window to its bar — green below the candle for bullish, red above for bearish — and tap any
-                    dot to open its card.
-                  </span>
-                </span>
-              </button>
-            </div>
           </div>
 
           {IND_GROUPS.map((g) => (

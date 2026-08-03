@@ -165,7 +165,7 @@ export default function GrowChart() {
   const [activeId, setActiveId] = useState(null);
   const [ind, setInd] = useState({ ma: false, boll: false, rsi: false });
   const [editorOpen, setEditorOpen] = useState(false);
-  const [overlay, setOverlay] = useState({ markers: true });
+  const [overlay, setOverlay] = useState({ markers: false });
 
   const holderRef = useRef(null);
   const chartRef = useRef(null);
@@ -479,14 +479,17 @@ export default function GrowChart() {
     if (!m) return undefined;
     m.setMarkers([]);
     const marks = [];
-    if (overlay.markers) {
-      for (const s of signals) {
-        if (!s.marker) continue;
-        const base = { ...s.marker, id: s.id };
-        marks.push(s.id === activeId ? { ...base, color: PATTERN_COLOR } : base);
-      }
-    }
     const active = signals.find((s) => s.id === activeId);
+    // Only the selected signal is marked unless the user opts into seeing all
+    // of them. The active dot is always drawn, so a single-bar pattern is not
+    // left unmarked by the highlight loop below (which skips its own bar).
+    for (const s of signals) {
+      if (!s.marker) continue;
+      const isActive = s.id === activeId;
+      if (!overlay.markers && !isActive) continue;
+      const base = { ...s.marker, id: s.id };
+      marks.push(isActive ? { ...base, color: PATTERN_COLOR } : base);
+    }
     if (active && active.category !== "chart") {
       const idx = candles.findIndex((c) => c.time === active.time);
       if (idx >= 0) {
@@ -776,6 +779,18 @@ export default function GrowChart() {
             </div>
           )}
         </div>
+        {activeId && !overlay.markers && (
+          <div className="grow-mkey">
+            <span className="grow-mkey-lbl">Marker key</span>
+            <span className="grow-mkey-item grow-mkey-item--active">
+              <i className="fa-solid fa-circle" /> the signal you selected
+            </span>
+            <span className="grow-mkey-hint">
+              Pick another from the list below, or turn on “Signal markers” in the chart editor to see every pattern at
+              once.
+            </span>
+          </div>
+        )}
         {overlay.markers && signals.length > 0 && (
           <div className="grow-mkey">
             <span className="grow-mkey-lbl">Marker key</span>
@@ -956,8 +971,9 @@ export default function GrowChart() {
                 <span className="grow-ind-text">
                   <span className="grow-ind-name">Signal markers</span>
                   <span className="grow-ind-blurb">
-                    Every pattern found in this window, pinned to its bar — a green arrow below the candle for bullish,
-                    a red arrow above for bearish, each labelled with the pattern&rsquo;s code. Tap one to open its card.
+                    Off by default: only the signal you select is marked. Turn this on to pin every pattern found in
+                    this window to its bar — green below the candle for bullish, red above for bearish — and tap any
+                    dot to open its card.
                   </span>
                 </span>
               </button>

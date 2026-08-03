@@ -198,6 +198,30 @@ export default function GrowChart() {
 
   const card = useMemo(() => scoreCard(signals, candles), [signals, candles]);
 
+  const paramI = params.get("i");
+  const paramSymbol = params.get("symbol");
+  const paramName = params.get("name");
+  const paramT = params.get("t");
+
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (paramI && INTERVAL_TF[paramI]) setTf(INTERVAL_TF[paramI]);
+  }, [paramI]);
+
+  useEffect(() => {
+    if (!paramSymbol) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSymbol((cur) =>
+      cur.symbol === paramSymbol
+        ? cur
+        : { symbol: paramSymbol, name: paramName || paramSymbol.replace(/\.(NS|BO)$/i, "") },
+    );
+  }, [paramSymbol, paramName]);
+
+  useEffect(() => {
+    deepDone.current = false;
+  }, [paramT, paramSymbol, paramI]);
+
   useEffect(() => {
     signalsRef.current = signals;
   }, [signals]);

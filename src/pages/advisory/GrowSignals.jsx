@@ -111,8 +111,9 @@ export default function GrowSignals() {
   }, [trackRows]);
 
   function openChart(s) {
+    const lane = s.interval || iv;
     navigate(
-      `/Advisory/grow/charts?symbol=${encodeURIComponent(s.symbol)}&name=${encodeURIComponent(s.symbol_name)}&t=${s.bar_time}&ty=${s.type}&i=${encodeURIComponent(iv)}`,
+      `/Advisory/grow/charts?symbol=${encodeURIComponent(s.symbol)}&name=${encodeURIComponent(s.symbol_name)}&t=${s.bar_time}&ty=${s.type}&i=${encodeURIComponent(lane)}`,
     );
   }
 

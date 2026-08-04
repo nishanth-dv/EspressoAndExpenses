@@ -29,10 +29,7 @@ assert.strictEqual(be.time, candles[candles.length - 1].time, "engulfing on the 
 assert(be.confidence >= 0 && be.confidence <= 100, "confidence in range");
 const sum = be.confidenceBreakdown.rows.reduce((s, r) => s + r.points, 0);
 assert.strictEqual(sum, be.confidence, "breakdown rows sum to confidence");
-assert.strictEqual(be.marker.text, undefined, "markers carry no code text — the letters were unreadable on the chart");
-assert.strictEqual(be.marker.shape, "circle", "markers are plain dots");
-assert.strictEqual(be.marker.position, "belowBar", "a bullish dot sits below the candle");
-assert.strictEqual(be.marker.color, "#16a34a", "bullish dots are green");
+assert.strictEqual(be.marker, undefined, "signals no longer carry chart markers — the overlay was removed");
 assert.strictEqual(be.id, "TEST.NS:1d:bullish_engulfing:" + be.time, "deterministic id");
 assert(be.plan && be.plan.entry === be.price, "signal carries a trade plan anchored at entry");
 assert(be.plan.target > be.plan.entry && be.plan.stop < be.plan.entry, "bullish plan: target above, stop below entry");

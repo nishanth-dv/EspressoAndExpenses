@@ -1,4 +1,4 @@
-import { ENGINE, DIRECTION, signalId, SUPPRESSED_TYPES, tradeType, edgeFor, beatsRandom } from "./contract.js";
+import { ENGINE, signalId, SUPPRESSED_TYPES, tradeType, edgeFor, beatsRandom } from "./contract.js";
 import { rsiSeries, pivots, sma, atrSeries } from "./indicators.js";
 import { detectAll } from "./detectors.js";
 import { withSignalConfidence } from "./confidence.js";
@@ -38,15 +38,6 @@ function applyCooldown(list, idxByTime, bars) {
   return kept;
 }
 
-const COLORS = { bullish: "#16a34a", bearish: "#ef4444", neutral: "#9ca3af" };
-
-function markerFor(sig) {
-  if (sig.direction === DIRECTION.BULL)
-    return { time: sig.time, position: "belowBar", shape: "circle", color: COLORS.bullish };
-  if (sig.direction === DIRECTION.BEAR)
-    return { time: sig.time, position: "aboveBar", shape: "circle", color: COLORS.bearish };
-  return { time: sig.time, position: "inBar", shape: "circle", color: COLORS.neutral };
-}
 
 export function runSignals(candles, ctx = {}) {
   const symbol = ctx.symbol || "";
@@ -93,7 +84,6 @@ export function runSignals(candles, ctx = {}) {
       relatedIds: cluster.filter((x) => x !== r).map((x) => signalId(symbol, interval, x.type, x.time)),
     };
     const scored = withSignalConfidence(withMeta);
-    scored.marker = markerFor(scored);
     scored.plan = planFor(scored.direction, scored.price, atr[idx]);
     scored.tradeType = tradeType(interval);
     scored.sortValue = Math.round(scored.factors.signalStrength * scored.confidence);

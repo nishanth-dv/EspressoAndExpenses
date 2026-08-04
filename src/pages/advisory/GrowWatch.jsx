@@ -106,7 +106,7 @@ export default function GrowWatch() {
               { quote, bias: symbolBias(candles), bracket: quote ? bracketOf(candles, quote.last) : null },
             ];
           } catch {
-            return [symbol, { quote: null, bias: null, bracket: null, failed: true }];
+            return [symbol, { quote: null, bias: null, bracket: null }];
           }
         }),
       );
@@ -176,8 +176,8 @@ export default function GrowWatch() {
   const heldSet = useMemo(() => new Set(holdings.map((h) => h.symbol)), [holdings]);
   const watchOnly = useMemo(() => watchlist.filter((s) => !heldSet.has(s)), [watchlist, heldSet]);
 
-  function open(symbol, sig) {
-    const q = new URLSearchParams({ symbol, name: symbol.replace(".NS", "") });
+  function open(symbol, sig, name) {
+    const q = new URLSearchParams({ symbol, name: name || symbol.replace(".NS", "") });
     if (sig) {
       q.set("t", sig.bar_time);
       q.set("ty", sig.type);
@@ -191,7 +191,7 @@ export default function GrowWatch() {
     const sig = bySymbol.get(symbol);
     return (
       <div key={symbol} className={`grow-watch-row${holding ? " grow-watch-row--held" : " grow-watch-row--watch"}`}>
-        <button type="button" className="grow-watch-main" onClick={() => open(symbol, sig)}>
+        <button type="button" className="grow-watch-main" onClick={() => open(symbol, sig, holding?.name)}>
           <div className="grow-watch-top">
             <span className="grow-watch-sym">
               {symbol.replace(".NS", "")}

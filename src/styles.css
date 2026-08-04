@@ -13014,18 +13014,6 @@ html[data-skin="glass"] .grow-score {
   flex-direction: column;
   gap: 10px;
 }
-.grow-watch-head {
-  display: flex;
-  align-items: baseline;
-  flex-wrap: wrap;
-  gap: 6px 10px;
-  font-weight: 700;
-}
-.grow-watch-count {
-  color: var(--text-secondary);
-  font-size: 0.78rem;
-  font-weight: 500;
-}
 .grow-watch-note {
   padding: 8px 12px;
   border-radius: 10px;
@@ -13318,6 +13306,7 @@ html[data-skin="glass"] .grow-sec {
 }
 .grow-cgroup-row {
   display: inline-flex;
+  justify-content: center;
   flex-wrap: wrap;
   gap: 4px;
   margin-top: 4px;
@@ -13930,11 +13919,12 @@ html[data-skin="glass"] .grow-sec .grow-hist {
 .grow-bench-v,
 .grow-pf-val,
 .grow-pos-val,
-.grow-watch-head,
 .grow-watch-sym,
 .grow-watch-sr-k,
 .grow-ind-name,
-.grow-ev-main strong,
+.grow-ev-main strong {
+  color: var(--grow-strong);
+}
 .grow-score-val.is-up,
 .grow-pf-val.is-up,
 .grow-ev-main strong {

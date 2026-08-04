@@ -12797,9 +12797,6 @@ html[data-skin="glass"] .adv-card {
 .grow-hist--thin strong {
   color: var(--text-secondary);
 }
-.grow-sigflt--cats {
-  margin-top: -6px;
-}
 .grow-sigflt-cat {
   display: inline-flex;
   align-items: center;
@@ -12885,24 +12882,6 @@ html[data-skin="glass"] .grow-score {
 }
 .grow-score .is-down {
   color: var(--amount-expense);
-}
-.grow-score-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 0.95rem;
-  font-weight: 700;
-  color: var(--text-primary);
-  margin-bottom: 14px;
-}
-.grow-score-head > i {
-  color: var(--amount-income);
-}
-.grow-score-sub {
-  font-size: 0.72rem;
-  font-weight: 500;
-  color: var(--text-secondary);
-  margin-left: auto;
 }
 .grow-score-hero {
   display: grid;
@@ -13434,9 +13413,6 @@ html[data-skin="glass"] .grow-sec {
 .grow-sec .grow-sigflt {
   margin-bottom: 0;
 }
-.grow-sec .grow-sigflt--cats {
-  margin-top: 12px;
-}
 .grow-bench {
   display: flex;
   align-items: center;
@@ -13911,7 +13887,6 @@ html[data-skin="glass"] .grow-sec .grow-hist {
 .grow-sig-title,
 .grow-sig-pattern,
 .grow-hist strong,
-.grow-score-head,
 .grow-score-val,
 .grow-cal-pct,
 .grow-sec-title,

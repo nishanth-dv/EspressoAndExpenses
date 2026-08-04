@@ -75,6 +75,7 @@ export default function GrowSignals() {
     const watch = new Set(readWatchlist(prefs));
     return signals.filter(
       (s) =>
+        s.direction !== "bearish" &&
         (cat === "all" || s.category === cat) &&
         (!watchOnly || watch.has(s.symbol)),
     );
@@ -332,11 +333,11 @@ export default function GrowSignals() {
         >
         <ul className="grow-sig-list">
           {shown.map((s) => (
-            <li key={s.id} className={`grow-sig-card grow-sig-card--${s.direction}`}>
+            <li key={s.id} className="grow-sig-card grow-sig-card--bullish">
               <div className="grow-sig-row">
                 <button type="button" className="grow-sig-main" onClick={() => openChart(s)}>
-                  <span className={`grow-sig-dir grow-sig-dir--${s.direction}`}>
-                    <i className={`fa-solid fa-arrow-trend-${s.direction === "bullish" ? "up" : "down"}`} />
+                  <span className="grow-sig-dir grow-sig-dir--bullish">
+                    <i className="fa-solid fa-arrow-trend-up" />
                   </span>
                   <span className="grow-sig-text">
                     <span className="grow-sig-title">
@@ -378,7 +379,7 @@ export default function GrowSignals() {
                 open={openId === s.id}
                 card={{ confidenceBreakdown: s.breakdown ?? breakdownSignal(s.factors ?? {}) }}
               />
-              <TradePlan plan={s.plan} tradeType={s.trade_type} interval={s.interval || iv} direction={s.direction} />
+              <TradePlan plan={s.plan} tradeType={s.trade_type} interval={s.interval || iv} direction="bullish" />
               <SignalEvidence type={s.type} interval={s.interval || iv} />
               <SignalHistory history={s.history} name={s.name} />
             </li>

@@ -33,7 +33,7 @@ assert.strictEqual(be.marker, undefined, "signals no longer carry chart markers 
 assert.strictEqual(be.id, "TEST.NS:1d:bullish_engulfing:" + be.time, "deterministic id");
 assert(be.plan && be.plan.entry === be.price, "signal carries a trade plan anchored at entry");
 assert(be.plan.target > be.plan.entry && be.plan.stop < be.plan.entry, "bullish plan: target above, stop below entry");
-assert(Math.abs(be.plan.rr - 2 / 1.5) < 0.01, "R:R = atrTarget/atrStop");
+assert.strictEqual(be.plan.rr, undefined, "plans carry no R:R — it was a constant 1.33 on every card");
 assert.strictEqual(be.tradeType, "Swing", "1d interval -> Swing trade type");
 
 const gated = runSignals(candles, { symbol: "TEST.NS", interval: "1d", timeframe: "6M" });
@@ -147,7 +147,6 @@ console.log(
     `support_bounce ${sb1d.edge}→${edgeFor("support_bounce", "1d").toFixed(3)} (sd ${sb1d.sd})`,
 );
 
-const wk = rawEdgeFor("support_bounce", "1wk");
 assert(edgeFor("support_bounce", "1wk") >= EDGE_FLOOR, "the weekly lane still has a detector at all");
 assert(
   edgeFor("support_bounce", "1wk") - EDGE_FLOOR < 0.05,
@@ -421,7 +420,6 @@ assert.strictEqual(downBias.label, "bearish", "falling, down-volume series reads
 assert.ok(Object.values(upBias.parts).every((v) => v > 0), "every bullish part positive");
 assert.ok(Object.values(downBias.parts).every((v) => v < 0), "every bearish part negative");
 assert.ok(upBias.score <= 1 && downBias.score >= -1, "score stays in [-1, 1]");
-assert.strictEqual(upBias.maPeriod, 50, "60 bars -> 50-bar MA baseline");
 console.log(
   `ok — symbol bias ${upBias.label} ${upBias.score} / ${downBias.label} ${downBias.score}`,
   JSON.stringify(upBias.parts),

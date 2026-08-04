@@ -44,7 +44,6 @@ export function symbolBias(candles) {
   return {
     score: r2(score),
     label: score >= 0.3 ? "bullish" : score <= -0.3 ? "bearish" : "neutral",
-    maPeriod: period,
     parts: { trend: r2(trend), momentum: r2(momentum), flow: r2(flow), position: r2(position) },
   };
 }

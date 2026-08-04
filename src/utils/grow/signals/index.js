@@ -14,7 +14,6 @@ function planFor(direction, entry, atr) {
     entry: r2(entry),
     target: r2(entry + dir * t),
     stop: r2(entry - dir * s),
-    rr: s > 0 ? Math.round((t / s) * 100) / 100 : 0,
     horizonBars: GRADE_DEFAULTS.horizon,
   };
 }
@@ -81,7 +80,6 @@ export function runSignals(candles, ctx = {}) {
         confluence,
         recencyBars,
       },
-      relatedIds: cluster.filter((x) => x !== r).map((x) => signalId(symbol, interval, x.type, x.time)),
     };
     const scored = withSignalConfidence(withMeta);
     scored.plan = planFor(scored.direction, scored.price, atr[idx]);

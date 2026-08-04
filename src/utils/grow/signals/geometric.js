@@ -20,7 +20,6 @@ function mkAt(candles, closes, i, s) {
     time: candles[i].time,
     price: candles[i].close,
     title: s.title,
-    code: s.code,
     fromTime: s.fromTime,
     toTime: candles[i].time,
     meta: s.meta || {},
@@ -108,7 +107,7 @@ function doubleBottoms(candles, closes, lows, highs) {
         name: "Double Bottom",
         direction: DIRECTION.BULL,
         title: `Double bottom near ₹${Math.round((a.price + b.price) / 2)}`,
-        code: "W",
+       
         fromTime: shape[0].time,
         baseReliability: 0.62,
         signalStrength: (1 - diff / 0.03) * 0.6 + ((candles[conf].close / neck - 1) / 0.03) * 0.4,
@@ -133,7 +132,7 @@ function doubleTops(candles, closes, highs, lows) {
         name: "Double Top",
         direction: DIRECTION.BEAR,
         title: `Double top near ₹${Math.round((a.price + b.price) / 2)}`,
-        code: "M",
+       
         fromTime: shape[0].time,
         baseReliability: 0.62,
         signalStrength: (1 - diff / 0.03) * 0.6 + ((1 - candles[conf].close / neck) / 0.03) * 0.4,
@@ -169,7 +168,7 @@ function headShoulders(candles, closes, highs, lows) {
         name: "Head & Shoulders",
         direction: DIRECTION.BEAR,
         title: "Head & shoulders top",
-        code: "HS",
+       
         fromTime: shape[0].time,
         baseReliability: 0.66,
         signalStrength: (1 - shoulderDiff / 0.05) * 0.5 + ((h.price / Math.max(l.price, r.price) - 1) / 0.05) * 0.5,
@@ -205,7 +204,7 @@ function invHeadShoulders(candles, closes, lows, highs) {
         name: "Inverse Head & Shoulders",
         direction: DIRECTION.BULL,
         title: "Inverse head & shoulders",
-        code: "iHS",
+       
         fromTime: shape[0].time,
         baseReliability: 0.66,
         signalStrength: (1 - shoulderDiff / 0.05) * 0.5 + ((Math.min(l.price, r.price) / h.price - 1) / 0.05) * 0.5,

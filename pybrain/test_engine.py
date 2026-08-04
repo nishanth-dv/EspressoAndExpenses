@@ -50,7 +50,7 @@ assert sum(r["points"] for r in be["confidenceBreakdown"]["rows"]) == be["confid
 assert be["id"] == f"TEST.NS:1d:bullish_engulfing:{be['time']}"
 assert be["plan"]["entry"] == be["price"], "signal carries a trade plan anchored at entry"
 assert be["plan"]["target"] > be["plan"]["entry"] > be["plan"]["stop"], "bullish plan: target above, stop below entry"
-assert abs(be["plan"]["rr"] - 2 / 1.5) < 0.01, "R:R = atrTarget/atrStop"
+assert "rr" not in be["plan"], "plans carry no R:R — it was a constant 1.33 on every card"
 assert be["tradeType"] == "Swing", "1d interval -> Swing trade type"
 
 rising = []
@@ -190,5 +190,4 @@ down_bias = symbol_bias(bias_fixture(-1))
 assert up_bias["label"] == "bullish" and down_bias["label"] == "bearish", "bias direction reads price + volume"
 assert all(v > 0 for v in up_bias["parts"].values()), "every bullish part positive"
 assert all(v < 0 for v in down_bias["parts"].values()), "every bearish part negative"
-assert up_bias["maPeriod"] == 50, "60 bars -> 50-bar MA baseline"
 print(f"ok — symbol bias {up_bias['label']} {up_bias['score']} / {down_bias['label']} {down_bias['score']}", up_bias["parts"])

@@ -618,7 +618,6 @@ def symbol_bias(candles):
     return {
         "score": round(score, 2),
         "label": "bullish" if score >= 0.3 else "bearish" if score <= -0.3 else "neutral",
-        "maPeriod": period,
         "parts": {"trend": round(trend, 2), "momentum": round(momentum, 2), "flow": round(flow, 2), "position": round(position, 2)},
     }
 
@@ -666,7 +665,6 @@ def plan_for(direction, entry, atr, horizon=None):
         "entry": round(entry, 2),
         "target": round(entry + d * t, 2),
         "stop": round(entry - d * s, 2),
-        "rr": round(t / s, 2) if s > 0 else 0,
         "horizonBars": horizon if horizon is not None else GRADE_DEFAULTS["horizon"],
     }
 

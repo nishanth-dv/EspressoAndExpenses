@@ -27,7 +27,6 @@ function mk(candles, closes, i, s) {
     time: candles[i].time,
     price: candles[i].close,
     title: s.title,
-    code: s.code,
     meta: s.meta || {},
     factors: {
       baseReliability: s.baseReliability,
@@ -46,9 +45,9 @@ function engulfing(candles, closes) {
     const ab = avgBody(candles, i, 14) || rangeOf(c);
     const strength = clamp01(bodyOf(c) / (ab * 1.5));
     if (red(p) && green(c) && c.close >= p.open && c.open <= p.close && bodyOf(c) > bodyOf(p)) {
-      out.push(mk(candles, closes, i, { type: "bullish_engulfing", name: "Bullish Engulfing", category: CATEGORY.CANDLESTICK, direction: DIRECTION.BULL, title: "Bullish Engulfing", code: "BE", baseReliability: 0.62, signalStrength: strength }));
+      out.push(mk(candles, closes, i, { type: "bullish_engulfing", name: "Bullish Engulfing", category: CATEGORY.CANDLESTICK, direction: DIRECTION.BULL, title: "Bullish Engulfing", baseReliability: 0.62, signalStrength: strength }));
     } else if (green(p) && red(c) && c.open >= p.close && c.close <= p.open && bodyOf(c) > bodyOf(p)) {
-      out.push(mk(candles, closes, i, { type: "bearish_engulfing", name: "Bearish Engulfing", category: CATEGORY.CANDLESTICK, direction: DIRECTION.BEAR, title: "Bearish Engulfing", code: "BE", baseReliability: 0.62, signalStrength: strength }));
+      out.push(mk(candles, closes, i, { type: "bearish_engulfing", name: "Bearish Engulfing", category: CATEGORY.CANDLESTICK, direction: DIRECTION.BEAR, title: "Bearish Engulfing", baseReliability: 0.62, signalStrength: strength }));
     }
   }
   return out;
@@ -62,9 +61,9 @@ function hammerStar(candles, closes) {
     const lw = lowerWick(c);
     const uw = upperWick(c);
     if (lw >= b * 2 && uw <= b * 0.6) {
-      out.push(mk(candles, closes, i, { type: "hammer", name: "Hammer", category: CATEGORY.CANDLESTICK, direction: DIRECTION.BULL, title: "Hammer", code: "H", baseReliability: 0.55, signalStrength: clamp01(lw / rangeOf(c)) }));
+      out.push(mk(candles, closes, i, { type: "hammer", name: "Hammer", category: CATEGORY.CANDLESTICK, direction: DIRECTION.BULL, title: "Hammer", baseReliability: 0.55, signalStrength: clamp01(lw / rangeOf(c)) }));
     } else if (uw >= b * 2 && lw <= b * 0.6) {
-      out.push(mk(candles, closes, i, { type: "shooting_star", name: "Shooting Star", category: CATEGORY.CANDLESTICK, direction: DIRECTION.BEAR, title: "Shooting Star", code: "SS", baseReliability: 0.55, signalStrength: clamp01(uw / rangeOf(c)) }));
+      out.push(mk(candles, closes, i, { type: "shooting_star", name: "Shooting Star", category: CATEGORY.CANDLESTICK, direction: DIRECTION.BEAR, title: "Shooting Star", baseReliability: 0.55, signalStrength: clamp01(uw / rangeOf(c)) }));
     }
   }
   return out;
@@ -80,9 +79,9 @@ function stars(candles, closes) {
     const smallMid = bodyOf(b) < ab * 0.5;
     const mid = (a.open + a.close) / 2;
     if (red(a) && smallMid && green(c) && c.close > mid && bodyOf(a) > ab * 0.6) {
-      out.push(mk(candles, closes, i, { type: "morning_star", name: "Morning Star", category: CATEGORY.CANDLESTICK, direction: DIRECTION.BULL, title: "Morning Star", code: "MS", baseReliability: 0.68, signalStrength: clamp01(bodyOf(c) / (ab * 1.5)) }));
+      out.push(mk(candles, closes, i, { type: "morning_star", name: "Morning Star", category: CATEGORY.CANDLESTICK, direction: DIRECTION.BULL, title: "Morning Star", baseReliability: 0.68, signalStrength: clamp01(bodyOf(c) / (ab * 1.5)) }));
     } else if (green(a) && smallMid && red(c) && c.close < mid && bodyOf(a) > ab * 0.6) {
-      out.push(mk(candles, closes, i, { type: "evening_star", name: "Evening Star", category: CATEGORY.CANDLESTICK, direction: DIRECTION.BEAR, title: "Evening Star", code: "ES", baseReliability: 0.68, signalStrength: clamp01(bodyOf(c) / (ab * 1.5)) }));
+      out.push(mk(candles, closes, i, { type: "evening_star", name: "Evening Star", category: CATEGORY.CANDLESTICK, direction: DIRECTION.BEAR, title: "Evening Star", baseReliability: 0.68, signalStrength: clamp01(bodyOf(c) / (ab * 1.5)) }));
     }
   }
   return out;
@@ -95,9 +94,9 @@ function rsiExtremes(candles, closes, rsi) {
     const prev = rsi[i - 1];
     if (cur == null || prev == null) continue;
     if (cur < 30 && prev >= 30) {
-      out.push(mk(candles, closes, i, { type: "rsi_oversold", name: "RSI Oversold", category: CATEGORY.INDICATOR, direction: DIRECTION.BULL, title: "RSI crossed into oversold", code: "RSI", baseReliability: 0.5, signalStrength: clamp01((30 - cur) / 15), meta: { rsi: Math.round(cur * 10) / 10 } }));
+      out.push(mk(candles, closes, i, { type: "rsi_oversold", name: "RSI Oversold", category: CATEGORY.INDICATOR, direction: DIRECTION.BULL, title: "RSI crossed into oversold", baseReliability: 0.5, signalStrength: clamp01((30 - cur) / 15), meta: { rsi: Math.round(cur * 10) / 10 } }));
     } else if (cur > 70 && prev <= 70) {
-      out.push(mk(candles, closes, i, { type: "rsi_overbought", name: "RSI Overbought", category: CATEGORY.INDICATOR, direction: DIRECTION.BEAR, title: "RSI crossed into overbought", code: "RSI", baseReliability: 0.5, signalStrength: clamp01((cur - 70) / 15), meta: { rsi: Math.round(cur * 10) / 10 } }));
+      out.push(mk(candles, closes, i, { type: "rsi_overbought", name: "RSI Overbought", category: CATEGORY.INDICATOR, direction: DIRECTION.BEAR, title: "RSI crossed into overbought", baseReliability: 0.5, signalStrength: clamp01((cur - 70) / 15), meta: { rsi: Math.round(cur * 10) / 10 } }));
     }
   }
   return out;
@@ -126,13 +125,13 @@ function supportResistance(candles, closes, piv) {
     const c = candles[i];
     for (const s of sup) {
       if (c.low <= s.price * 1.005 && c.low >= s.price * 0.985 && c.close > s.price) {
-        out.push(mk(candles, closes, i, { type: "support_bounce", name: "Support Bounce", category: CATEGORY.STRUCTURE, direction: DIRECTION.BULL, title: `Bounce off ₹${Math.round(s.price)} support`, code: "S", baseReliability: 0.58, signalStrength: clamp01(s.count / 4), meta: { level: Math.round(s.price) } }));
+        out.push(mk(candles, closes, i, { type: "support_bounce", name: "Support Bounce", category: CATEGORY.STRUCTURE, direction: DIRECTION.BULL, title: `Bounce off ₹${Math.round(s.price)} support`, baseReliability: 0.58, signalStrength: clamp01(s.count / 4), meta: { level: Math.round(s.price) } }));
         break;
       }
     }
     for (const s of res) {
       if (c.high >= s.price * 0.995 && c.high <= s.price * 1.015 && c.close < s.price) {
-        out.push(mk(candles, closes, i, { type: "resistance_reject", name: "Resistance Rejection", category: CATEGORY.STRUCTURE, direction: DIRECTION.BEAR, title: `Rejected at ₹${Math.round(s.price)} resistance`, code: "R", baseReliability: 0.58, signalStrength: clamp01(s.count / 4), meta: { level: Math.round(s.price) } }));
+        out.push(mk(candles, closes, i, { type: "resistance_reject", name: "Resistance Rejection", category: CATEGORY.STRUCTURE, direction: DIRECTION.BEAR, title: `Rejected at ₹${Math.round(s.price)} resistance`, baseReliability: 0.58, signalStrength: clamp01(s.count / 4), meta: { level: Math.round(s.price) } }));
         break;
       }
     }
@@ -152,9 +151,9 @@ function breakout(candles, closes, look = 20) {
     const c = candles[i];
     const v = volConfirm(candles, i);
     if (c.close > hi) {
-      out.push(mk(candles, closes, i, { type: "breakout", name: "Range Breakout", category: CATEGORY.STRUCTURE, direction: DIRECTION.BULL, title: `Broke above ${look}-bar high`, code: "BO", baseReliability: 0.6, signalStrength: clamp01((c.close / hi - 1) / 0.03 * 0.6 + v * 0.4), meta: { level: Math.round(hi) } }));
+      out.push(mk(candles, closes, i, { type: "breakout", name: "Range Breakout", category: CATEGORY.STRUCTURE, direction: DIRECTION.BULL, title: `Broke above ${look}-bar high`, baseReliability: 0.6, signalStrength: clamp01((c.close / hi - 1) / 0.03 * 0.6 + v * 0.4), meta: { level: Math.round(hi) } }));
     } else if (c.close < lo) {
-      out.push(mk(candles, closes, i, { type: "breakdown", name: "Range Breakdown", category: CATEGORY.STRUCTURE, direction: DIRECTION.BEAR, title: `Broke below ${look}-bar low`, code: "BD", baseReliability: 0.6, signalStrength: clamp01((1 - c.close / lo) / 0.03 * 0.6 + v * 0.4), meta: { level: Math.round(lo) } }));
+      out.push(mk(candles, closes, i, { type: "breakdown", name: "Range Breakdown", category: CATEGORY.STRUCTURE, direction: DIRECTION.BEAR, title: `Broke below ${look}-bar low`, baseReliability: 0.6, signalStrength: clamp01((1 - c.close / lo) / 0.03 * 0.6 + v * 0.4), meta: { level: Math.round(lo) } }));
     }
   }
   return out;

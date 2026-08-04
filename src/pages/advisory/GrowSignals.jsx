@@ -31,7 +31,6 @@ export default function GrowSignals() {
   const [trackRows, setTrackRows] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
-  const [dir, setDir] = useState("all");
   const [styleKey, setStyleKey] = useState("swing");
   const [iv, setIv] = useState("1d");
   const [cat, setCat] = useState("all");
@@ -76,11 +75,10 @@ export default function GrowSignals() {
     const watch = new Set(readWatchlist(prefs));
     return signals.filter(
       (s) =>
-        (dir === "all" || s.direction === dir) &&
         (cat === "all" || s.category === cat) &&
         (!watchOnly || watch.has(s.symbol)),
     );
-  }, [signals, dir, cat, watchOnly, prefs]);
+  }, [signals, cat, watchOnly, prefs]);
 
   const cats = useMemo(() => {
     const m = new Map();
@@ -130,7 +128,9 @@ export default function GrowSignals() {
       </div>
       <p className="grow-sig-intro">
         Last night the scanner read every liquid NSE name and kept only the setups whose pattern has beaten a random
-        entry on the same stock in testing. Pick a trading style below — each holds for a different length of time.
+        entry on the same stock in testing. Every call is a <strong>buy</strong> — the engine is long-only, because
+        shorting tested negative and is not something you can act on through delivery anyway. Pick a trading style
+        below; each holds for a different length of time.
       </p>
 
       {scan?.sentiment && (
@@ -261,31 +261,12 @@ export default function GrowSignals() {
       <GrowSection
         icon="fa-filter"
         title="Narrow it down"
-        subtitle="These stack: a direction, plus any of the on/off filters. Everything listed already cleared the scanner’s edge test, so there is no quality filter to apply here."
+        subtitle="Everything listed already cleared the scanner’s edge test, so there is no quality filter here — just narrow by watchlist or by the kind of pattern."
       >
       <div className="grow-fltrow">
         <div className="grow-cgroup">
-          <span className="grow-cgroup-label">Direction</span>
-          <span className="grow-cgroup-hint">pick one</span>
-          <div className="grow-cgroup-row" role="radiogroup" aria-label="Direction">
-            {["all", "bullish", "bearish"].map((d) => (
-              <button
-                key={d}
-                type="button"
-                role="radio"
-                aria-checked={dir === d}
-                className={`grow-sigflt-chip${dir === d ? " is-active" : ""}`}
-                onClick={() => setDir(d)}
-              >
-                {d === "all" ? "All" : d === "bullish" ? "Bullish" : "Bearish"}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="grow-cgroup">
           <span className="grow-cgroup-label">Narrow to</span>
-          <span className="grow-cgroup-hint">on/off, independent of direction</span>
+          <span className="grow-cgroup-hint">on/off, stacks with the pattern filter</span>
           <div className="grow-cgroup-row">
             <button
               type="button"
